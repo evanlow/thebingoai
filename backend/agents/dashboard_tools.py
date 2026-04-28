@@ -356,8 +356,13 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         db.close()
 
 
-def build_dashboard_tools(context: AgentContext, db_session_factory: Callable) -> List:
-    """Return [create_dashboard, update_dashboard] tools bound to context and db_session_factory."""
+def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Callable) -> List:
+    """Return [create_dashboard, update_dashboard] tools bound to context and db_session_factory.
+
+    These tools execute the dashboard creation/update inline (validate widgets, run
+    SQL, persist) — distinct from the orchestrator's `build_dashboard_tools`, which
+    delegates to the dashboard sub-agent via `invoke_dashboard_agent`.
+    """
     if db_session_factory is None:
         return []
 
@@ -722,6 +727,6 @@ def build_dashboard_tools(context: AgentContext, db_session_factory: Callable) -
 
 
 def build_create_dashboard_tool(context: AgentContext) -> List:
-    """Registry-compatible wrapper: imports SessionLocal and delegates to build_dashboard_tools."""
+    """Registry-compatible wrapper: imports SessionLocal and delegates to build_inline_dashboard_tools."""
     from backend.database.session import SessionLocal
-    return build_dashboard_tools(context, SessionLocal)
+    return build_inline_dashboard_tools(context, SessionLocal)

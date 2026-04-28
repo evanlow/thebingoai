@@ -1,11 +1,15 @@
 """Shared schema utilities for SQL fix suggestions and schema summaries."""
-import re
 
 
 def extract_table_names(sql: str) -> set:
-    """Extract table names referenced after FROM/JOIN keywords."""
-    pattern = re.compile(r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_.]*)', re.IGNORECASE)
-    return {m.group(1).lower() for m in pattern.finditer(sql)}
+    """Extract table names referenced after FROM/JOIN keywords.
+
+    Delegates to backend.agents.sql_validation.extract_table_refs (the canonical
+    parser, which also handles aliases). Returns the lowercase name set only.
+    """
+    from backend.agents.sql_validation import extract_table_refs
+    table_matches, _ = extract_table_refs(sql)
+    return {m.lower() for m in table_matches}
 
 
 def build_schema_summary(schema_json: dict, referenced_tables: set) -> str:

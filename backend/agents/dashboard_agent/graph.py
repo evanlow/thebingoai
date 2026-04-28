@@ -1,12 +1,11 @@
-from langgraph.prebuilt import create_react_agent
 from langgraph.errors import GraphRecursionError
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 from backend.agents.dashboard_agent.tools import build_dashboard_agent_tools
 from backend.agents.dashboard_agent.prompts import build_dashboard_agent_prompt
-from backend.agents.profile_renderer import ProfileRenderer, RuntimeContext
+from backend.agents.invoke_helpers import extract_final_answer, run_inline_react, run_via_mesh_runtime
+from backend.agents.prompt_resolver import resolve_agent_prompt
 from backend.agents.context import AgentContext
-from backend.agents.data_agent.graph import _make_loop_detector
-from backend.llm.factory import get_provider
+from backend.agents.loop_detector import make_loop_detector
 from backend.config import settings
 from typing import Dict, Any, Callable, List
 import logging
@@ -22,33 +21,21 @@ def _resolve_dashboard_agent_prompt(
     mesh_enabled: bool = False,
 ) -> str:
     """Resolve dashboard_agent prompt from profile or fallback to legacy."""
-    if db_session_factory:
-        try:
-            db = db_session_factory()
-            from backend.models.agent_profile import AgentProfile
-            profile = db.query(AgentProfile).filter(
-                AgentProfile.user_id == context.user_id,
-                AgentProfile.agent_type == "dashboard_agent",
-                AgentProfile.is_active.is_(True),
-            ).first()
-            if profile:
-                rt_ctx = RuntimeContext(
-                    available_connections=context.available_connections,
-                    connection_metadata=context.connection_metadata,
-                    mesh_enabled=mesh_enabled or settings.agent_mesh_enabled,
-                    target_connection_id=target_connection_id,
-                )
-                prompt = ProfileRenderer.render(profile, rt_ctx)
-                db.close()
-                return prompt
-            db.close()
-        except Exception as exc:
-            logger.warning(f"Dashboard agent profile load failed, using legacy: {exc}")
-    return build_dashboard_agent_prompt(
-        context.available_connections,
-        mesh_enabled=mesh_enabled,
-        target_connection_id=target_connection_id,
-        connection_metadata=context.connection_metadata,
+    return resolve_agent_prompt(
+        agent_type="dashboard_agent",
+        context=context,
+        db_session_factory=db_session_factory,
+        runtime_context_extras={
+            "mesh_enabled": mesh_enabled or settings.agent_mesh_enabled,
+            "target_connection_id": target_connection_id,
+        },
+        fallback=lambda: build_dashboard_agent_prompt(
+            context.available_connections,
+            mesh_enabled=mesh_enabled,
+            target_connection_id=target_connection_id,
+            connection_metadata=context.connection_metadata,
+        ),
+        log_prefix=__name__,
     )
 
 
@@ -75,28 +62,19 @@ async def invoke_dashboard_agent(
     """
     tools = build_dashboard_agent_tools(context, db_session_factory)
 
-    # Use AgentRuntime when mesh is enabled for session-based execution
     if settings.agent_mesh_enabled and context.session_id:
-        from backend.agents.runtime import AgentRuntime
-        from backend.services.agent_registry import AgentRegistry
-        from backend.services.agent_message_bus import AgentMessageBus
-
-        registry = AgentRegistry()
-        db = db_session_factory()
-        message_bus = AgentMessageBus(db_session=db, redis_client=registry.redis)
-
-        runtime = AgentRuntime(
-            session_id=context.session_id,
+        result = await run_via_mesh_runtime(
             agent_type="dashboard_agent",
             user_id=context.user_id,
+            session_id=context.session_id,
             context=context,
-            registry=registry,
-            message_bus=message_bus,
+            message=request,
+            tools=tools,
+            system_prompt=_resolve_dashboard_agent_prompt(
+                context, db_session_factory, target_connection_id, mesh_enabled=True
+            ),
+            db_session_factory=db_session_factory,
         )
-
-        prompt = _resolve_dashboard_agent_prompt(context, db_session_factory, target_connection_id, mesh_enabled=True)
-        result = await runtime.execute(request, tools, prompt)
-
         return {
             "success": result.get("success", False),
             "message": result.get("message", ""),
@@ -104,22 +82,14 @@ async def invoke_dashboard_agent(
             "steps": [],
         }
 
-    provider = get_provider(settings.default_llm_provider)
-
-    agent = create_react_agent(
-        model=provider.get_langchain_llm(),
-        tools=tools,
-        prompt=_resolve_dashboard_agent_prompt(context, db_session_factory, target_connection_id),
-        pre_model_hook=_make_loop_detector(max_repeats=2, max_same_tool=15, max_total_calls=40),
-    )
-
     try:
-        result = await agent.ainvoke(
-            {"messages": [HumanMessage(content=request)]},
-            config={"recursion_limit": settings.agent_recursion_limit},
+        messages = await run_inline_react(
+            tools=tools,
+            system_prompt=_resolve_dashboard_agent_prompt(context, db_session_factory, target_connection_id),
+            message=request,
+            pre_model_hook=make_loop_detector(max_repeats=2, max_same_tool=15, max_total_calls=40),
         )
 
-        messages = result.get("messages", [])
         dashboard_id, steps = _extract_results(messages)
         dashboard_name, widget_count = _lookup_dashboard_meta(dashboard_id, db_session_factory)
 
@@ -128,16 +98,9 @@ async def invoke_dashboard_agent(
             len(messages), settings.agent_recursion_limit,
         )
 
-        # Get final answer (last AI message without tool calls)
-        final_answer = None
-        for msg in reversed(messages):
-            if hasattr(msg, "type") and msg.type == "ai" and not getattr(msg, "tool_calls", None):
-                final_answer = msg.content
-                break
-
         return {
             "success": True,
-            "message": final_answer or "Dashboard creation completed.",
+            "message": extract_final_answer(messages) or "Dashboard creation completed.",
             "dashboard_id": dashboard_id,
             "dashboard_name": dashboard_name,
             "widget_count": widget_count,

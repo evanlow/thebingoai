@@ -99,7 +99,6 @@ class Settings(BaseSettings):
 
     # Dataset upload settings
     dataset_max_file_size: int = 52_428_800  # 50MB
-    dataset_max_rows: int = 500_000
     dataset_cache_dir: str = "/tmp/gruda_datasets"
 
     # DigitalOcean Spaces (S3-compatible object storage)

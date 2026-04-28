@@ -93,7 +93,7 @@ class TestCreateDashboardDispatch:
 
     @pytest.mark.asyncio
     async def test_create_dispatches_materialization(self, dashboard_db, test_user):
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         context = _make_context(test_user.id)
         mock_delay = MagicMock()
@@ -144,7 +144,7 @@ class TestUpdateDashboardDispatch:
     @pytest.mark.asyncio
     async def test_update_dispatches_on_sql_change(self, dashboard_db, test_user):
         """When widget SQL changes, materialization should be dispatched."""
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         old_widget = _make_widget("w1", sql="SELECT 1 AS value")
         dashboard = self._seed_dashboard(dashboard_db, test_user.id, [old_widget])
@@ -172,7 +172,7 @@ class TestUpdateDashboardDispatch:
     @pytest.mark.asyncio
     async def test_update_no_dispatch_on_cosmetic_change(self, dashboard_db, test_user):
         """When only title/description changes (SQL unchanged), no materialization."""
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         widget = _make_widget("w1", sql="SELECT 1 AS value")
         dashboard = self._seed_dashboard(dashboard_db, test_user.id, [widget])
@@ -202,7 +202,7 @@ class TestUpdateDashboardDispatch:
     @pytest.mark.asyncio
     async def test_update_dispatches_on_connection_change(self, dashboard_db, test_user):
         """When widget connectionId changes (same SQL), materialization should be dispatched."""
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         old_widget = _make_widget("w1", sql="SELECT 1 AS value", connection_id=1)
         dashboard = self._seed_dashboard(dashboard_db, test_user.id, [old_widget])
@@ -327,7 +327,7 @@ class TestInlineExecutionAlongsideAsync:
     @pytest.mark.asyncio
     async def test_inline_sql_runs_before_dispatch(self, dashboard_db, test_user):
         """create_dashboard should execute SQL inline AND dispatch async materialization."""
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         context = _make_context(test_user.id)
 

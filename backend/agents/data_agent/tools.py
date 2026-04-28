@@ -285,31 +285,19 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
 # Each builder returns a list containing the single tool it builds.
 # ---------------------------------------------------------------------------
 
-def build_list_tables_tool(context: AgentContext) -> List:
-    """Return [list_tables] tool bound to *context*."""
-    tools = build_data_agent_tools(context)
-    return [t for t in tools if t.name == "list_tables"]
+def _build_single_data_tool(name: str) -> Callable[[AgentContext], List]:
+    """Return a builder that yields the single data-agent tool with this name."""
+
+    def builder(context: AgentContext) -> List:
+        return [t for t in build_data_agent_tools(context) if t.name == name]
+
+    builder.__name__ = f"build_{name}_tool"
+    builder.__doc__ = f"Return [{name}] tool bound to *context*."
+    return builder
 
 
-def build_get_table_schema_tool(context: AgentContext) -> List:
-    """Return [get_table_schema] tool bound to *context*."""
-    tools = build_data_agent_tools(context)
-    return [t for t in tools if t.name == "get_table_schema"]
-
-
-def build_search_tables_tool(context: AgentContext) -> List:
-    """Return [search_tables] tool bound to *context*."""
-    tools = build_data_agent_tools(context)
-    return [t for t in tools if t.name == "search_tables"]
-
-
-def build_execute_query_tool(context: AgentContext) -> List:
-    """Return [execute_query] tool bound to *context*."""
-    tools = build_data_agent_tools(context)
-    return [t for t in tools if t.name == "execute_query"]
-
-
-def build_profile_table_tool(context: AgentContext) -> List:
-    """Return [profile_table] tool bound to *context*."""
-    tools = build_data_agent_tools(context)
-    return [t for t in tools if t.name == "profile_table"]
+build_list_tables_tool = _build_single_data_tool("list_tables")
+build_get_table_schema_tool = _build_single_data_tool("get_table_schema")
+build_search_tables_tool = _build_single_data_tool("search_tables")
+build_execute_query_tool = _build_single_data_tool("execute_query")
+build_profile_table_tool = _build_single_data_tool("profile_table")

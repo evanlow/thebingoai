@@ -73,7 +73,7 @@ class TestDashboardAgentPluginTools:
         with patch("backend.agents.tool_registry.get_plugin_tool_builders",
                     return_value={"merge_datasets": fake_builder}), \
              patch("backend.agents.data_agent.tools.build_data_agent_tools", return_value=[]), \
-             patch("backend.agents.dashboard_tools.build_dashboard_tools", return_value=[]), \
+             patch("backend.agents.dashboard_tools.build_inline_dashboard_tools", return_value=[]), \
              patch("backend.config.settings") as mock_settings:
             mock_settings.agent_mesh_enabled = False
             tools = build_dashboard_agent_tools(context, db_factory)
@@ -90,7 +90,7 @@ class TestDashboardAgentPluginTools:
         with patch("backend.agents.tool_registry.get_plugin_tool_builders",
                     return_value={}), \
              patch("backend.agents.data_agent.tools.build_data_agent_tools", return_value=[]), \
-             patch("backend.agents.dashboard_tools.build_dashboard_tools", return_value=[]), \
+             patch("backend.agents.dashboard_tools.build_inline_dashboard_tools", return_value=[]), \
              patch("backend.config.settings") as mock_settings:
             mock_settings.agent_mesh_enabled = False
             tools = build_dashboard_agent_tools(context, db_factory)
@@ -121,7 +121,7 @@ class TestDashboardCreateGuard:
     @pytest.mark.asyncio
     async def test_dashboard_create_rejects_dataset_without_plugin(self):
         """Dataset connection rejected when CSV plugin not loaded."""
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         context = _make_context()
 
@@ -146,7 +146,7 @@ class TestDashboardCreateGuard:
     @pytest.mark.asyncio
     async def test_dashboard_create_allows_dataset_with_plugin(self):
         """Dataset connection allowed when CSV plugin is loaded."""
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         context = _make_context()
 
@@ -182,7 +182,7 @@ class TestDashboardCreateGuard:
     @pytest.mark.asyncio
     async def test_dashboard_create_allows_postgres_without_plugin(self):
         """Postgres connection passes through without CSV plugin."""
-        from backend.agents.dashboard_tools import build_dashboard_tools
+        from backend.agents.dashboard_tools import build_inline_dashboard_tools as build_dashboard_tools
 
         context = _make_context()
 

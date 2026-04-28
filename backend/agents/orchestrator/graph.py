@@ -12,8 +12,8 @@ from backend.agents.profile_renderer import ProfileRenderer, RuntimeContext
 from backend.agents.orchestrator.pre_steps import run_pre_steps, PreStepContext
 from backend.agents.orchestrator.response_judge import judge_response, JudgeVerdict
 from backend.agents.data_agent import invoke_data_agent
-from backend.agents.data_agent.graph import _make_loop_detector
 from backend.agents.exceptions import LoopDetectedError
+from backend.agents.loop_detector import make_loop_detector
 from backend.agents.rag_agent import invoke_rag_agent
 from backend.agents.context import AgentContext
 from backend.agents.tool_registry import build_tools_for_keys
@@ -291,16 +291,11 @@ def _create_orchestrator_agent(
         model=provider.get_langchain_llm(),
         tools=tools,
         prompt=prompt,
-        pre_model_hook=_make_loop_detector(max_repeats=2, max_same_tool=5, max_total_calls=20),
+        pre_model_hook=make_loop_detector(max_repeats=2, max_same_tool=5, max_total_calls=20),
     )
 
 
-def _extract_final_answer(messages: list) -> Optional[str]:
-    """Return the last AIMessage content without tool calls — the assistant's final textual answer."""
-    for msg in reversed(messages):
-        if hasattr(msg, "type") and msg.type == "ai" and not getattr(msg, "tool_calls", None):
-            return msg.content
-    return None
+from backend.agents.invoke_helpers import extract_final_answer as _extract_final_answer  # noqa: E402
 
 
 _HIGHLIGHT_TOKEN_RE = _re.compile(r"==(\S+?)==")
@@ -895,7 +890,7 @@ def _build_dynamic_tools(
                 model=provider.get_langchain_llm(),
                 tools=_tools,
                 prompt=_system_prompt,
-                pre_model_hook=_make_loop_detector(max_repeats=2, max_total_calls=25),
+                pre_model_hook=make_loop_detector(max_repeats=2, max_total_calls=25),
             )
             try:
                 result = await sub_agent.ainvoke(

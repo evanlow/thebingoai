@@ -3,7 +3,7 @@ from typing import List, Callable
 from langchain_core.tools import tool
 from backend.agents.context import AgentContext
 from backend.agents.data_agent.tools import build_data_agent_tools
-from backend.agents.dashboard_tools import build_dashboard_tools
+from backend.agents.dashboard_tools import build_inline_dashboard_tools
 from backend.config import settings
 
 
@@ -250,7 +250,7 @@ def build_dashboard_agent_tools(
     Returns:
         List of LangChain tools
     """
-    dashboard_creation_tools = build_dashboard_tools(context, db_session_factory)
+    dashboard_creation_tools = build_inline_dashboard_tools(context, db_session_factory)
 
     if settings.agent_mesh_enabled and context.session_id:
         # Mesh mode: delegate data exploration to data_agent via communication tools

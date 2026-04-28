@@ -16,6 +16,7 @@ from typing import Optional
 from langchain_core.messages import HumanMessage, AIMessage
 
 from backend.agents.context import AgentContext
+from backend.agents.invoke_helpers import extract_final_answer
 from backend.config import settings
 from backend.services.agent_registry import AgentRegistry
 from backend.services.agent_message_bus import AgentMessageBus
@@ -122,13 +123,7 @@ class AgentRuntime:
                 config={"recursion_limit": settings.agent_recursion_limit},
             )
 
-            # Extract final answer
-            result_messages = result.get("messages", [])
-            final_answer = None
-            for msg in reversed(result_messages):
-                if hasattr(msg, "type") and msg.type == "ai" and not getattr(msg, "tool_calls", None):
-                    final_answer = msg.content
-                    break
+            final_answer = extract_final_answer(result.get("messages", []))
 
             # 5. Update session status
             self.registry.heartbeat(self.session_id)
