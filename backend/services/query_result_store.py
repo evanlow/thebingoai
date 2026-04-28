@@ -48,13 +48,19 @@ def get_query_result(result_ref: str, user_id: str) -> Optional[Dict[str, Any]]:
 
 
 def publish_query_result(user_id: str, result_ref: str, data: Dict[str, Any]) -> None:
-    """Push query result to frontend via WebSocket pub/sub."""
+    """Push query result to frontend via WebSocket pub/sub.
+
+    Strips SQL fields from the wire payload — the chat UI shows query results,
+    not the underlying SQL. Server-side store_query_result keeps the full
+    payload (including SQL) for any backend consumer that needs it.
+    """
     from backend.services.ws_connection_manager import ConnectionManager
 
+    wire_data = {k: v for k, v in data.items() if k not in ("sql", "sql_queries")}
     message = {
         "type": "query.result",
         "result_ref": result_ref,
-        "data": data,
+        "data": wire_data,
     }
     try:
         ConnectionManager.publish_to_user_sync(user_id, message)

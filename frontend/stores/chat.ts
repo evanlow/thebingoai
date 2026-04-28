@@ -3,11 +3,11 @@ import type { SkillSuggestion } from '~/types/skillSuggestion'
 
 export interface AgentStep {
   agent_type: string         // "orchestrator" | "data_agent" | "rag_agent"
-  step_type: string          // "tool_call" | "tool_result" | "reasoning"
+  step_type: string          // "tool_call" | "tool_result" | "reasoning" | "judge_status"
   tool_name?: string         // "data_agent", "execute_query", "list_tables", etc.
-  content: Record<string, any>  // args, results, SQL, reasoning text
+  content: Record<string, any>  // args, results, reasoning text, or {state} for judge_status
   duration_ms?: number
-  status?: string            // "started" | "completed"
+  status?: string            // "started" | "completed" | "streaming"
   started_at?: number        // Date.now() epoch ms captured on frontend during streaming
   created_at?: string        // ISO datetime from backend DB for historical messages
 }

@@ -21,7 +21,6 @@ from backend.llm.factory import get_provider
 from backend.llm.base import BaseLLMProvider
 from backend.config import settings
 from typing import Dict, Any, List, Optional, Tuple, Callable, TYPE_CHECKING
-import asyncio
 import json
 import logging
 import re as _re
@@ -131,6 +130,26 @@ def _sanitize_technical_errors(text: str) -> str:
     cleaned = _DECIMAL_LEAK.sub("", cleaned)
     cleaned = _COLLAPSE_BLANK_LINES.sub("\n\n", cleaned)
     return cleaned.strip()
+
+
+_SQL_FIELDS = {"sql", "query", "sql_queries"}
+
+
+def _scrub_sql_for_client(content: Any) -> Any:
+    """Strip SQL strings from a streamed event payload before it crosses to the client.
+
+    SQL stays available inside the agent loop (LLM self-correction) and in
+    server-side persisted steps; only the wire payload going to the user is
+    stripped, so the chat UI never surfaces raw SQL.
+    """
+    if not isinstance(content, dict):
+        return content
+    out = {k: v for k, v in content.items() if k not in _SQL_FIELDS}
+    for nested_key in ("args", "result"):
+        nested = out.get(nested_key)
+        if isinstance(nested, dict):
+            out[nested_key] = {k: v for k, v in nested.items() if k not in _SQL_FIELDS}
+    return out
 
 
 def build_user_message(user_question: str, file_contents: list = None) -> HumanMessage:
@@ -1096,7 +1115,7 @@ async def stream_orchestrator(
                 collected_steps.append(step)
                 yield {
                     "type": "tool_call",
-                    "content": {"tool": tool_name, "status": "started", "args": tool_input}
+                    "content": _scrub_sql_for_client({"tool": tool_name, "status": "started", "args": tool_input}),
                 }
 
             elif kind == "on_tool_end":
@@ -1136,7 +1155,7 @@ async def stream_orchestrator(
                 collected_steps.append(step)
                 yield {
                     "type": "tool_result",
-                    "content": {"tool": tool_name, "status": "completed", "result": parsed_output, "duration_ms": duration_ms}
+                    "content": _scrub_sql_for_client({"tool": tool_name, "status": "completed", "result": parsed_output, "duration_ms": duration_ms}),
                 }
 
                 # Force-stop: ask_user_question ends the turn immediately
@@ -1189,27 +1208,26 @@ async def stream_orchestrator(
         judge_metadata: Optional[Dict[str, Any]] = None
         highlighted_text: Optional[str] = None
         if settings.judge_enabled and final_answer_text:
+            yield {"type": "judge_status", "content": {"state": "refining"}}
             verdict = await judge_response(user_question, final_answer_text)
             if not verdict.resolved:
                 logger.warning("Layer-4 judge says unresolved: %s", verdict.reason)
-                yield {"type": "status", "content": "Refining response..."}
                 final_answer_text, retry_succeeded, judge_metadata = await _run_judge_retry(
                     user_question, final_answer_text, verdict, orchestrator, messages,
                 )
                 highlighted_text = (judge_metadata or {}).get("retry_highlighted_response")
+                yield {"type": "judge_status", "content": {"state": "refined"}}
             else:
                 highlighted_text = verdict.highlighted_response
+                yield {"type": "judge_status", "content": {"state": "approved"}}
 
         if settings.judge_highlight_enabled and final_answer_text:
             final_answer_text = _apply_highlights(final_answer_text, highlighted_text)
 
-        # Re-stream the judge-approved answer as paced word-chunks so the
-        # frontend drip ticker renders it word-by-word (Claude-Desktop feel)
-        # instead of filling instantly via catch-up.
+        # Send the judge-approved answer in one frame; the frontend char-drip
+        # paces the typing animation so we don't double-pace the same text.
         if final_answer_text:
-            for chunk in _re.findall(r"\S+\s*|\s+", final_answer_text):
-                yield {"type": "token", "content": chunk}
-                await asyncio.sleep(0.025)
+            yield {"type": "token", "content": final_answer_text}
 
         yield {
             "type": "done",

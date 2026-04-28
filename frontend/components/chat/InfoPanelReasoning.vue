@@ -240,6 +240,23 @@ const treeNodes = computed((): TreeNode => {
       continue
     }
 
+    if (step.step_type === 'judge_status') {
+      flushBuffer()
+      const state = step.content?.state ?? 'refining'
+      const label =
+        state === 'refining' ? 'Refining response…' :
+        state === 'refined' ? 'Response refined' :
+        'Response approved'
+      root.children.push({
+        type: 'reasoning',
+        label,
+        status: state === 'refining' ? 'streaming' : 'completed',
+        timestamp: formatTimestamp(step) || undefined,
+        children: [],
+      })
+      continue
+    }
+
     if (step.step_type !== 'tool_call') continue
 
     const ts = formatTimestamp(step) || undefined

@@ -36,12 +36,9 @@
     </div>
   </div>
 
-  <!-- Sub-agent result (data_agent / rag_agent): show message + SQL -->
+  <!-- Sub-agent result (data_agent / rag_agent): show outcome message only — SQL stays server-side -->
   <div v-else-if="isAgentResult">
     <p v-if="result.message" class="text-xs text-gray-700 line-clamp-3">{{ result.message }}</p>
-    <div v-if="result.sql_queries?.length" class="mt-1 rounded bg-gray-50 border border-gray-100 p-2">
-      <pre class="text-xs text-gray-700 whitespace-pre-wrap break-all">{{ result.sql_queries[0] }}</pre>
-    </div>
   </div>
 
   <!-- Table list result -->

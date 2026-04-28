@@ -305,11 +305,26 @@ export const useChatStreaming = () => {
         // Keep the result with the most rows when multiple queries run in one turn
         const targetMsg = chatStore.messages.find(m => m.id === assistantMsgId)
         if (!targetMsg?.results?.length || results.length >= (targetMsg.results?.length || 0)) {
-          chatStore.updateMessageById(assistantMsgId, {
-            sql: payload.sql || undefined,
-            results,
+          chatStore.updateMessageById(assistantMsgId, { results })
+        }
+      })
+
+      onEvent('chat.judge_status', (data) => {
+        const state = data.content?.state ?? 'refining'
+        const last = agentSteps[agentSteps.length - 1]
+        if (last?.step_type === 'judge_status' && state !== 'refining') {
+          last.status = 'completed'
+          last.content = { state }
+        } else {
+          agentSteps.push({
+            agent_type: 'orchestrator',
+            step_type: 'judge_status',
+            content: { state },
+            status: state === 'refining' ? 'streaming' : 'completed',
+            started_at: Date.now(),
           })
         }
+        chatStore.updateMessageById(assistantMsgId, { agent_steps: [...agentSteps] })
       })
 
       onEvent('chat.reasoning_end', (data) => {
@@ -355,8 +370,19 @@ export const useChatStreaming = () => {
         // Refresh credit balance after each turn so the badge stays current
         refreshCredits()
 
-        flushContentDrip()
-        cleanup()
+        // Backend sends the post-judge text in one frame and `done` lands
+        // milliseconds later — flushing here would snap the bubble. Wait
+        // for the char-drip to drain so the bubble actually animates,
+        // then run cleanup. If already drained (no token, error path
+        // already filled it), this is a no-op.
+        const finalizeWhenDripDone = () => {
+          if (displayedContent.length >= accumulatedContent.length) {
+            cleanup()
+          } else {
+            setTimeout(finalizeWhenDripDone, DRIP_INTERVAL_MS)
+          }
+        }
+        finalizeWhenDripDone()
       })
 
       onEvent('chat.error', (data) => {
