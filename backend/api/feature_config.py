@@ -4,6 +4,15 @@ from backend.config import settings
 router = APIRouter(prefix="/config", tags=["config"])
 
 
+def _is_real_key(value: str | None) -> bool:
+    # `.env.example` ships placeholders like "sk-..." / "sk-ant-..."; reject any value
+    # containing literal "..." since real API keys never use it as a delimiter.
+    if not value:
+        return False
+    stripped = value.strip()
+    return bool(stripped) and "..." not in stripped
+
+
 @router.get("")
 async def get_config():
     from backend.plugins.loader import get_loaded_plugins
@@ -18,11 +27,11 @@ async def get_config():
         "telegram_enabled": telegram_enabled,
         "providers": {
             "openai": {
-                "configured": bool(settings.openai_api_key),
+                "configured": _is_real_key(settings.openai_api_key),
                 "base_url": "https://api.openai.com/v1",
             },
             "anthropic": {
-                "configured": bool(settings.anthropic_api_key),
+                "configured": _is_real_key(settings.anthropic_api_key),
                 "base_url": "https://api.anthropic.com",
             },
         },
