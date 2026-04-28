@@ -412,6 +412,19 @@
                 <p class="text-sm text-gray-900 dark:text-neutral-200 mt-0.5">{{ editingConnection.source_filename }}</p>
               </div>
             </div>
+
+            <div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-6 hidden md:block">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
+                  <p class="text-xs text-gray-500 dark:text-neutral-400">This action cannot be undone.</p>
+                </div>
+                <UiButton variant="danger" size="sm" @click="openDeleteDialog(editingConnection!)">
+                  <Trash2 class="h-3.5 w-3.5" />
+                  Delete
+                </UiButton>
+              </div>
+            </div>
           </template>
 
           <!-- Standard database connection form -->
