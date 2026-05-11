@@ -67,7 +67,10 @@ export const useChatStore = defineStore('chat', {
     conversations: [] as Conversation[],
     conversationsLoaded: false,
     archivedConversations: [] as Conversation[],
-    currentThreadId: null as string | null,
+    currentThreadId: (() => {
+      try { return localStorage.getItem('chat_currentThreadId') }
+      catch { return null }
+    })() as string | null,
     messages: [] as Message[],
     inputText: '',
     attachedFiles: [] as File[],
@@ -89,6 +92,7 @@ export const useChatStore = defineStore('chat', {
     conversationHasMore: false,
     conversationOffset: 0,
     isLoadingMoreConversations: false,
+    pendingNewConversationId: null as string | null,
   }),
 
   getters: {
@@ -165,10 +169,12 @@ export const useChatStore = defineStore('chat', {
     },
 
     hydrateFromStorage() {
-      const stored = localStorage.getItem('chat_currentThreadId')
-      if (stored) {
-        this.currentThreadId = stored
-      }
+      try {
+        const stored = localStorage.getItem('chat_currentThreadId')
+        if (stored) {
+          this.currentThreadId = stored
+        }
+      } catch { /* localStorage may not be available */ }
     },
 
     setMessages(messages: Message[]) {
@@ -212,6 +218,16 @@ export const useChatStore = defineStore('chat', {
 
     addConversation(conversation: Conversation) {
       this.conversations.unshift(conversation)
+    },
+
+    replacePendingConversation(realConv: Conversation) {
+      const idx = this.conversations.findIndex(c => c.id === this.pendingNewConversationId)
+      if (idx !== -1) {
+        this.conversations.splice(idx, 1, realConv)
+      } else {
+        this.conversations.unshift(realConv)
+      }
+      this.pendingNewConversationId = null
     },
 
     removeConversation(threadId: string) {
