@@ -62,6 +62,15 @@
                 </button>
               </div>
             </div>
+            <!-- Share button (visible when ShareButton component is registered by the
+                 governance plugin; auto-importable across the Nuxt layer). -->
+            <ShareButton
+              v-if="connection.uuid"
+              resource-type="connection"
+              :resource-id="connection.uuid"
+              class="mt-0.5 shrink-0"
+              @click.stop
+            />
             <!-- Spinner while sync or profile is running -->
             <Loader2
               v-if="connection.profiling_status === 'in_progress' || connection.profiling_status === 'pending'"
@@ -1784,7 +1793,11 @@ async function confirmDelete() {
     showFormSheet.value = false
     await fetchConnections()
   } catch (err: any) {
-    const errorMessage = err?.data?.detail || err?.message || 'Failed to delete connection'
+    const detail = err?.data?.detail
+    const errorMessage =
+      (detail && typeof detail === 'object' ? detail.message : detail) ||
+      err?.message ||
+      'Failed to delete connection'
     toast.error(errorMessage)
   } finally {
     deleting.value = false

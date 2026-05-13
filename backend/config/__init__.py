@@ -109,6 +109,27 @@ class Settings(BaseSettings):
     do_spaces_key_id: Optional[str] = None
     do_spaces_secret_key: Optional[str] = None
 
+    # DataPlane (Phase 1)
+    data_plane_local_root: str = "/data/data_plane"
+
+    # DataPlane lockdown (Shape A): when true, get_default_plane() raises
+    # NoPlaneProvisionedError instead of falling back to LocalFilesystem, and
+    # any local_filesystem rows raise LocalPlaneUnderLockdownError on access.
+    # Per-Org buckets/datasets live on data_planes rows (auto-provisioned on
+    # org create by the bingo-admin plugin), not env vars.
+    disable_local_data_plane: bool = False
+
+    # Internal Bingo-managed GCP (only required when disable_local_data_plane=True)
+    internal_gcp_project: Optional[str] = None
+    internal_gcs_bucket: Optional[str] = None  # legacy singleton — unused after Shape A; kept until env files migrate
+    internal_bq_dataset: Optional[str] = None  # legacy singleton — unused after Shape A; kept until env files migrate
+    internal_gcp_sa_json_path: Optional[str] = None
+    internal_gcp_location: str = "US"   # GCS + BQ region for auto-provisioned per-Org buckets/datasets
+
+    # Signup flow — when on, every SSO sign-up creates a new Org (1 user = 1 Org).
+    # Required for per-Org auto-provisioned internal-GCP planes (Shape A).
+    per_user_org_signup: bool = False
+
     # Server settings
     cors_allowed_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173"
     app_version: str = "0.1.0"
@@ -134,6 +155,7 @@ class Settings(BaseSettings):
     enable_governance: bool = False
     agent_mesh_enabled: bool = False
     orchestrator_lean_tools: bool = False  # ≤10 primary tools + manage meta-tool + @-mention scope
+    template_backfill_on_startup: bool = True  # plugin-template framework: backfill existing connections at boot
 
     # Agent mesh settings (Redis DB 4)
     agent_mesh_redis_url: str = "redis://localhost:6379/4"
