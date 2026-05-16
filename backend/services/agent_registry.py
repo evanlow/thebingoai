@@ -12,22 +12,19 @@ from typing import Optional
 
 import redis
 
-from backend.config import settings
+from backend.models.agent_session import SessionStatus
+from backend.services._agent_mesh import assert_session_owned, get_redis
 
 logger = logging.getLogger(__name__)
 
 SESSION_TTL_SECONDS = 300  # 5 minutes without heartbeat = expired
 
 
-def _get_redis() -> redis.Redis:
-    return redis.from_url(settings.agent_mesh_redis_url, decode_responses=True)
-
-
 class AgentRegistry:
     """Register, deregister, and heartbeat agent sessions in Redis."""
 
     def __init__(self, redis_client: Optional[redis.Redis] = None):
-        self.redis = redis_client or _get_redis()
+        self.redis = redis_client or get_redis()
 
     def register_session(
         self,
@@ -43,7 +40,7 @@ class AgentRegistry:
             "session_id": session_id,
             "user_id": user_id,
             "agent_type": agent_type,
-            "status": "active",
+            "status": SessionStatus.ACTIVE.value,
             "capabilities": json.dumps(capabilities or {}),
             "metadata": json.dumps(metadata or {}),
             "last_heartbeat": now,
@@ -83,7 +80,7 @@ class AgentRegistry:
 
         pipe = self.redis.pipeline()
         pipe.hset(key, "last_heartbeat", datetime.utcnow().isoformat())
-        pipe.hset(key, "status", "active")
+        pipe.hset(key, "status", SessionStatus.ACTIVE.value)
         pipe.expire(key, SESSION_TTL_SECONDS)
         pipe.execute()
         return True
@@ -130,8 +127,8 @@ class AgentRegistry:
                 except (ValueError, TypeError):
                     continue
                 if datetime.utcnow() - last_hb_dt > timedelta(seconds=SESSION_TTL_SECONDS):
-                    if data.get("status") != "terminated":
-                        self.redis.hset(key, "status", "degraded")
+                    if data.get("status") != SessionStatus.TERMINATED.value:
+                        self.redis.hset(key, "status", SessionStatus.DEGRADED.value)
                         stale_count += 1
             if cursor == 0:
                 break
@@ -139,7 +136,4 @@ class AgentRegistry:
 
     def _validate_ownership(self, user_id: str, session_id: str) -> None:
         """Raise PermissionError if session is not owned by user."""
-        if not self.redis.sismember(f"agent:user_sessions:{user_id}", session_id):
-            raise PermissionError(
-                f"Session {session_id} is not owned by user {user_id}"
-            )
+        assert_session_owned(self.redis, user_id, session_id)
