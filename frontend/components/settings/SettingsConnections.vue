@@ -598,19 +598,44 @@
 
     <!-- Delete Confirmation Dialog -->
     <UiDialog
-      v-model:open="showDeleteDialog"
+      :open="showDeleteDialog"
+      @update:open="(v: boolean) => { if (!v) closeDeleteDialog() }"
       title="Delete Connection"
       size="sm"
     >
-      <p class="text-sm text-gray-600">
-        Are you sure you want to delete <strong>{{ deletingConnection?.name }}</strong>?
-        This action cannot be undone.
-      </p>
+      <template v-if="cascadePipelines.length === 0">
+        <p class="text-sm text-gray-600">
+          Are you sure you want to delete <strong>{{ deletingConnection?.name }}</strong>?
+          This action cannot be undone.
+        </p>
+      </template>
+      <template v-else>
+        <div class="space-y-3">
+          <p class="text-sm text-gray-700 dark:text-neutral-200">
+            <strong>{{ deletingConnection?.name }}</strong> is used by
+            {{ cascadePipelines.length }} pipeline{{ cascadePipelines.length === 1 ? '' : 's' }}.
+            Deleting the connection will also delete:
+          </p>
+          <ul class="max-h-48 overflow-y-auto rounded-md border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 divide-y divide-gray-200 dark:divide-neutral-700">
+            <li
+              v-for="p in cascadePipelines"
+              :key="p.id"
+              class="px-3 py-2 text-sm text-gray-800 dark:text-neutral-100 truncate"
+              :title="p.name"
+            >
+              {{ p.name }}
+            </li>
+          </ul>
+          <p class="text-xs text-red-600 dark:text-red-400">
+            Pipeline run history will be removed. Materialized tables on the data warehouse are preserved.
+          </p>
+        </div>
+      </template>
 
       <template #footer>
         <UiButton
           variant="outline"
-          @click="showDeleteDialog = false"
+          @click="closeDeleteDialog"
         >
           Cancel
         </UiButton>
@@ -619,7 +644,9 @@
           :loading="deleting"
           @click="confirmDelete"
         >
-          Delete
+          {{ cascadePipelines.length > 0
+            ? `Delete connection + ${cascadePipelines.length} pipeline${cascadePipelines.length === 1 ? '' : 's'}`
+            : 'Delete' }}
         </UiButton>
       </template>
     </UiDialog>
@@ -797,6 +824,7 @@ const connectionFailedMessage = ref('')
 const showDeleteDialog = ref(false)
 const deletingConnection = ref<DatabaseConnection | null>(null)
 const deleting = ref(false)
+const cascadePipelines = ref<{ id: string; name: string }[]>([])
 const refreshingId = ref<number | null>(null)
 const testing = ref(false)
 const testSuccess = ref(false)
@@ -1780,21 +1808,44 @@ async function refreshSchema(connection: DatabaseConnection) {
 
 function openDeleteDialog(connection: DatabaseConnection) {
   deletingConnection.value = connection
+  cascadePipelines.value = []
   showDeleteDialog.value = true
+}
+
+function closeDeleteDialog() {
+  showDeleteDialog.value = false
+  cascadePipelines.value = []
 }
 
 async function confirmDelete() {
   if (!deletingConnection.value) return
 
+  const cascade = cascadePipelines.value.length > 0
   try {
     deleting.value = true
-    await api.connections.delete(String(deletingConnection.value.id))
-    toast.success('Connection deleted successfully')
-    showDeleteDialog.value = false
+    await api.connections.delete(String(deletingConnection.value.id), cascade ? { cascade: true } : undefined)
+    toast.success(
+      cascade
+        ? `Connection and ${cascadePipelines.value.length} pipeline(s) deleted`
+        : 'Connection deleted successfully'
+    )
+    closeDeleteDialog()
     showFormSheet.value = false
     await fetchConnections()
   } catch (err: any) {
     const detail = err?.data?.detail
+    const status = err?.statusCode ?? err?.status
+    if (
+      status === 409 &&
+      detail &&
+      typeof detail === 'object' &&
+      detail.code === 'connection_in_use' &&
+      Array.isArray(detail.pipelines)
+    ) {
+      // Expand dialog to cascade-confirm step instead of toasting.
+      cascadePipelines.value = detail.pipelines
+      return
+    }
     const errorMessage =
       (detail && typeof detail === 'object' ? detail.message : detail) ||
       err?.message ||

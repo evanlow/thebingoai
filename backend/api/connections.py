@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database.session import get_db
@@ -463,10 +463,17 @@ async def update_connection(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: str,
+    cascade: bool = Query(False, description="If true, also delete dependent pipelines (and their run history)."),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete a database connection and its cached schema."""
+    """Delete a database connection and its cached schema.
+
+    When ``cascade=false`` (default), returns HTTP 409 ``connection_in_use``
+    listing dependent pipelines so the UI can re-confirm. When ``cascade=true``,
+    dependent pipelines (and their PipelineRun / DltPipelineState rows) are
+    deleted first via ``resource_lifecycle.delete_pipeline``.
+    """
     connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
@@ -474,12 +481,17 @@ async def delete_connection(
 
     _governance_require_mutate_connection(current_user, connection)
 
-    # Block delete when pipelines still reference this connection (FK is NOT NULL)
+    # Delegates dependency check + optional cascade to the lifecycle helper.
+    # Re-raises the helper's RuntimeError as the existing 409 payload so the
+    # frontend's error parser is unchanged.
     from backend.models.pipeline import Pipeline
-    blocking = db.query(Pipeline.id, Pipeline.name).filter(
-        Pipeline.source_connection_id == connection.id
-    ).all()
-    if blocking:
+    from backend.services.resource_lifecycle import guard_connection_delete
+    try:
+        guard_connection_delete(connection.id, db, cascade=cascade)
+    except RuntimeError:
+        blocking = db.query(Pipeline.id, Pipeline.name).filter(
+            Pipeline.source_connection_id == connection.id
+        ).all()
         pipeline_list = [{"id": p.id, "name": p.name} for p in blocking]
         names_preview = ", ".join(p["name"] for p in pipeline_list[:3])
         if len(pipeline_list) > 3:
@@ -490,8 +502,7 @@ async def delete_connection(
                 "code": "connection_in_use",
                 "message": (
                     f"This connection is used by {len(pipeline_list)} pipeline"
-                    f"{'s' if len(pipeline_list) != 1 else ''} ({names_preview}). "
-                    "Delete the pipeline(s) first, then retry."
+                    f"{'s' if len(pipeline_list) != 1 else ''} ({names_preview})."
                 ),
                 "pipelines": pipeline_list,
             },
