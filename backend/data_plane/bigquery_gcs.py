@@ -306,9 +306,17 @@ class BigQueryGCSPlane:
         result = sql
         for t in sorted(tables, key=len, reverse=True):  # longest first
             bq_name = self._bq_table_name(scope, t)
+            target = f"`{prefix}{bq_name}`"
+            # Already-backticked occurrences (LLM emits these now that the
+            # dashboard agent prompt locks SQL to BigQuery dialect).
+            result = re.sub(rf"`{re.escape(t)}`", target, result)
+            # Bare occurrences only. The lookbehind/ahead avoids wrapping a
+            # table name that already sits inside a backticked FQN like
+            # `proj.ds.scope__insights_daily` (which would otherwise produce
+            # `` `proj.ds.scope__`...`insights_daily` `` ` → empty identifier).
             result = re.sub(
-                rf"\b{re.escape(t)}\b",
-                f"`{prefix}{bq_name}`",
+                rf"(?<![`\w]){re.escape(t)}(?![`\w])",
+                target,
                 result,
             )
 
