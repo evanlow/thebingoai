@@ -287,6 +287,22 @@ def profile_pipeline_output(self, pipeline_id: str, run_id: str):
         db.commit()
         logger.info("profile_pipeline_output done for pipeline %s run %s", pipeline_id, run_id)
 
+        # For pipeline-only connectors (skip_profiling=True), the connection's
+        # profiling_status stays 'pending' after OAuth connect so the UI shows yellow.
+        # Update it to 'ready' now that the pipeline has run successfully.
+        try:
+            from backend.models.database_connection import DatabaseConnection, ProfilingStatus
+            conn = db.query(DatabaseConnection).filter(
+                DatabaseConnection.id == pipeline.source_connection_id
+            ).first()
+            if conn and conn.profiling_status == ProfilingStatus.PENDING.value:
+                conn.profiling_status = ProfilingStatus.READY.value
+                db.commit()
+                logger.info("profile_pipeline_output: updated connection %d profiling_status to ready", conn.id)
+        except Exception as e:
+            logger.warning("profile_pipeline_output: failed to update connection profiling_status: %s", e)
+            db.rollback()
+
     except Exception as exc:
         logger.error("profile_pipeline_output failed for pipeline %s: %s", pipeline_id, exc)
         # Profile failure does NOT fail the run — just log

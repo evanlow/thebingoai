@@ -934,6 +934,7 @@ function getConnectorType(id: string): ConnectorType | undefined {
 
 // Card accent color based on active/profiling status
 function getAccentClass(connection: DatabaseConnection): string {
+  if (connection.profiling_status === 'failed') return 'bg-red-500'
   if (connection.profiling_status === 'in_progress' || connection.profiling_status === 'pending') {
     return 'bg-yellow-400'
   }
@@ -1222,28 +1223,28 @@ function startProfilingPolling(connectionId: number) {
   profilingPollers.value[connectionId] = setInterval(async () => {
     try {
       const status = await api.connections.getProfilingStatus(connectionId) as {
-        profiling_status: string
-        profiling_progress: string | null
-        profiling_error: string | null
+        status: string
+        progress: string | null
+        error: string | null
       }
 
       // Update the connection in local state
       const conn = connections.value.find(c => c.id === connectionId)
       if (conn) {
-        conn.profiling_status = status.profiling_status as DatabaseConnection['profiling_status']
-        conn.profiling_progress = status.profiling_progress
-        conn.profiling_error = status.profiling_error
+        conn.profiling_status = status.status as DatabaseConnection['profiling_status']
+        conn.profiling_progress = status.progress
+        conn.profiling_error = status.error
       }
 
       // Also update editingConnection if it matches
       if (editingConnection.value?.id === connectionId) {
-        editingConnection.value.profiling_status = status.profiling_status as DatabaseConnection['profiling_status']
-        editingConnection.value.profiling_progress = status.profiling_progress
-        editingConnection.value.profiling_error = status.profiling_error
+        editingConnection.value.profiling_status = status.status as DatabaseConnection['profiling_status']
+        editingConnection.value.profiling_progress = status.progress
+        editingConnection.value.profiling_error = status.error
       }
 
       // Stop polling when terminal state reached
-      if (status.profiling_status === 'ready' || status.profiling_status === 'failed') {
+      if (status.status === 'ready' || status.status === 'failed') {
         stopProfilingPolling(connectionId)
       }
     } catch {
