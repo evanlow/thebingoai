@@ -253,14 +253,9 @@ def build_dashboard_agent_prompt(
         except FileNotFoundError:
             pass
 
-    # Conditionally append dialect hints based on which plugins are loaded
-    from backend.agents.profile_defaults import (
-        _csv_plugin_loaded, SQLITE_DIALECT_HINTS,
-        _bigquery_plugin_loaded, BIGQUERY_DIALECT_HINTS,
-    )
-    if _csv_plugin_loaded():
-        prompt += SQLITE_DIALECT_HINTS
-    if _bigquery_plugin_loaded():
-        prompt += BIGQUERY_DIALECT_HINTS
+    # Dashboard widgets always run against the DataPlane = BigQuery in
+    # enterprise lockdown. Lock the generator to BigQuery unconditionally.
+    from backend.agents.profile_defaults import BIGQUERY_DIALECT_HINTS
+    prompt += BIGQUERY_DIALECT_HINTS
 
     return prompt

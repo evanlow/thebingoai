@@ -42,13 +42,43 @@ def _csv_plugin_loaded() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# BigQuery dialect hints — appended only when the BigQuery connector plugin is loaded
+# BigQuery dialect hints — always appended to the dashboard agent because
+# every connector materializes via the DataPlane = BigQuery in enterprise
+# lockdown. Generator MUST emit BigQuery; Postgres idioms (`::cast`,
+# `AT TIME ZONE`, `INTERVAL 'N day'`, `DATE_TRUNC('day', col)`) all fail at
+# BigQuery execution.
 # ---------------------------------------------------------------------------
 BIGQUERY_DIALECT_HINTS = """
 
-## BigQuery SQL Dialect (for BigQuery connections)
+## BigQuery SQL Dialect — REQUIRED for all generated SQL
 
-When generating SQL for a BigQuery connection, apply these rules:
+All widget queries execute against BigQuery. Postgres idioms FAIL. Apply these rules without exception:
+
+**Syntax rules:**
+- Identifiers in backticks: `` `col` `` or `` `dataset.table` ``. Double quotes are STRING LITERALS, never identifiers.
+- `CAST(x AS TYPE)` — NEVER `x::TYPE`.
+- `DATE_TRUNC(x, DAY)` — arg order is `(col, unit)`, unit is an unquoted keyword. NEVER `DATE_TRUNC('day', x)`.
+- `INTERVAL N UNIT` — unquoted `N`, unquoted `UNIT` keyword. NEVER `INTERVAL 'N day'`. Example: `INTERVAL 1 DAY`.
+- `CURRENT_TIMESTAMP()` already returns UTC. Do NOT use `AT TIME ZONE 'UTC'`. For day-precision today use `CURRENT_DATE()`; for day-truncated timestamp use `TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY)`.
+- `LIKE` only (no `ILIKE`). Case-insensitive: `LOWER(col) LIKE LOWER(pattern)`.
+- `DATE_SUB(d, INTERVAL N DAY)` for date subtraction; `DATE_ADD` for addition. NEVER `d - INTERVAL '1 day'`.
+- `SAFE_DIVIDE(a, b)` and `SAFE_CAST(x AS TYPE)` for null/error-safe math + casts.
+
+**Date arithmetic skeleton (copy/adapt — do NOT reinvent in Postgres):**
+```sql
+WITH bounds AS (
+  SELECT
+    CURRENT_DATE() AS today,
+    DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS yesterday,
+    DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY) AS sixty_days_ago
+)
+SELECT
+  CAST(date_start AS DATE) AS date_start,
+  SUM(spend) AS spend
+FROM insights_daily, bounds
+WHERE CAST(date_start AS DATE) = bounds.yesterday
+GROUP BY 1
+```
 
 **Partitioned tables** — a column whose `type` is `PARTITION_KEY(col)` or `RANGE_PARTITION_KEY(col)` is the partition field. Always filter on it to avoid full-table scans.
 - Example: `WHERE event_date >= '2024-01-01' AND event_date < '2024-02-01'`
@@ -60,10 +90,9 @@ When generating SQL for a BigQuery connection, apply these rules:
 - Example: `` SELECT * FROM `dataset.events_*` WHERE _TABLE_SUFFIX BETWEEN '20240101' AND '20240131' ``
 - Do NOT query individual shard tables directly.
 
-**General BigQuery rules:**
+**General:**
 - Prefer `dataset.table` over fully-qualified names unless cross-project queries are needed
-- `LIMIT` goes at the end of the query
-- Use `SAFE_DIVIDE`, `SAFE_CAST` for null-safe math/casting"""
+- `LIMIT` goes at the end of the query"""
 
 
 def _bigquery_plugin_loaded() -> bool:
@@ -686,10 +715,8 @@ def get_default_section(agent_type: str, section: str) -> Optional[str]:
     """Get the default content for a specific agent type and section."""
     agent_defaults = DEFAULTS.get(agent_type, {})
     content = agent_defaults.get(section)
-    # Conditionally append dialect hints for dashboard agent tools
+    # Dashboard widgets always run against the DataPlane = BigQuery in
+    # enterprise lockdown. Lock the generator to BigQuery unconditionally.
     if content and agent_type == "dashboard_agent" and section == "tools":
-        if _csv_plugin_loaded():
-            content += SQLITE_DIALECT_HINTS
-        if _bigquery_plugin_loaded():
-            content += BIGQUERY_DIALECT_HINTS
+        content += BIGQUERY_DIALECT_HINTS
     return content
