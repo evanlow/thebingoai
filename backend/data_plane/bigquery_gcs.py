@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Iterator
@@ -18,6 +19,52 @@ from backend.connectors.base import QueryResult, TableSchema
 from .scope import OwnerScope
 
 logger = logging.getLogger(__name__)
+
+_PYFORMAT_RE = re.compile(r'%\((\w+)\)s')
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_ISO_DATETIME_RE = re.compile(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}')
+
+
+def _pyformat_to_bq(query: str, params: dict[str, Any] | None):
+    """Rewrite pyformat ``%(key)s`` placeholders to BigQuery ``@key`` syntax
+    and build a list of ``ScalarQueryParameter`` for ``QueryJobConfig``.
+
+    Returns ``(rewritten_sql, bq_params_list)``. No-op when ``params`` is empty.
+    String values matching ``YYYY-MM-DD`` are bound as DATE so they compare
+    cleanly against DATE columns; ISO datetime strings are bound as TIMESTAMP.
+    """
+    from google.cloud import bigquery
+
+    if not params:
+        return query, []
+
+    used: set[str] = set()
+
+    def _sub(match: "re.Match[str]") -> str:
+        used.add(match.group(1))
+        return f"@{match.group(1)}"
+
+    converted = _PYFORMAT_RE.sub(_sub, query)
+
+    def _bq_type(value: Any) -> str:
+        if isinstance(value, bool):
+            return "BOOL"
+        if isinstance(value, int):
+            return "INT64"
+        if isinstance(value, float):
+            return "FLOAT64"
+        if isinstance(value, str):
+            if _ISO_DATE_RE.match(value):
+                return "DATE"
+            if _ISO_DATETIME_RE.match(value):
+                return "TIMESTAMP"
+        return "STRING"
+
+    bq_params = [
+        bigquery.ScalarQueryParameter(k, _bq_type(params[k]), params[k])
+        for k in used
+    ]
+    return converted, bq_params
 
 
 class BigQueryGCSPlane:
@@ -150,10 +197,21 @@ class BigQueryGCSPlane:
         sql: str,
         params: dict[str, Any] | None = None,
     ) -> QueryResult:
-        # Rewrite bare table names to fully-qualified BQ names
+        from google.cloud import bigquery
+
         rewritten_sql = self._rewrite_sql(scope, sql)
+        bound_sql, bq_params = _pyformat_to_bq(rewritten_sql, params)
+        job_config = (
+            bigquery.QueryJobConfig(query_parameters=bq_params)
+            if bq_params
+            else None
+        )
         start = time.time()
-        job = self._bq().query(rewritten_sql)
+        job = (
+            self._bq().query(bound_sql, job_config=job_config)
+            if job_config is not None
+            else self._bq().query(bound_sql)
+        )
         rows_iter = job.result()
         columns = [f.name for f in rows_iter.schema]
         rows = [tuple(row.values()) for row in rows_iter]
@@ -230,21 +288,35 @@ class BigQueryGCSPlane:
         return f"{safe_scope}__{safe_table}"
 
     def _rewrite_sql(self, scope: OwnerScope, sql: str) -> str:
-        """Replace bare table names with fully-qualified BQ references."""
+        """Rewrite bare table names → fully-qualified BQ references, and
+        Postgres-style double-quoted identifiers ("col") → BQ backtick
+        identifiers (`col`).
+
+        Filter injection (``backend.api.widget_data.inject_filters``) emits
+        double-quoted identifiers because Postgres/MySQL accept them. BigQuery
+        standard SQL treats ``"col"`` as a STRING LITERAL, which fails with
+        ``Could not cast literal "col" to type DATE``. Convert any
+        ``"<simple_identifier>"`` token to backticks. Non-identifier string
+        literals (with spaces/punctuation) are left alone.
+        """
         import re
+
         prefix = f"{self._project}.{self._dataset}."
         tables = self.list_tables(scope)
         result = sql
         for t in sorted(tables, key=len, reverse=True):  # longest first
             bq_name = self._bq_table_name(scope, t)
-            # Backtick the fully-qualified id: scope/dataset can contain hyphens
-            # (UUID-based org ids, customer dataset names), which BQ requires
-            # to be quoted in SQL identifiers.
             result = re.sub(
                 rf"\b{re.escape(t)}\b",
                 f"`{prefix}{bq_name}`",
                 result,
             )
+
+        result = re.sub(
+            r'"([A-Za-z_][A-Za-z0-9_]*)"',
+            r"`\1`",
+            result,
+        )
         return result
 
 
