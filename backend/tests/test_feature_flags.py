@@ -246,7 +246,6 @@ class TestRequiresFlag:
 def test_known_flags_registry():
     """Fail loudly if a flag is removed from KNOWN_FLAGS silently."""
     expected = {
-        "new_data_plane",
         "new_pipelines",
         "substrate_migration_complete",
         "new_dbt",

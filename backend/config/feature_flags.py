@@ -7,7 +7,6 @@ Redis (`org:{id}:feature_flags`, TTL 60s).
 Flag registry (kept up-to-date so removed flags don't get re-introduced
 silently — see test_feature_flags::test_known_flags):
 
-    new_data_plane               — Phase 1 soft-cutover gate
     new_pipelines                — Phase 2 dispatcher gate
     substrate_migration_complete — Phase 3 fallback removal
     new_dbt                      — Phase 4 dispatcher gate
@@ -29,7 +28,6 @@ _CACHE_KEY_PREFIX = "org"
 _CACHE_KEY_SUFFIX = "feature_flags"
 
 KNOWN_FLAGS: frozenset[str] = frozenset({
-    "new_data_plane",
     "new_pipelines",
     "substrate_migration_complete",
     "new_dbt",

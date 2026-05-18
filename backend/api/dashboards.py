@@ -40,8 +40,6 @@ class DashboardResponse(BaseModel):
     schedule_active: bool = False
     next_run_at: Optional[str] = None
     last_run_at: Optional[str] = None
-    cache_built_at: Optional[str] = None
-    cache_status: Optional[str] = None
 
 
 def _dashboard_visible_to(query, current_user: User):
@@ -92,8 +90,6 @@ def _dashboard_to_response(dashboard: Dashboard) -> DashboardResponse:
         schedule_active=dashboard.schedule_active or False,
         next_run_at=str(dashboard.next_run_at) if dashboard.next_run_at else None,
         last_run_at=str(dashboard.last_run_at) if dashboard.last_run_at else None,
-        cache_built_at=str(dashboard.cache_built_at) if dashboard.cache_built_at else None,
-        cache_status=dashboard.cache_status,
     )
 
 
@@ -185,7 +181,7 @@ async def delete_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Hard delete a dashboard and its SQLite cache."""
+    """Hard delete a dashboard."""
     dashboard = (
         _dashboard_visible_to(db.query(Dashboard), current_user)
         .filter(Dashboard.id == dashboard_id)
@@ -195,14 +191,6 @@ async def delete_dashboard(
         raise HTTPException(status_code=404, detail="Dashboard not found")
 
     _governance_require_mutate_dashboard(current_user, dashboard)
-
-    # Clean up SQLite cache from DO Spaces and local filesystem
-    if dashboard.cache_key:
-        try:
-            from backend.services.dashboard_cache import delete_cache
-            delete_cache(dashboard_id)
-        except Exception as e:
-            logger.warning("Cache cleanup failed for dashboard %s: %s", dashboard_id, e)
 
     db.delete(dashboard)
     db.commit()

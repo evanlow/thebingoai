@@ -222,132 +222,31 @@ def _find_first_cte_close_paren(sql: str) -> int | None:
                 return i
     return None
 
-def inject_filters_sqlite(
-    table_name: str,
-    filters: List[FilterParam],
-    data_context: dict | None = None,
-    widget_sources: list[str] | None = None,
-) -> Tuple[str, list]:
-    """Build a SELECT query with WHERE filters for a SQLite cache table.
-
-    Returns (sql, params) where params is a list of values for ? placeholders.
-    Table and column names are quoted to prevent SQL injection.
-    """
-    base = f'SELECT * FROM "{table_name}"'
-
-    if not filters:
-        return base, []
-
-    # Dimension-aware: filter out inapplicable filters
-    if data_context and widget_sources:
-        filters = [
-            f for f in filters
-            if _dimension_applies_to_sources(f.column, data_context, widget_sources)
-        ]
-        if not filters:
-            return base, []
-
-    conditions: list[str] = []
-    params: list = []
-
-    op_map = {
-        'eq': '=',
-        'neq': '!=',
-        'gt': '>',
-        'gte': '>=',
-        'lt': '<',
-        'lte': '<=',
-        'ilike': 'LIKE',
-    }
-
-    for f in filters:
-        col = f'"{f.column}"'
-        if f.op == 'in':
-            values = f.value if isinstance(f.value, list) else [f.value]
-            placeholders = ', '.join(['?'] * len(values))
-            conditions.append(f'{col} IN ({placeholders})')
-            params.extend(values)
-        else:
-            op = op_map[f.op]
-            conditions.append(f'{col} {op} ?')
-            params.append(f.value)
-
-    where = ' AND '.join(conditions)
-    return f'{base} WHERE {where}', params
-
-
 def _read_widget_from_cache(
     dashboard_id: int,
     widget_id: str,
-    filters: list[FilterParam] | None = None,
-    data_context: dict | None = None,
-    widget_sources: list[str] | None = None,
     org_id: str | None = None,
     user_id: str | None = None,
-) -> "QueryResult":
-    """Read widget data from cache.
+) -> "QueryResult | None":
+    """Read widget data from the DataPlane Parquet cache.
 
-    Tries DataPlane (Parquet) when new_data_plane flag is on, then falls back
-    to the legacy SQLite path. Returns a QueryResult.
+    Returns a QueryResult on hit, or None when the table doesn't exist yet
+    (cold cache → caller should fall back to the source connector).
     """
-    import sqlite3
     import time
     from backend.connectors.base import QueryResult
-    from backend.services.dashboard_cache import get_cache_path, _sanitize_widget_id
+    from backend.services.dashboard_cache import read_widget_data_plane
 
-    # ── DataPlane path ────────────────────────────────────────────────────
-    if org_id or user_id:
-        from backend.config.feature_flags import enabled
-        flag_subject = org_id or user_id
-        if enabled(flag_subject, "new_data_plane"):
-            from backend.services.dashboard_cache import read_widget_data_plane
-            start_dp = time.time()
-            dp_data = read_widget_data_plane(dashboard_id, widget_id, org_id, user_id or "")
-            if dp_data is not None:
-                execution_time_ms = (time.time() - start_dp) * 1000
-                return QueryResult(
-                    columns=dp_data["columns"],
-                    rows=dp_data["rows"],
-                    row_count=dp_data["row_count"],
-                    execution_time_ms=execution_time_ms,
-                )
-            # Cache miss on DataPlane → fall through to legacy for soft-cutover
-
-    # ── Legacy SQLite path ────────────────────────────────────────────────
-    cache_path = get_cache_path(dashboard_id)
-    table_name = _sanitize_widget_id(widget_id)
-
-    start_time = time.time()
-
-    sql, params = inject_filters_sqlite(
-        table_name, filters or [],
-        data_context=data_context,
-        widget_sources=widget_sources,
+    start = time.time()
+    dp_data = read_widget_data_plane(dashboard_id, widget_id, org_id, user_id or "")
+    if dp_data is None:
+        return None
+    return QueryResult(
+        columns=dp_data["columns"],
+        rows=dp_data["rows"],
+        row_count=dp_data["row_count"],
+        execution_time_ms=(time.time() - start) * 1000,
     )
-
-    uri = f"file:{cache_path}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
-    try:
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table_name,),
-        )
-        if not cursor.fetchone():
-            raise ValueError(f"Widget table '{table_name}' not found in cache")
-
-        cursor = conn.execute(sql, params)
-        columns = [desc[0] for desc in cursor.description]
-        rows = cursor.fetchall()
-        execution_time_ms = (time.time() - start_time) * 1000
-
-        return QueryResult(
-            columns=columns,
-            rows=rows,
-            row_count=len(rows),
-            execution_time_ms=execution_time_ms,
-        )
-    finally:
-        conn.close()
 
 
 router = APIRouter(prefix="/dashboards", tags=["widget-data"])
@@ -365,11 +264,10 @@ async def refresh_widget(
     The caller supplies connection_id, sql, and mapping. The response contains
     the new config dict to merge into widget.widget.config plus metadata.
 
-    If the dashboard has a ready SQLite cache and widget_id is provided,
-    reads from cache instead of hitting the source DB. Falls back to source
-    DB if cache is unavailable or stale.
+    When the dashboard has a Parquet cache on the DataPlane and no filters
+    are applied, reads from the cache instead of hitting the source DB.
+    Falls back to the source DB on cache miss or when filters are requested.
     """
-    # Load dashboard once (used for cache check + dimension-aware filters)
     dashboard = None
     if request.dashboard_id:
         dashboard = db.query(Dashboard).filter(
@@ -377,41 +275,33 @@ async def refresh_widget(
             Dashboard.user_id == current_user.id,
         ).first()
 
-    # Cache metadata for responses
-    _cache_built_at = str(dashboard.cache_built_at) if dashboard and dashboard.cache_built_at else None
-    _cache_status = dashboard.cache_status if dashboard else None
-
-    # Try cache path when dashboard has a ready cache and widget_id is provided
-    if dashboard and dashboard.cache_status == 'ready' and request.widget_id:
+    # DataPlane cache read — only when no filters (Parquet has no WHERE injection).
+    if dashboard and request.widget_id and not request.filters:
         try:
             result = _read_widget_from_cache(
                 request.dashboard_id,
                 request.widget_id,
-                filters=request.filters,
-                data_context=dashboard.data_context,
-                widget_sources=request.widget_sources,
                 org_id=getattr(current_user, "org_id", None),
                 user_id=current_user.id,
             )
-            config = transform_widget_data(result, request.mapping)
-            return WidgetRefreshResponse(
-                config=config,
-                execution_time_ms=result.execution_time_ms,
-                row_count=result.row_count,
-                truncated=False,
-                refreshed_at=datetime.now(timezone.utc).isoformat(),
-                source_columns=result.columns,
-                source_rows=[
-                    [_to_json_safe(v) for v in row]
-                    for row in result.rows
-                ],
-                cache_built_at=_cache_built_at,
-                cache_status=_cache_status,
-            )
+            if result is not None:
+                config = transform_widget_data(result, request.mapping)
+                return WidgetRefreshResponse(
+                    config=config,
+                    execution_time_ms=result.execution_time_ms,
+                    row_count=result.row_count,
+                    truncated=False,
+                    refreshed_at=datetime.now(timezone.utc).isoformat(),
+                    source_columns=result.columns,
+                    source_rows=[
+                        [_to_json_safe(v) for v in row]
+                        for row in result.rows
+                    ],
+                )
         except Exception as e:
-            logger.warning(f"Cache read failed for widget {request.widget_id}, falling back to source DB: {e}")
+            logger.warning(f"DataPlane cache read failed for widget {request.widget_id}, falling back to source DB: {e}")
 
-    # Fallback: source DB query (original behavior)
+    # Fallback: source DB query
     connection = db.query(DatabaseConnection).filter(
         DatabaseConnection.id == request.connection_id,
         DatabaseConnection.user_id == current_user.id,
@@ -450,8 +340,6 @@ async def refresh_widget(
                 [_to_json_safe(v) for v in row]
                 for row in result.rows
             ],
-            cache_built_at=_cache_built_at,
-            cache_status=_cache_status,
         )
 
     except ValueError as e:
@@ -472,12 +360,10 @@ async def refresh_dashboard_widgets(
     """
     Re-execute SQL queries for all SQL-backed widgets in a dashboard.
 
-    If the dashboard has a ready SQLite cache, reads all widget tables from
-    a single local file instead of hitting N source-DB connections.
-
-    Widgets without a dataSource are skipped. Each widget result is keyed
-    by widget id. Failures per-widget are captured as {error} rather than
-    failing the entire request.
+    Each widget is read from the DataPlane Parquet cache when available;
+    on cold cache the widget falls back to its source connector. Widgets
+    without a dataSource are skipped; per-widget failures are captured as
+    {error} rather than failing the entire request.
     """
     dashboard = db.query(Dashboard).filter(
         Dashboard.id == dashboard_id,
@@ -489,55 +375,9 @@ async def refresh_dashboard_widgets(
 
     widgets = dashboard.widgets or []
     results: dict = {}
+    org_id = getattr(current_user, "org_id", None)
+    refreshed_at = datetime.now(timezone.utc).isoformat()
 
-    _cache_built_at = str(dashboard.cache_built_at) if dashboard.cache_built_at else None
-    _cache_status = dashboard.cache_status
-
-    # Try cache path: open SQLite once, read all widget tables
-    if dashboard.cache_status == 'ready':
-        try:
-            from backend.connectors.base import QueryResult
-            from backend.services.dashboard_cache import get_cache_path, read_widget_data
-
-            cache_path = get_cache_path(dashboard_id)
-            refreshed_at = datetime.now(timezone.utc).isoformat()
-
-            for widget in widgets:
-                widget_id = widget.get("id")
-                data_source = widget.get("dataSource")
-                if not data_source:
-                    continue
-                mapping = data_source.get("mapping")
-                if not mapping:
-                    results[widget_id] = {"error": "Incomplete dataSource (missing mapping)"}
-                    continue
-                try:
-                    data = read_widget_data(cache_path, widget_id)
-                    query_result = QueryResult(
-                        columns=data["columns"],
-                        rows=data["rows"],
-                        row_count=data["row_count"],
-                        execution_time_ms=0,
-                    )
-                    # Inject chartType so scatter charts produce {x,y} points
-                    chart_type = widget.get("widget", {}).get("config", {}).get("type")
-                    if chart_type and "chartType" not in mapping:
-                        mapping = {**mapping, "chartType": chart_type}
-                    config = transform_widget_data(query_result, mapping)
-                    results[widget_id] = {"config": config, "refreshed_at": refreshed_at}
-                except Exception as e:
-                    logger.error(f"Cache read failed for widget {widget_id}: {e}")
-                    results[widget_id] = {"error": str(e)}
-
-            return BulkRefreshResponse(
-                widgets=results,
-                cache_built_at=_cache_built_at,
-                cache_status=_cache_status,
-            )
-        except FileNotFoundError:
-            logger.warning(f"Cache file not found for dashboard {dashboard_id}, falling back to source DB")
-
-    # Fallback: source DB queries (original behavior)
     for widget in widgets:
         widget_id = widget.get("id")
         data_source = widget.get("dataSource")
@@ -552,6 +392,26 @@ async def refresh_dashboard_widgets(
             results[widget_id] = {"error": "Incomplete dataSource (missing connectionId, sql, or mapping)"}
             continue
 
+        chart_type = widget.get("widget", {}).get("config", {}).get("type")
+        if chart_type and "chartType" not in mapping:
+            mapping = {**mapping, "chartType": chart_type}
+
+        # Try DataPlane cache first.
+        try:
+            cached = _read_widget_from_cache(
+                dashboard_id, widget_id,
+                org_id=org_id, user_id=current_user.id,
+            )
+            if cached is not None:
+                results[widget_id] = {
+                    "config": transform_widget_data(cached, mapping),
+                    "refreshed_at": refreshed_at,
+                }
+                continue
+        except Exception as e:
+            logger.warning(f"DataPlane cache read failed for widget {widget_id}, falling back to source DB: {e}")
+
+        # Fallback: source DB query.
         connection = db.query(DatabaseConnection).filter(
             DatabaseConnection.id == connection_id,
             DatabaseConnection.user_id == current_user.id,
@@ -567,24 +427,17 @@ async def refresh_dashboard_widgets(
 
         try:
             result = connector.execute_query(sql)
-            # Inject chartType so scatter charts produce {x,y} points
-            chart_type = widget.get("widget", {}).get("config", {}).get("type")
-            if chart_type and "chartType" not in mapping:
-                mapping = {**mapping, "chartType": chart_type}
-            config = transform_widget_data(result, mapping)
-            refreshed_at = datetime.now(timezone.utc).isoformat()
-            results[widget_id] = {"config": config, "refreshed_at": refreshed_at}
+            results[widget_id] = {
+                "config": transform_widget_data(result, mapping),
+                "refreshed_at": refreshed_at,
+            }
         except Exception as e:
             logger.error(f"Bulk refresh failed for widget {widget_id}: {e}")
             results[widget_id] = {"error": str(e)}
         finally:
             connector.close()
 
-    return BulkRefreshResponse(
-        widgets=results,
-        cache_built_at=_cache_built_at,
-        cache_status=_cache_status,
-    )
+    return BulkRefreshResponse(widgets=results)
 
 
 @router.post("/{dashboard_id}/materialize", status_code=202)
