@@ -5,6 +5,7 @@ export interface HeartbeatJob {
   schedule_type: 'preset' | 'cron'
   schedule_value: string
   cron_expression: string
+  timezone: string
   is_active: boolean
   kind: 'chat' | 'briefing'
   next_run_at: string | null
@@ -35,6 +36,7 @@ export interface HeartbeatJobCreateRequest {
   prompt: string
   schedule_type: 'preset' | 'cron'
   schedule_value: string
+  timezone?: string
 }
 
 export interface HeartbeatJobUpdateRequest {
@@ -42,6 +44,7 @@ export interface HeartbeatJobUpdateRequest {
   prompt?: string
   schedule_type?: 'preset' | 'cron'
   schedule_value?: string
+  timezone?: string
 }
 
 function utcHourToLocalLabel(utcHour: number): string {

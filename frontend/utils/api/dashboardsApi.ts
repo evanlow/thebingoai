@@ -40,7 +40,7 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
         body: data,
       }) as Promise<{ suggested_sql: string; explanation: string }>
     },
-    async setSchedule(id: number, data: { schedule_type: string; schedule_value: string }) {
+    async setSchedule(id: number, data: { schedule_type: string; schedule_value: string; timezone?: string }) {
       return fetchWithRefresh(`/api/dashboards/${id}/schedule`, {
         method: 'PUT',
         body: data,

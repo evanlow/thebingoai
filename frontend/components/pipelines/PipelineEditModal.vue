@@ -255,6 +255,11 @@ async function handleSubmit() {
 
     if (form.cron.trim()) {
       payload.cron = form.cron.trim()
+      try {
+        payload.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      } catch {
+        payload.timezone = 'UTC'
+      }
     }
     if (form.mode === 'incremental' && form.incremental_key.trim()) {
       payload.incremental_key = form.incremental_key.trim()

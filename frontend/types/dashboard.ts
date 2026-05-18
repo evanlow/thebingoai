@@ -244,6 +244,7 @@ export interface Dashboard {
   schedule_value?: string | null
   cron_expression?: string | null
   schedule_active?: boolean
+  timezone?: string
   next_run_at?: string | null
   last_run_at?: string | null
 }

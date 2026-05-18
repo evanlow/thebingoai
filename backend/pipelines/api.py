@@ -14,6 +14,7 @@ from backend.database.session import get_db
 from backend.auth.dependencies import get_current_user
 from backend.models.user import User
 from backend.models.pipeline import Pipeline, PipelineRun
+from backend.utils.cron import compute_next_run, is_valid_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class PipelineCreate(BaseModel):
     owner_scope_id: str
     target_table: str
     cron: str | None = None
+    timezone: str | None = None
     mode: str = "full"
     incremental_key: str | None = None
     extraction_config: dict[str, Any] = {}
@@ -44,6 +46,7 @@ class PipelineResponse(BaseModel):
     owner_scope_id: str
     target_table: str
     cron: str | None
+    timezone: str
     mode: str
     incremental_key: str | None
     extraction_config: dict[str, Any]
@@ -159,11 +162,18 @@ async def create_pipeline(
             detail=f"A pipeline with this configuration already exists: id={existing.id}",
         )
 
-    # Compute next_run_at from cron
+    # Validate timezone
+    tz_name = body.timezone or "UTC"
+    if tz_name != "UTC" and not is_valid_timezone(tz_name):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown IANA timezone: {tz_name}",
+        )
+
+    # Compute next_run_at from cron, evaluated in the requested timezone
     next_run_at: datetime | None = None
     if body.cron:
-        from croniter import croniter
-        next_run_at = croniter(body.cron, datetime.now(timezone.utc)).get_next(datetime)
+        next_run_at = compute_next_run(body.cron, tz_name)
 
     pipeline = Pipeline(
         id=str(_uuid.uuid4()),
@@ -173,6 +183,7 @@ async def create_pipeline(
         owner_scope_id=body.owner_scope_id,
         target_table=body.target_table,
         cron=body.cron,
+        timezone=tz_name,
         mode=body.mode,
         incremental_key=body.incremental_key,
         extraction_config=body.extraction_config,

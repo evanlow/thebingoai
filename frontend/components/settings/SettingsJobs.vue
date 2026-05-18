@@ -145,7 +145,7 @@
           :schedule-type="job.schedule_type"
           :schedule-value="job.schedule_value"
           :saving="savingJobSchedule"
-          @save="(type, value) => handleJobScheduleSave(job, type, value)"
+          @save="(type, value, tz) => handleJobScheduleSave(job, type, value, tz)"
           @cancel="expandedJobId = null"
         />
       </div>
@@ -414,7 +414,7 @@
             :schedule-type="(dashboard.schedule_type as 'preset' | 'cron') || 'cron'"
             :schedule-value="dashboard.schedule_value || dashboard.cron_expression || ''"
             :saving="savingDashboardSchedule"
-            @save="(type, value) => handleDashboardScheduleSave(dashboard, type, value)"
+            @save="(type, value, tz) => handleDashboardScheduleSave(dashboard, type, value, tz)"
             @cancel="expandedDashboardId = null"
           />
         </div>
@@ -628,6 +628,13 @@ async function saveJob() {
     return
   }
 
+  let browserTz: string
+  try {
+    browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    browserTz = 'UTC'
+  }
+
   try {
     saving.value = true
     if (editingJob.value) {
@@ -636,6 +643,7 @@ async function saveJob() {
         prompt: form.prompt,
         schedule_type: scheduleType,
         schedule_value: scheduleValue,
+        timezone: browserTz,
       }) as HeartbeatJob
       const idx = jobs.value.findIndex(j => j.id === editingJob.value!.id)
       if (idx !== -1) jobs.value[idx] = updated
@@ -646,6 +654,7 @@ async function saveJob() {
         prompt: form.prompt,
         schedule_type: scheduleType,
         schedule_value: scheduleValue,
+        timezone: browserTz,
       }) as HeartbeatJob
       jobs.value.unshift(created)
       toast.success('Job created')
@@ -742,12 +751,13 @@ function toggleDashboardExpand(dashboardId: number) {
   expandedDashboardId.value = expandedDashboardId.value === dashboardId ? null : dashboardId
 }
 
-async function handleJobScheduleSave(job: HeartbeatJob, scheduleType: string, scheduleValue: string) {
+async function handleJobScheduleSave(job: HeartbeatJob, scheduleType: string, scheduleValue: string, timezone?: string) {
   try {
     savingJobSchedule.value = true
     const updated = await api.heartbeatJobs.update(job.id, {
       schedule_type: scheduleType as 'preset' | 'cron',
       schedule_value: scheduleValue,
+      timezone,
     }) as HeartbeatJob
     const idx = jobs.value.findIndex(j => j.id === job.id)
     if (idx !== -1) jobs.value[idx] = updated
@@ -760,10 +770,10 @@ async function handleJobScheduleSave(job: HeartbeatJob, scheduleType: string, sc
   }
 }
 
-async function handleDashboardScheduleSave(dashboard: Dashboard, scheduleType: string, scheduleValue: string) {
+async function handleDashboardScheduleSave(dashboard: Dashboard, scheduleType: string, scheduleValue: string, timezone?: string) {
   try {
     savingDashboardSchedule.value = true
-    await dashboardStore.setSchedule(dashboard.id, scheduleType, scheduleValue)
+    await dashboardStore.setSchedule(dashboard.id, scheduleType, scheduleValue, timezone)
     expandedDashboardId.value = null
     toast.success('Schedule updated')
   } catch (err: any) {

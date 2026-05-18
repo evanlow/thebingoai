@@ -30,11 +30,11 @@ def dispatch_pipelines():
 
     Gated by the new_pipelines feature flag per Org.
     """
-    from croniter import croniter
     from sqlalchemy import text
     from backend.database.session import SessionLocal
     from backend.models.pipeline import Pipeline
     from backend.config.feature_flags import enabled as flag_enabled
+    from backend.utils.cron import compute_next_run
 
     db = SessionLocal()
     now = datetime.now(timezone.utc)
@@ -63,8 +63,12 @@ def dispatch_pipelines():
                 run_pipeline_task.delay(pipeline.id, "cron", None)
                 dispatched += 1
 
-                # Advance next_run_at
-                pipeline.next_run_at = croniter(pipeline.cron, now).get_next(datetime)
+                # Advance next_run_at, honoring the pipeline's configured timezone
+                pipeline.next_run_at = compute_next_run(
+                    pipeline.cron,
+                    pipeline.timezone or "UTC",
+                    now_utc=now,
+                )
 
             except Exception as exc:
                 logger.error("dispatch_pipelines: failed for pipeline %s: %s", pipeline.id, exc)

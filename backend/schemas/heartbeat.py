@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 
+from backend.utils.cron import is_valid_timezone
+
 
 # Preset schedule -> cron expression mapping
 _PRESET_MAP = {
@@ -36,11 +38,20 @@ def resolve_cron_expression(schedule_type: str, schedule_value: str) -> str:
         raise ValueError(f"schedule_type must be 'preset' or 'cron', got: {schedule_type}")
 
 
+def _validate_tz(v: Optional[str]) -> Optional[str]:
+    if v in (None, ""):
+        return v
+    if not is_valid_timezone(v):
+        raise ValueError(f"Unknown IANA timezone: {v}")
+    return v
+
+
 class HeartbeatJobCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     prompt: str = Field(..., min_length=1, max_length=10000)
     schedule_type: str = Field(..., pattern="^(preset|cron)$")
     schedule_value: str = Field(..., min_length=1, max_length=100)
+    timezone: Optional[str] = Field(None, max_length=64)
 
     @field_validator("schedule_value")
     @classmethod
@@ -50,12 +61,23 @@ class HeartbeatJobCreate(BaseModel):
             resolve_cron_expression(schedule_type, v)  # raises ValueError if invalid
         return v
 
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_tz(v)
+
 
 class HeartbeatJobUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     prompt: Optional[str] = Field(None, min_length=1, max_length=10000)
     schedule_type: Optional[str] = Field(None, pattern="^(preset|cron)$")
     schedule_value: Optional[str] = Field(None, min_length=1, max_length=100)
+    timezone: Optional[str] = Field(None, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_tz(v)
 
 
 class HeartbeatJobToggle(BaseModel):
@@ -69,6 +91,7 @@ class HeartbeatJobResponse(BaseModel):
     schedule_type: str
     schedule_value: str
     cron_expression: str
+    timezone: str
     is_active: bool
     kind: str
     next_run_at: Optional[datetime]

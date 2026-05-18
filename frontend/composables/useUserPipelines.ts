@@ -9,6 +9,7 @@ export interface Pipeline {
   source_connection_id: number
   target_table: string
   cron: string | null
+  timezone: string
   mode: 'full' | 'incremental'
   incremental_key: string | null
   extraction_config: Record<string, unknown>
@@ -40,6 +41,7 @@ export interface CreatePipelinePayload {
   owner_scope_id: string
   target_table: string
   cron?: string
+  timezone?: string
   mode: 'full' | 'incremental'
   incremental_key?: string
   extraction_config: Record<string, unknown>

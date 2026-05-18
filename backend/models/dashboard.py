@@ -21,6 +21,7 @@ class Dashboard(Base, TimestampMixin):
     schedule_active = Column(Boolean, default=False, nullable=False)
     next_run_at = Column(DateTime, nullable=True)
     last_run_at = Column(DateTime, nullable=True)
+    timezone = Column(String(64), nullable=False, server_default="UTC")
 
     # SQLite cache columns
     cache_key = Column(String(500), nullable=True)          # DO Spaces key for SQLite file

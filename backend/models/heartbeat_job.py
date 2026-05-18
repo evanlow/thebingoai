@@ -18,6 +18,7 @@ class HeartbeatJob(Base, TimestampMixin):
     is_active = Column(Boolean, default=True, nullable=False)
     next_run_at = Column(DateTime, nullable=True)
     last_run_at = Column(DateTime, nullable=True)
+    timezone = Column(String(64), nullable=False, server_default="UTC")
 
     __table_args__ = (
         Index("ix_heartbeat_jobs_user_id", "user_id"),

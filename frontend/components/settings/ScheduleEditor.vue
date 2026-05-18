@@ -31,7 +31,7 @@
 
     <!-- Time picker for daily/weekly/weekdays -->
     <div v-if="showTimePicker">
-      <p class="text-xs font-medium text-gray-500 dark:text-neutral-400 mb-2">Time (UTC)</p>
+      <p class="text-xs font-medium text-gray-500 dark:text-neutral-400 mb-2">Time ({{ browserTz }})</p>
       <div class="flex items-center gap-2">
         <select
           v-model="hour"
@@ -49,7 +49,7 @@
           <option :value="30">30</option>
           <option :value="45">45</option>
         </select>
-        <span class="text-xs text-gray-400 dark:text-neutral-500">UTC</span>
+        <span class="text-xs text-gray-400 dark:text-neutral-500">{{ browserTz }}</span>
       </div>
     </div>
 
@@ -102,7 +102,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  save: [scheduleType: string, scheduleValue: string]
+  save: [scheduleType: string, scheduleValue: string, timezone: string]
   cancel: []
 }>()
 
@@ -110,6 +110,13 @@ const selectedPreset = ref<string | null>(null)
 const cronInput = ref('')
 const hour = ref(9)
 const minute = ref(0)
+const browserTz = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+})()
 
 const showTimePicker = computed(() =>
   selectedPreset.value !== null && TIME_BASED_PRESETS.includes(selectedPreset.value)
@@ -145,7 +152,7 @@ function selectPreset(value: string | null) {
 function handleSave() {
   if (selectedPreset.value === null) {
     if (!cronInput.value.trim()) return
-    emit('save', 'cron', cronInput.value.trim())
+    emit('save', 'cron', cronInput.value.trim(), browserTz)
     return
   }
 
@@ -155,9 +162,9 @@ function handleSave() {
       weekly: `${minute.value} ${hour.value} * * 1`,
       weekdays: `${minute.value} ${hour.value} * * 1-5`,
     }
-    emit('save', 'cron', cronMap[selectedPreset.value])
+    emit('save', 'cron', cronMap[selectedPreset.value], browserTz)
   } else {
-    emit('save', 'preset', selectedPreset.value)
+    emit('save', 'preset', selectedPreset.value, browserTz)
   }
 }
 </script>

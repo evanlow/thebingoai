@@ -20,6 +20,7 @@ class Pipeline(Base, TimestampMixin):
     target_table = Column(String(255), nullable=False)
     name = Column(String(255), nullable=False)
     cron = Column(String(64), nullable=True)               # null = run-on-demand
+    timezone = Column(String(64), nullable=False, server_default="UTC")
     mode = Column(String(16), nullable=False, default="full")   # full | incremental
     incremental_key = Column(String(255), nullable=True)
     extraction_config = Column(JSONB, nullable=False, server_default="{}")
