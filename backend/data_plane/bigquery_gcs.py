@@ -152,8 +152,17 @@ class BigQueryGCSPlane:
 
         logger.debug("Wrote GCS parquet %s → gs://%s/%s", table, self._bucket_name, gcs_path)
 
-        # Register the BQ external table after write
-        self.register_table(scope, table, f"gs://{self._bucket_name}/{self._gcs_prefix(scope, table, '*')}", arrow_table.schema)
+        # Register the BQ external table. For mode='overwrite' (snapshot
+        # semantics — full pipelines) point at the latest single `dt=`
+        # partition so prior snapshots aren't unioned. For mode='append'
+        # (true-delta pipelines) point at the `dt=*` glob with Hive
+        # partitioning so `dt` is queryable. Old partitions remain on GCS
+        # for audit/replay regardless of mode.
+        if mode == "overwrite":
+            uri = f"gs://{self._bucket_name}/{self._gcs_prefix(scope, table, dt)}/*"
+        else:
+            uri = f"gs://{self._bucket_name}/{self._gcs_prefix(scope, table, '*')}/*"
+        self.register_table(scope, table, uri, arrow_table.schema)
 
     def register_table(
         self,
@@ -170,9 +179,15 @@ class BigQueryGCSPlane:
         bq_schema = _arrow_schema_to_bq(schema)
         external_config = bigquery.ExternalConfig("PARQUET")
         external_config.source_uris = [path if path.endswith("*") else path + "/*"]
-        external_config.hive_partitioning = bigquery.HivePartitioningOptions()
-        external_config.hive_partitioning.mode = "AUTO"
-        external_config.hive_partitioning.source_uri_prefix = path.rstrip("*").rstrip("/")
+
+        # Hive partitioning is meaningful only when the URI globs over
+        # multiple `dt=` partitions (true-delta pipelines). For snapshot
+        # pipelines the URI is anchored to one `dt=YYYY-MM-DD` directory
+        # and `dt` is constant, so omit Hive options to keep the schema clean.
+        if "/dt=*/" in path:
+            external_config.hive_partitioning = bigquery.HivePartitioningOptions()
+            external_config.hive_partitioning.mode = "AUTO"
+            external_config.hive_partitioning.source_uri_prefix = path.split("/dt=")[0]
 
         table_ref = bigquery.Table(full_table_id, schema=bq_schema)
         table_ref.external_data_configuration = external_config

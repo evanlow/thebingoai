@@ -31,9 +31,18 @@ def make_dataplane_destination(plane, scope: "OwnerScope", table: str):
             if not items:
                 return
             table_name_from_dlt = table["name"]
+            # Forward dlt's write_disposition so the plane can pick snapshot
+            # vs append semantics. runner.py maps pipeline.mode='full' →
+            # 'replace' and 'incremental' → 'merge'; treat anything other
+            # than 'replace' as append (delta union).
+            write_disposition = table.get("write_disposition", "replace")
+            mode = "overwrite" if write_disposition == "replace" else "append"
             arrow_tbl = pa.Table.from_pylist(items)
-            plane.write_parquet(scope, table_name_from_dlt, arrow_tbl, mode="overwrite")
-            logger.debug("dlt_destination: wrote %d rows to DataPlane table %s", len(items), table_name_from_dlt)
+            plane.write_parquet(scope, table_name_from_dlt, arrow_tbl, mode=mode)
+            logger.debug(
+                "dlt_destination: wrote %d rows to DataPlane table %s (mode=%s)",
+                len(items), table_name_from_dlt, mode,
+            )
 
         return _dataplane_dest
 
