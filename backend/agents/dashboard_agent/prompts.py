@@ -15,6 +15,7 @@ Phase 1 — Context:
    - Pick tables relevant to the user's request
    - Pick dimensions (categorical/date columns) that users would want to filter by
    - The tool returns a baseJoin template and dimension definitions — this is your SQL reference
+   - If `build_dashboard_context` returns `success: false` (e.g. "Connection context not built yet"), STOP. Tell the user in one short sentence which `connection_id` isn't ready and that they should re-profile it. Do NOT call `create_dashboard` afterwards — an empty-widget dashboard is a bug, not a fallback.
 
 Phase 2 — Design (informed by context):
 4. Call `get_widget_spec(widget_type)` for each widget type you plan to use
@@ -30,9 +31,19 @@ Phase 2 — Design (informed by context):
    - Include the `sources` field on each widget (list of table names from the context)
 
 Phase 3 — Create:
-7. Call `create_dashboard` with data_context_json (the JSON from build_dashboard_context) and widgets
+7. Call `create_dashboard` with `data_context` (the object from build_dashboard_context) and `widgets` (array of widget objects)
    - Validation will reject widgets whose SQL can't reach all dimensions
    - Fix any rejections and retry
+
+## Failure Recovery (HARD RULES — violations ship broken UX)
+
+The user asked for a **built dashboard**, not source code. Your reply text must never serve as a copy-paste deliverable.
+
+- If `create_dashboard` returns warnings or per-widget errors: rewrite the failing widget's SQL using the data context as ground truth, then call `update_dashboard` to fix the affected widgets in-place. Repeat once if needed.
+- If a widget still cannot be built after one fix attempt, reply briefly (one short sentence per failed widget) describing which widget failed and why — using prose only. No SQL. No JSON. No "you can copy-paste this".
+- NEVER include fenced ```sql blocks, fenced ```json blocks, "pseudo-JSON spec" blocks, or "here is the full configuration you can adapt" content in your reply to the user. The user cannot copy-paste source code into the dashboard editor — there is no such editor. Source code in chat is always a failure mode, not a graceful degradation.
+- NEVER reframe a "build me a dashboard" request as "let me generate a specification you can use." That is offloading the work back to the user.
+- If the dashboard tools are unavailable or repeatedly fail: surface the actual failure in one sentence and stop. Do not substitute prose-with-SQL for the missing tool output.
 
 ## Dashboard Design Principles
 
@@ -41,6 +52,17 @@ Phase 3 — Create:
 Structure every dashboard as a top-to-bottom data story:
 
 **Section 1 — Executive Summary (y=0):** 3-4 KPI cards answering "how are we doing at a glance?"
+
+**Section 1 KPI Rules (HARD CONSTRAINTS — violations are bugs):**
+- EXACTLY 3-4 KPIs total. ONE row, all at y=0. No second KPI row.
+- Each underlying metric appears AT MOST ONCE. Never create two KPIs for the same metric scoped to different time windows (e.g. one "Spend (Last 7 Days)" KPI and one "Spend (7D)" KPI). Pick ONE time window for each KPI.
+- Time-window switching is a FILTER BAR concern, not a widget concern. If the user wants to compare windows, set `dateRangeDefault` on the filter bar's `date_range` control and let widgets re-query.
+- Trend-over-period is expressed via the KPI's own `periodLabel` + `trendDateColumn` (see KPI widget spec), NOT by creating a second KPI for the previous period.
+- Label canonicalization — these refer to the same window, never use both:
+  - `(7D)` ≡ `(Last 7 Days)` — pick one form, prefer `(Last 7 Days)`.
+  - `(30D)` ≡ `(Last 30 Days)` — pick one form, prefer `(Last 30 Days)`.
+  - `(YTD)` ≡ `(Year to Date)` — pick one form, prefer `(Year to Date)`.
+- If the user's request says "show me spend for yesterday, last 7 days, and last 30 days", you must NOT generate three "Spend" KPIs. Pick the most useful window (typically Last 30 Days), put it in the KPI, and let the filter bar drive the window.
 
 **Section 2 — Filters (y=2):** A filter bar with dropdown, date_range, or search controls for the key dimensions.
   - Every `date_range` control MUST include `dateRangeSource` (SQL returning `min_date`/`max_date`) and `dateRangeDefault`.
@@ -229,11 +251,15 @@ def build_dashboard_agent_prompt(
         )
 
     # Include connection context summary if available (pre-built from profiling)
-    from backend.services.connection_context import load_context_file
+    from backend.database.session import SessionLocal
+    from backend.services.connection_context import load_connection_context
 
-    for conn_id in available_connections:
-        try:
-            ctx = load_context_file(conn_id)
+    db = SessionLocal()
+    try:
+        for conn_id in available_connections:
+            ctx = load_connection_context(db, conn_id)
+            if not ctx:
+                continue
             tables = ctx.get("tables", {})
             if not tables:
                 continue
@@ -250,8 +276,8 @@ def build_dashboard_agent_prompt(
                 lines.append(f"Relationships: {', '.join(r['from'] + ' → ' + r['to'] for r in rels[:10])}")
             lines.append("Use `build_dashboard_context` to assemble a dashboard context from these tables.")
             prompt += "\n".join(lines)
-        except FileNotFoundError:
-            pass
+    finally:
+        db.close()
 
     # Dashboard widgets always run against the DataPlane = BigQuery in
     # enterprise lockdown. Lock the generator to BigQuery unconditionally.
