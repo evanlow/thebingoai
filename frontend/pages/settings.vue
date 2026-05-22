@@ -1,30 +1,31 @@
 <template>
-  <div class="flex h-full pt-2 relative" :class="isMobile ? 'flex-col' : ''">
-    <!-- Close Button (mobile: fixed, aligned with hamburger; desktop: absolute top-right) -->
+  <div class="flex h-full relative" :class="isMobile ? 'flex-col' : ''">
     <button
-      v-if="isMobile"
+      v-if="!isMobile"
       @click="router.push('/chat')"
-      class="fixed right-3 top-1.5 z-30 rounded-lg p-2 pt-4 mr-1 transition-colors hover:bg-gray-100"
+      class="absolute top-10 right-6 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors z-10"
       aria-label="Close settings"
     >
-      <X class="h-5 w-5 text-gray-500" />
+      <X class="h-4 w-4" />
     </button>
+
+    <!-- Mobile close button -->
     <button
       v-else
       @click="router.push('/chat')"
-      class="absolute top-4 right-6 p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+      class="fixed right-3 top-1.5 z-30 rounded-lg p-1.5 pt-4 mr-1 text-gray-400 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors hover:bg-gray-100 hover:text-gray-700"
       aria-label="Close settings"
     >
-      <X class="h-5 w-5" />
+      <X class="h-4 w-4" />
     </button>
 
-    <!-- Settings Navigation -->
+    <!-- Settings Navigation Panel -->
     <div
       :class="isMobile
         ? 'flex items-center gap-2 overflow-x-auto px-4 pb-3 border-b border-gray-200 dark:border-neutral-700 shrink-0'
-        : 'w-56 border-r border-gray-200 dark:border-neutral-700 p-4 flex flex-col justify-between'"
+        : 'w-56 border-r border-gray-200 dark:border-neutral-700 flex flex-col justify-between flex-shrink-0 overflow-hidden'"
     >
-      <nav :class="isMobile ? 'flex gap-1' : 'space-y-1'">
+      <nav :class="isMobile ? 'flex gap-1' : 'flex-1 min-h-0 overflow-y-auto space-y-1'">
         <template v-for="(section, index) in sections" :key="section.id">
           <div
             v-if="!isMobile && section.group && (index === 0 || sections[index - 1].group !== section.group)"
@@ -50,9 +51,10 @@
         </template>
       </nav>
 
-      <div v-if="!isMobile" class="pt-4 border-t border-gray-200 dark:border-neutral-700 text-xs text-gray-400 dark:text-gray-300 space-y-1">
-        <p>{{ appInfo?.edition || 'Community' }} Edition</p>
-        <p>v{{ appInfo?.version || '1.0.0' }}</p>
+      <div v-if="!isMobile" class="px-4 py-3 border-t border-gray-200 dark:border-neutral-700 flex-shrink-0">
+        <p class="text-[11px] text-gray-400 dark:text-neutral-500">
+          {{ appInfo?.edition || 'Community' }} Edition · v{{ appInfo?.version || '1.0.0' }}
+        </p>
       </div>
     </div>
 
@@ -72,7 +74,7 @@
         :is="activePluginTab.component"
       />
       <div v-else class="p-6">
-        <h2 class="text-2xl font-medium text-gray-900 mb-4">{{ currentSectionName }}</h2>
+        <h2 class="settings-h1 text-3xl text-gray-900 mb-4">{{ currentSectionName }}</h2>
         <p class="text-gray-500">This section is under construction.</p>
       </div>
     </div>
@@ -80,17 +82,48 @@
 </template>
 
 <script setup lang="ts">
-import { X } from 'lucide-vue-next'
+import { X, Database, Sparkles, Clock, Brain, Key, User, MessageSquare, Shield, Settings } from 'lucide-vue-next'
 
 const router = useRouter()
 const { isMobile } = useIsMobile()
 const { config: featureConfig } = useFeatureConfig()
 const settingsTabs = useSettingsTabs()
+const { currentSection } = useSettingsState()
+const { data: appInfo } = useLazyFetch<{ edition?: string; version?: string }>('/api/info')
+const api = useApi() as any
+const channels = useChannels()
 
-const { data: appInfo } = useLazyFetch('/api/info')
+const counts = ref<Record<string, number | undefined>>({})
+
+async function loadCounts() {
+  const results = await Promise.allSettled([
+    (api.connections.list() as Promise<any[]>).then((r: any[]) => ({ key: 'connections', val: r.length })),
+    (api.skills.list() as Promise<any[]>).then((r: any[]) => ({ key: 'skills', val: r.length })),
+    (api.heartbeatJobs.list() as Promise<any[]>).then((r: any[]) => ({ key: 'jobs', val: r.length })),
+    (api.memory.listEntries() as Promise<{ entries: any[] }>).then((r: { entries: any[] }) => ({ key: 'memory', val: r.entries.length })),
+  ])
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      counts.value[result.value.key] = result.value.val
+    }
+  }
+}
+
+onMounted(loadCounts)
+
+const SECTION_ICONS: Record<string, any> = {
+  connections: Database,
+  skills: Sparkles,
+  jobs: Clock,
+  memory: Brain,
+  credits: Key,
+  profile: User,
+  channels: MessageSquare,
+  admin: Shield,
+}
 
 const pluginTabs = computed(() =>
-  settingsTabs.list().filter(tab => !tab.condition || tab.condition())
+  settingsTabs.list().filter((tab: any) => !tab.condition || tab.condition())
 )
 
 interface Section {
@@ -141,13 +174,13 @@ const sections = computed<Section[]>(() => {
   })
 })
 
+// Sync initial section from URL query param
 const route = useRoute()
-const currentSection = ref('agent')
 
-// Legacy deep links: users/invitations were merged into the People page.
-// `members` is a distinct per-org admin tab (bingo-admin Phase 6) and must not redirect.
+// Legacy deep links: users/members/invitations were merged into the People page.
 const LEGACY_TAB_REDIRECTS: Record<string, string> = {
   users: 'people',
+  members: 'people',
   invitations: 'people',
 }
 
@@ -172,7 +205,7 @@ const currentSectionName = computed(() => {
 })
 
 const activePluginTab = computed(() =>
-  pluginTabs.value.find(tab => tab.id === currentSection.value),
+  pluginTabs.value.find((tab: any) => tab.id === currentSection.value),
 )
 
 definePageMeta({

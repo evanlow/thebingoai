@@ -118,7 +118,7 @@ const cellSize = computed(() => {
   return Math.max(Math.floor(avail / cols.value) - CELL_GAP, MIN_CELL_SIZE)
 })
 
-const COLORS = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39']
+const COLORS = ['#f3f0ee', '#f0d6c6', '#d79aa4', '#bd5f8c', '#7c4dcf']
 
 // Computed dimensions
 const svgWidth = computed(() => LEFT_OFFSET + cols.value * (cellSize.value + CELL_GAP))

@@ -2,11 +2,9 @@
   <div class="flex flex-col h-full overflow-hidden">
 
     <!-- Page header -->
-    <div class="px-7 pt-[18px] pb-4 border-b border-[var(--line)] flex-shrink-0">
-      <p class="text-[10px] font-semibold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1">
-        Settings · The thing you talk to
-      </p>
-      <h1 class="text-[28px] font-bold text-[var(--ink-0)] tracking-tight leading-none">Agent</h1>
+    <div class="px-7 pt-3 pb-2 border-b border-[var(--line)] flex-shrink-0">
+      <p class="eyebrow mb-0.5 text-gray-400 dark:text-neutral-500">Settings · The thing you talk to</p>
+      <h1 class="settings-h1 text-3xl text-gray-900 dark:text-neutral-100 mb-1">Agent</h1>
     </div>
 
     <!-- Body: rail + document -->
@@ -68,6 +66,7 @@
           <AgentSoulSection
             :profile="agentProfile.profile.value"
             :saving="agentProfile.saving.value"
+            :revise-soul="agentProfile.reviseSoul"
             class="mb-6"
             @update="agentProfile.updateField"
           />
