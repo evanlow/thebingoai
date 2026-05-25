@@ -95,6 +95,7 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
     from backend.services.data_plane_service import get_default_plane
 
     db = SessionLocal()
+    duck_reader = None
     try:
         dashboard = db.query(Dashboard).filter(Dashboard.id == dashboard_id).first()
         if not dashboard:
@@ -107,6 +108,16 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
         org_id = _get_org_for_user(dashboard.user_id)
         scope = OwnerScope("org", org_id) if org_id else OwnerScope("user", dashboard.user_id)
         plane = get_default_plane(scope)
+
+        # Phase 2: when DuckDB-over-GCS serving is on for this Org, warm the
+        # cache by computing each widget via DuckDB-over-GCS (direct httpfs)
+        # instead of a per-widget BQ job. None (residency-locked / customer /
+        # no-HMAC / non-GCS plane) → keep the source-connector path. Per-widget
+        # fallback below handles not-yet-migrated BigQuery SQL.
+        from backend.config.feature_flags import enabled as _flag_enabled
+        from backend.services.data_plane_service import get_gcs_duckdb_reader
+        if org_id and _flag_enabled(org_id, "duckdb_widget_serving"):
+            duck_reader = get_gcs_duckdb_reader(scope, db)
 
         connection_groups: dict[int, list[dict]] = {}
         for widget in widgets:
@@ -163,27 +174,37 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
                         if date_col:
                             query_sql = _apply_date_filter(original_sql, date_col, date_range_days)
 
-                        # Route `bigquery_ga4` widget SQL through the data
-                        # plane so bare table names resolve to the
-                        # materialised view. Source connector's BQ client
-                        # cannot see the data plane's project.
-                        if connection.db_type == "bigquery_ga4":
-                            from backend.data_plane.scope import OwnerScope as _OS
-                            from backend.models.pipeline import Pipeline as _Pipeline
-                            from backend.services.data_plane_service import (
-                                get_default_plane as _get_default_plane,
-                            )
-                            _p = db.query(_Pipeline).filter(
-                                _Pipeline.source_connection_id == connection.id,
-                            ).first()
-                            if _p is not None:
-                                _s = _OS(kind=_p.owner_scope_kind, id=_p.owner_scope_id)
-                                _plane = _get_default_plane(_s, db)
-                                result = _plane.query(_s, query_sql)
+                        result = None
+                        if duck_reader is not None:
+                            try:
+                                result = duck_reader.query(scope, query_sql)
+                            except Exception as duck_err:
+                                logger.warning(
+                                    "DuckDB warm failed for widget %s, using source connector: %s",
+                                    w_id, duck_err,
+                                )
+                        if result is None:
+                            # Route `bigquery_ga4` widget SQL through the data
+                            # plane so bare table names resolve to the
+                            # materialised view. Source connector's BQ client
+                            # cannot see the data plane's project.
+                            if connection.db_type == "bigquery_ga4":
+                                from backend.data_plane.scope import OwnerScope as _OS
+                                from backend.models.pipeline import Pipeline as _Pipeline
+                                from backend.services.data_plane_service import (
+                                    get_default_plane as _get_default_plane,
+                                )
+                                _p = db.query(_Pipeline).filter(
+                                    _Pipeline.source_connection_id == connection.id,
+                                ).first()
+                                if _p is not None:
+                                    _s = _OS(kind=_p.owner_scope_kind, id=_p.owner_scope_id)
+                                    _plane = _get_default_plane(_s, db)
+                                    result = _plane.query(_s, query_sql)
+                                else:
+                                    result = connector.execute_query(query_sql)
                             else:
                                 result = connector.execute_query(query_sql)
-                        else:
-                            result = connector.execute_query(query_sql)
 
                         arrow_table = pa.table(
                             {col: [row[i] for row in result.rows] for i, col in enumerate(result.columns)}
@@ -207,7 +228,65 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
             widget_errors=widget_errors,
         )
     finally:
+        if duck_reader is not None:
+            duck_reader.close()
         db.close()
+
+
+def enqueue_dashboard_warm_for_table(scope, table_name: str) -> int:
+    """Enqueue a cache warm for each dashboard backed by *table_name* (GAP-2f).
+
+    Called after a pipeline/dbt write so dashboards reading that table refresh
+    promptly instead of waiting for the periodic dispatcher. Debounced via the
+    same `materialize_rate:{id}` Redis key `/materialize` uses (5 min) so a busy
+    writer can't trigger warm storms. Best-effort — never raises into the caller.
+    Returns the number of dashboards enqueued.
+    """
+    try:
+        import redis as _redis
+
+        from backend.config import settings
+        from backend.database.session import SessionLocal
+        from backend.models.dashboard import Dashboard
+        from backend.models.user import User
+        from backend.tasks.dashboard_refresh_tasks import execute_dashboard_refresh
+        from backend.utils.sql_refs import extract_table_refs
+
+        tnorm = table_name.lower()
+        enqueued = 0
+        with SessionLocal() as db:
+            if scope.kind == "org":
+                user_ids = [u.id for u in db.query(User).filter(User.org_id == scope.id).all()]
+                dashboards = (
+                    db.query(Dashboard).filter(Dashboard.user_id.in_(user_ids)).all()
+                    if user_ids else []
+                )
+            else:
+                dashboards = db.query(Dashboard).filter(Dashboard.user_id == scope.id).all()
+
+            r = _redis.from_url(settings.redis_url)
+            try:
+                for dash in dashboards:
+                    backed = any(
+                        tnorm in extract_table_refs((w.get("dataSource") or {}).get("sql") or "")
+                        for w in (dash.widgets or [])
+                    )
+                    if not backed:
+                        continue
+                    key = f"materialize_rate:{dash.id}"
+                    if r.exists(key):
+                        continue  # debounce — recently warmed / queued
+                    r.setex(key, 300, "1")
+                    execute_dashboard_refresh.delay(dash.id)
+                    enqueued += 1
+            finally:
+                r.close()
+        if enqueued:
+            logger.info("Enqueued warm for %d dashboard(s) backed by %s", enqueued, table_name)
+        return enqueued
+    except Exception:
+        logger.warning("enqueue_dashboard_warm_for_table failed for %s", table_name, exc_info=True)
+        return 0
 
 
 def read_widget_data_plane(

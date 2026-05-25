@@ -136,26 +136,11 @@ class LocalFilesystemDataPlane:
         sql: str,
         params: dict[str, Any] | None = None,
     ) -> QueryResult:
-        import time as _time
+        from .duckdb_exec import run_duckdb_query
+
         conn = self._get_conn()
         self._register_scope_views(conn, scope)
-
-        start = _time.time()
-        if params:
-            rel = conn.execute(sql, list(params.values()))
-        else:
-            rel = conn.execute(sql)
-
-        columns = [desc[0] for desc in rel.description]
-        rows = rel.fetchall()
-        execution_time_ms = (_time.time() - start) * 1000
-
-        return QueryResult(
-            columns=columns,
-            rows=rows,
-            row_count=len(rows),
-            execution_time_ms=execution_time_ms,
-        )
+        return run_duckdb_query(conn, sql, params)
 
     def list_tables(self, scope: OwnerScope, namespace: str | None = None) -> list[str]:
         scope_root = self._scope_root(scope)
@@ -193,6 +178,22 @@ class LocalFilesystemDataPlane:
         if not parquet_files:
             raise FileNotFoundError(f"No parquet files in {latest}")
         return pq.read_schema(os.path.join(latest, parquet_files[0]))
+
+    def read_dbt_model(self, scope: OwnerScope, model_name: str) -> pa.Table:
+        """Read a dbt-materialized model out of the per-scope DuckDB store into Arrow.
+
+        dbt (dev) materializes natively into `<root>/<scope>/dbt.duckdb`
+        (`project_synth` points the duckdb profile there). Used by the GAP-3
+        step that lands dbt outputs in the DataPlane Parquet lake.
+        """
+        dbt_path = os.path.join(self._scope_root(scope), "dbt.duckdb")
+        if not os.path.exists(dbt_path):
+            raise FileNotFoundError(f"dbt duckdb store not found: {dbt_path}")
+        conn = duckdb.connect(dbt_path, read_only=True)
+        try:
+            return conn.execute(f'SELECT * FROM "{model_name}"').fetch_arrow_table()
+        finally:
+            conn.close()
 
     # ── Internal helpers ──────────────────────────────────────────────────
 

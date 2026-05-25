@@ -25,6 +25,16 @@ _ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 _ISO_DATETIME_RE = re.compile(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}')
 
 
+def gcs_parquet_glob(bucket: str, scope: "OwnerScope", table: str) -> str:
+    """gs:// glob over all `dt=` partitions of *table* for *scope*.
+
+    Single source of truth for the lake path scheme (matches the prefix written
+    by `BigQueryGCSPlane._gcs_prefix`); consumed by the Phase 2 DuckDB-over-GCS
+    reader (`gcs_duckdb.GCSDuckDBReader`).
+    """
+    return f"gs://{bucket}/data_plane/{scope.as_path()}/{table}/dt=*/*.parquet"
+
+
 def _pyformat_to_bq(query: str, params: dict[str, Any] | None):
     """Rewrite pyformat ``%(key)s`` placeholders to BigQuery ``@key`` syntax
     and build a list of ``ScalarQueryParameter`` for ``QueryJobConfig``.
@@ -96,6 +106,11 @@ class BigQueryGCSPlane:
         # keys that have already been registered. Skips redundant BQ metadata
         # calls when dlt drives many write_parquet batches into the same target.
         self._registered: set[tuple[str, str, str, str]] = set()
+
+    @property
+    def bucket(self) -> str:
+        """GCS bucket name (without gs:// prefix) — used by the DuckDB-over-GCS reader."""
+        return self._bucket_name
 
     # ── Lazy client accessors ─────────────────────────────────────────────
 
@@ -577,6 +592,15 @@ class BigQueryGCSPlane:
         except NotFound:
             raise FileNotFoundError(f"Table {table!r} not found in scope {scope}")
         return _bq_schema_to_arrow(bq_table.schema)
+
+    def read_dbt_model(self, scope: OwnerScope, model_name: str) -> pa.Table:
+        """Read a dbt-materialized model out of the BigQuery dataset into Arrow.
+
+        dbt (prod) materializes natively into `<project>.<dataset>.<model>`.
+        Used by the GAP-3 step that lands dbt outputs in the GCS Parquet lake.
+        """
+        table_id = f"{self._project}.{self._dataset}.{model_name}"
+        return self._bq().query(f"SELECT * FROM `{table_id}`").result().to_arrow()
 
     # ── Internal helpers ──────────────────────────────────────────────────
 

@@ -81,6 +81,7 @@ def inject_filters(
     filters: List[FilterParam],
     data_context: dict | None = None,
     widget_sources: list[str] | None = None,
+    dialect: str = "bigquery",
 ) -> Tuple[str, dict]:
     """
     Inject filter conditions into widget SQL using sqlglot's AST.
@@ -91,12 +92,17 @@ def inject_filters(
     output). Calendar-bounds CTEs and similar FROM-less scopes are skipped
     automatically because their `scope.sources` are empty.
 
-    Returns (modified_sql, params_dict). Values are parameterized via psycopg2
-    `%(key)s` placeholders. Column names are emitted as quoted identifiers so
-    reserved words and mixed-case names round-trip safely.
+    *dialect* selects how both the SQL is parsed/rendered and how the value
+    placeholders are emitted:
+      - "bigquery" (default): psycopg2 `%(key)s` placeholders (source-DB path).
+      - "duckdb":   DuckDB `$key` named placeholders (DataPlane serving path,
+        bound positionally-by-name from the params dict).
+    The returned params dict keys match the placeholder names (sans sigil) in
+    both cases. Column names are emitted as quoted identifiers so reserved words
+    and mixed-case names round-trip safely.
 
-    If parsing fails (non-BQ dialect, malformed SQL), falls back to a
-    dialect-neutral subquery wrap: `SELECT * FROM (<sql>) AS _wf WHERE ...`.
+    If parsing fails (malformed SQL), falls back to a subquery wrap:
+    `SELECT * FROM (<sql>) AS _wf WHERE ...`, placeholders still dialect-correct.
     """
     if not filters:
         return sql, {}
@@ -119,13 +125,13 @@ def inject_filters(
         params.update(sub_params)
 
     try:
-        modified = _inject_via_sqlglot(sql, filters, ast_conditions, data_context)
+        modified = _inject_via_sqlglot(sql, filters, ast_conditions, data_context, dialect)
     except Exception as e:
         logger.warning(
             "inject_filters: sqlglot rewrite failed (%s); falling back to subquery wrap",
             e,
         )
-        modified = _wrap_subquery_fallback(sql, params, filters)
+        modified = _wrap_subquery_fallback(sql, params, filters, dialect)
 
     return modified, params
 
@@ -182,8 +188,9 @@ def _inject_via_sqlglot(
     filters: List[FilterParam],
     conditions: list,
     data_context: dict | None,
+    dialect: str = "bigquery",
 ) -> str:
-    """Parse *sql* as BigQuery, pick the best SELECT scope, attach WHERE there.
+    """Parse *sql* in *dialect*, pick the best SELECT scope, attach WHERE there.
 
     Raises on parse failure so the caller can route to the subquery-wrap fallback.
     """
@@ -191,7 +198,7 @@ def _inject_via_sqlglot(
     from sqlglot import exp
     from sqlglot.optimizer.scope import build_scope
 
-    ast = sqlglot.parse_one(sql, dialect="bigquery")
+    ast = sqlglot.parse_one(sql, dialect=dialect)
     root_scope = build_scope(ast)
     if root_scope is None:
         raise ValueError("no SELECT scope")
@@ -217,8 +224,14 @@ def _inject_via_sqlglot(
     for cond in conditions:
         target_select.where(cond, append=True, copy=False)
 
-    rendered = ast.sql(dialect="bigquery")
-    return _PLACEHOLDER_REWRITE.sub(r"%(\1)s", rendered)
+    rendered = ast.sql(dialect=dialect)
+    if dialect == "bigquery":
+        # sqlglot renders exp.Placeholder as `@name` for BigQuery; swap to the
+        # psycopg2 `%(name)s` form the source-DB connectors bind.
+        return _PLACEHOLDER_REWRITE.sub(r"%(\1)s", rendered)
+    # DuckDB renders exp.Placeholder as `$name` natively — bound by name from
+    # the params dict, no rewrite needed.
+    return rendered
 
 
 def _pick_target_scope(
@@ -261,24 +274,29 @@ def _wrap_subquery_fallback(
     sql: str,
     params: dict,
     filters: List[FilterParam],
+    dialect: str = "bigquery",
 ) -> str:
-    """Dialect-neutral fallback when sqlglot can't parse the SQL.
+    """Fallback when sqlglot can't parse the SQL.
 
     Wraps the original query as a subquery and applies the WHERE on top. The
     filter column must survive into the subquery's output for this to work; for
     widgets that's normally true because filter columns are dimensions and
-    dashboards project their dimensions.
+    dashboards project their dimensions. Placeholders follow *dialect*:
+    `$key` for DuckDB, `%(key)s` otherwise.
     """
+    def _ph(key: str) -> str:
+        return f"${key}" if dialect == "duckdb" else f"%({key})s"
+
     conditions: list[str] = []
     for i, f in enumerate(filters):
         col = f'"{f.column}"'
         if f.op == 'in':
             values = f.value if isinstance(f.value, list) else [f.value]
-            placeholders = [f'%(_f{i}_{j})s' for j in range(len(values))]
+            placeholders = [_ph(f'_f{i}_{j}') for j in range(len(values))]
             conditions.append(f'{col} IN ({", ".join(placeholders)})')
         else:
             op = _OP_MAP[f.op]
-            conditions.append(f'{col} {op} %(_f{i})s')
+            conditions.append(f'{col} {op} {_ph(f"_f{i}")}')
     condition_clause = ' AND '.join(conditions)
     return f"SELECT * FROM (\n{sql}\n) AS _wf WHERE {condition_clause}"
 
@@ -309,6 +327,122 @@ def _read_widget_from_cache(
     )
 
 
+def _duckdb_serving_enabled(org_id: str | None) -> bool:
+    """True when the per-Org `duckdb_widget_serving` flag is on for this Org."""
+    if not org_id:
+        return False
+    from backend.config.feature_flags import enabled
+    return enabled(str(org_id), "duckdb_widget_serving")
+
+
+def _build_widget_response(result, mapping) -> "WidgetRefreshResponse":
+    """Shared QueryResult → WidgetRefreshResponse (local + GCS serving paths)."""
+    return WidgetRefreshResponse(
+        config=transform_widget_data(result, mapping),
+        execution_time_ms=result.execution_time_ms,
+        row_count=result.row_count,
+        truncated=result.truncated,
+        refreshed_at=datetime.now(timezone.utc).isoformat(),
+        source_columns=result.columns,
+        source_rows=[[_to_json_safe(v) for v in row] for row in result.rows],
+    )
+
+
+def _serve_widget_via_dataplane(
+    request: "WidgetRefreshRequest",
+    dashboard: "Dashboard | None",
+    current_user: User,
+    db: Session,
+) -> "WidgetRefreshResponse | None":
+    """Serve a widget read from DuckDB over the DataPlane Parquet.
+
+    Per-plane behavior:
+      - **LocalFilesystemDataPlane (dev):** run the widget's (DuckDB) SQL live
+        over the local source-table views — filtered and unfiltered alike.
+      - **BigQueryGCSPlane (prod):** DuckDB-over-GCS via httpfs (Phase 2).
+        Unfiltered → read the warm `_dash_*` results cache (small, fast);
+        filtered → run the full SQL live (dt=-pruned). Gated by the reader
+        factory (residency-locked / customer / no-HMAC planes → None → BQ).
+
+    Returns a response on success, or None to fall back to the legacy cache /
+    source-DB path. Transpile never runs here — stored SQL is assumed DuckDB;
+    unmigrated BigQuery SQL fails to parse → fall back, nothing breaks.
+    """
+    from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
+    from backend.services.data_plane_service import (
+        get_gcs_duckdb_reader,
+        get_plane_for_connection,
+    )
+    from backend.utils.sql_refs import extract_table_refs
+
+    connection = db.query(DatabaseConnection).filter(
+        DatabaseConnection.id == request.connection_id,
+        DatabaseConnection.user_id == current_user.id,
+    ).first()
+    if not connection:
+        return None
+
+    # GAP-10 cutover gate: only dashboards journaled as DuckDB (migrated or
+    # born-DuckDB) serve via DuckDB; un-migrated ones fall back to BQ/source so
+    # a mid-cutover viewer never gets BigQuery SQL run through DuckDB.
+    from backend.migration.dialect_migration import is_duckdb_ready
+    if not is_duckdb_ready(request.dashboard_id, db):
+        return None
+
+    data_context = dashboard.data_context if dashboard else None
+
+    # Same (plane, scope) the writers (CSV connector, Pipeline, migration) use —
+    # guarantees the read resolves to where the source Parquet was written.
+    plane, scope = get_plane_for_connection(connection)
+
+    # ── Dev: local plane → serve live over local Parquet ──────────────────
+    if isinstance(plane, LocalFilesystemDataPlane):
+        tables = extract_table_refs(request.sql)
+        if not tables or not all(plane.table_exists(scope, t) for t in tables):
+            return None  # cold/missing source → fall back to source DB
+        sql, params = request.sql, None
+        if request.filters:
+            sql, params = inject_filters(
+                request.sql, request.filters,
+                data_context=data_context, widget_sources=request.widget_sources,
+                dialect="duckdb",
+            )
+        return _build_widget_response(plane.query(scope, sql, params), request.mapping)
+
+    # ── Prod: DuckDB-over-GCS (direct httpfs) ─────────────────────────────
+    reader = None
+    try:
+        reader = get_gcs_duckdb_reader(scope, db)
+        if reader is None:
+            return None  # residency-locked / customer / no-HMAC → BQ fallback
+
+        if request.filters:
+            # Filtered → no unfiltered cache hit; run the full SQL live (pruned).
+            sql, params = inject_filters(
+                request.sql, request.filters,
+                data_context=data_context, widget_sources=request.widget_sources,
+                dialect="duckdb",
+            )
+            return _build_widget_response(reader.query(scope, sql, params), request.mapping)
+
+        # Unfiltered → read the warm _dash_* results cache (small, fast).
+        if not (dashboard and request.widget_id):
+            return None
+        from backend.services.dashboard_cache import _sanitize_widget_id
+        cache_table = f'_dash_{request.dashboard_id}__{_sanitize_widget_id(request.widget_id)}'
+        result = reader.query(scope, f'SELECT * FROM "{cache_table}"')
+        return _build_widget_response(result, request.mapping)
+    except Exception as e:
+        logger.warning(
+            "DuckDB-over-GCS serve failed for widget %s, falling back: %s",
+            request.widget_id, e,
+        )
+        return None
+    finally:
+        if reader is not None:
+            reader.close()
+
+
 router = APIRouter(prefix="/dashboards", tags=["widget-data"])
 
 
@@ -324,9 +458,10 @@ async def refresh_widget(
     The caller supplies connection_id, sql, and mapping. The response contains
     the new config dict to merge into widget.widget.config plus metadata.
 
-    When the dashboard has a Parquet cache on the DataPlane and no filters
-    are applied, reads from the cache instead of hitting the source DB.
-    Falls back to the source DB on cache miss or when filters are requested.
+    With `duckdb_widget_serving` on, every read (filtered or not) is served from
+    DuckDB over the DataPlane source Parquet; cold sources fall back. With the
+    flag off, behavior is unchanged: the Parquet `_dash_*` cache serves
+    unfiltered reads and the source DB serves the rest.
     """
     dashboard = None
     if request.dashboard_id:
@@ -334,6 +469,19 @@ async def refresh_widget(
             Dashboard.id == request.dashboard_id,
             Dashboard.user_id == current_user.id,
         ).first()
+
+    # DuckDB-over-DataPlane serving (flag-gated, per-Org). Serves filtered and
+    # unfiltered reads alike; returns None to fall through on cold source etc.
+    if dashboard and _duckdb_serving_enabled(getattr(current_user, "org_id", None)):
+        try:
+            served = _serve_widget_via_dataplane(request, dashboard, current_user, db)
+            if served is not None:
+                return served
+        except Exception as e:
+            logger.warning(
+                "DuckDB serving failed for widget %s, falling back to source DB: %s",
+                request.widget_id, e,
+            )
 
     # DataPlane cache read — only when no filters (Parquet has no WHERE injection).
     if dashboard and request.widget_id and not request.filters:
@@ -471,6 +619,24 @@ async def refresh_dashboard_widgets(
         chart_type = widget.get("widget", {}).get("config", {}).get("type")
         if chart_type and "chartType" not in mapping:
             mapping = {**mapping, "chartType": chart_type}
+
+        # DuckDB-over-DataPlane serving (flag-gated, per migrated dashboard) —
+        # same path as single-widget refresh, so bulk loads on cut-over Orgs
+        # avoid the per-widget BQ job. Falls through on None (GAP-7).
+        if _duckdb_serving_enabled(org_id):
+            try:
+                served = _serve_widget_via_dataplane(
+                    WidgetRefreshRequest(
+                        connection_id=connection_id, sql=sql, mapping=mapping,
+                        dashboard_id=dashboard_id, widget_id=widget_id,
+                    ),
+                    dashboard, current_user, db,
+                )
+                if served is not None:
+                    results[widget_id] = {"config": served.config, "refreshed_at": refreshed_at}
+                    continue
+            except Exception as e:
+                logger.warning(f"DuckDB serving failed for widget {widget_id}, falling back: {e}")
 
         # Try DataPlane cache first.
         try:
