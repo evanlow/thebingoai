@@ -343,10 +343,10 @@ const throttledScroll = () => {
 
 // Auto-scroll to bottom when new message arrives (immediate).
 // Always scroll for user messages (they just sent it); otherwise respect scroll position.
-watch(() => chatStore.messages.length, () => {
-  const lastMessage = chatStore.messages[chatStore.messages.length - 1]
-  const isUserMessage = lastMessage?.role === 'user'
-  if (isUserMessage || isNearBottom.value) {
+watch(() => chatStore.messages.length, (newLen, oldLen = 0) => {
+  const added = chatStore.messages.slice(oldLen)
+  const hasUserMessage = added.some(m => m.role === 'user')
+  if (hasUserMessage || isNearBottom.value) {
     nextTick(() => {
       isNearBottom.value = true
       scrollToBottom()
