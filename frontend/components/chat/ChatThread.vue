@@ -25,7 +25,7 @@
             class="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--ink-2)] hover:bg-[var(--paper-2)] transition-colors"
             title="Schedule"
           >
-            <Activity class="w-4 h-4" />
+            <Activity class="w-4 h-4" :class="{ 'animate-pulse text-[var(--ember)]': hasActiveJobs }" />
           </button>
 
           <!-- Details / toggle dataset pane (icon only) -->
@@ -143,6 +143,16 @@ watch(isPermanentThread, (v) => { if (v) ensureBriefings() }, { immediate: true 
 
 const isTelegramEnabled = computed(() => featureConfig.value?.telegram_enabled === true)
 const telegramConnected = ref(false)
+const hasActiveJobs = ref(false)
+
+// Pulse the schedule icon while the user has ≥1 active scheduled job. Use a watcher
+// (not onMounted) because the permanent conversation loads async — mirrors the briefings watch above.
+watch(() => chatStore.currentConversation?.type === 'permanent', (isPerm) => {
+  if (!isPerm) return
+  api.heartbeatJobs.list()
+    .then((jobs) => { hasActiveJobs.value = (jobs as { is_active: boolean }[]).some(j => j.is_active) })
+    .catch(() => { /* silently ignore — icon stays static */ })
+}, { immediate: true })
 
 onMounted(async () => {
   agentProfile.fetchProfile()
