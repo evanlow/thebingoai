@@ -110,11 +110,10 @@
           </div>
           <template v-for="group in groupedTasks" :key="group.label">
             <div class="px-4 pt-3 pb-1 eyebrow">{{ group.label }}</div>
-            <button
+            <div
               v-for="conv in group.conversations"
               :key="conv.id"
-              @click="handleSelectConversation(conv.id)"
-              class="w-full flex items-baseline gap-2 px-4 py-1.5 text-left transition-colors duration-150 border-l-2"
+              class="group w-full flex items-center gap-2 px-4 py-1.5 transition-colors duration-150 border-l-2"
               :class="[
                 chatStore.currentThreadId === conv.id
                   ? 'border-[var(--ember)] bg-[var(--ember-wash)]'
@@ -122,8 +121,9 @@
                 conv.id === newlyAddedId ? 'task-slide-in' : ''
               ]"
             >
-              <span
-                class="sidebar-title flex-1 min-w-0 text-[12.5px] overflow-hidden text-ellipsis whitespace-nowrap"
+              <button
+                @click="handleSelectConversation(conv.id)"
+                class="sidebar-title flex-1 min-w-0 text-[12.5px] text-left overflow-hidden text-ellipsis whitespace-nowrap"
                 :class="chatStore.currentThreadId === conv.id ? 'font-semibold text-[var(--ink-0)]' : 'font-normal text-[var(--ink-1)]'"
               >
                 <span class="marquee-inner">
@@ -131,8 +131,15 @@
                   <span class="marquee-spacer">&nbsp;&mdash;&nbsp;</span>
                   <span>{{ conv.title }}</span>
                 </span>
-              </span>
-            </button>
+              </button>
+              <button
+                @click.stop="handleArchive(conv.id)"
+                class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--paper-3)]"
+                aria-label="Archive"
+              >
+                <ArchiveIcon class="h-3 w-3 text-[var(--ink-3)]" />
+              </button>
+            </div>
           </template>
           <div v-if="chatStore.isLoadingMoreConversations" class="px-4 py-2 text-[11px] text-[var(--ink-3)]">
             Loading…
@@ -437,6 +444,10 @@ const handleToggleArchived = () => {
 
 const handleUnarchive = (threadId: string) => {
   chat.unarchiveConversation(threadId)
+}
+
+const handleArchive = (threadId: string) => {
+  chat.archiveConversation(threadId)
 }
 
 const handleSelectConversation = (id: string) => {
