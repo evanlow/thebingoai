@@ -27,7 +27,10 @@
       <div class="w-13 h-13 rounded-[var(--r-md)] bg-transparent flex items-center justify-center text-white font-bold text-xl font-serif italic flex-shrink-0 overflow-hidden"
            style="width:52px;height:52px;">
         <img v-if="localData.avatar_url" :src="localData.avatar_url" class="w-full h-full object-cover" alt="Avatar" />
-        <img v-else src="/logo/BINGO Logo Design_FA_Icon_W.png" class="w-full h-full object-contain p-1.5" alt="Bingo" />
+        <template v-else>
+          <img src="/logo/BINGO Logo Design_FA_Icon.png" class="w-full h-full object-contain p-1.5 dark:hidden" alt="Bingo" />
+          <img src="/logo/BINGO Logo Design_FA_Icon_W.png" class="w-full h-full object-contain p-1.5 hidden dark:block" alt="Bingo" />
+        </template>
       </div>
       <div class="flex-1">
         <p class="text-sm font-semibold text-[var(--ink-0)]">{{ localData.display_name || 'Bingo' }}</p>
