@@ -203,16 +203,23 @@
     <!-- ── COLLAPSED state (56px icon rail) ──────────────── -->
     <template v-else>
 
-      <!-- Logo / expand button -->
+      <!-- Logo / expand button — coin-flip to toggle on hover -->
       <div
-        class="flex h-14 items-center justify-center flex-shrink-0 group cursor-pointer"
+        class="flex h-14 items-center justify-center flex-shrink-0 group cursor-pointer sidebar-flip-wrap"
         @click="layoutStore.toggleSidebarCollapsed()"
         title="Open sidebar"
       >
-        <!-- Logo visible by default, swap to expand icon on hover -->
-        <img src="/logo/BINGO Logo Design_FA_Icon.png" alt="Bingo" style="height: 24px; width: auto;" class="block dark:hidden group-hover:hidden" />
-        <img src="/logo/BINGO Logo Design_FA_Icon_W.png" alt="Bingo" style="height: 24px; width: auto;" class="hidden dark:block group-hover:hidden" />
-        <PanelLeftOpen class="h-4 w-4 text-[var(--ink-2)] hidden group-hover:block" />
+        <div class="sidebar-flip">
+          <!-- front: bingo icon -->
+          <div class="sidebar-flip-face">
+            <img src="/logo/BINGO Logo Design_FA_Icon.png" alt="Bingo" style="height: 24px; width: auto;" class="block dark:hidden" />
+            <img src="/logo/BINGO Logo Design_FA_Icon_W.png" alt="Bingo" style="height: 24px; width: auto;" class="hidden dark:block" />
+          </div>
+          <!-- back: expand toggle -->
+          <div class="sidebar-flip-face sidebar-flip-back">
+            <PanelLeftOpen class="h-4 w-4 text-[var(--ink-2)]" />
+          </div>
+        </div>
       </div>
 
       <!-- Bingo (permanent chat) icon -->
@@ -489,6 +496,30 @@ const handleSelectConversation = (id: string) => {
 @keyframes marquee-scroll {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
+}
+
+/* Collapsed-rail logo → toggle coin-flip */
+.sidebar-flip-wrap { perspective: 400px; }
+.sidebar-flip {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  transform-style: preserve-3d;
+  transition: transform 0.3s ease-in-out;
+}
+.sidebar-flip-wrap:hover .sidebar-flip { transform: rotateY(180deg); }
+.sidebar-flip-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+}
+.sidebar-flip-back { transform: rotateY(180deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-flip { transition: none; }
 }
 </style>
 
