@@ -69,18 +69,17 @@ def get_default_plane(scope: OwnerScope, db=None):
 
 
 def _resolve_default_row(scope: OwnerScope, db):
-    """Return the first ``is_default`` DataPlaneModel row in the scope chain, or None."""
-    from sqlalchemy import tuple_
-    from backend.models.data_plane import DataPlaneModel
+    """Return the first ``is_default`` DataPlaneModel row in the scope chain, or None.
 
+    Under lockdown, a no-row miss triggers the registered provision-on-miss hook
+    once and re-queries. Callers (`get_default_plane`, `get_gcs_duckdb_reader`)
+    own instantiation and the no-row fallback — this returns the raw row or None.
+    """
     chain = _scope_chain(scope, db)
     row = _resolve_row(chain, db)
     if row is None and _try_provision_on_miss(chain):
         row = _resolve_row(chain, db)
-    if row is not None:
-        return _instantiate(row)
-
-    return _no_row_fallback(scope)
+    return row
 
 
 def _resolve_row(chain, db):
@@ -199,6 +198,32 @@ def get_plane_for_connection(connection):
     scope = OwnerScope.from_connection(connection)
     plane = get_default_plane(scope)
     return plane, scope
+
+
+def plane_table_map(connection, db) -> dict[str, str]:
+    """Map a SQL-source connection's source table names → their pipeline
+    `target_table` on the data plane.
+
+    Widget SQL is written against source table names (e.g. ``orders``); the
+    Pipeline materializes that table under ``<slug>__<table>`` (e.g.
+    ``acme__orders``). This map lets the DuckDB-over-DataPlane read/warm paths
+    rewrite the former to the latter so the GCS Parquet glob resolves.
+
+    Only single-table pipelines are mapped — the auto-templater emits one
+    pipeline per source table; multi-table extraction configs are skipped to
+    avoid ambiguous many→one mappings. Empty when the connection has no
+    pipelines (the rewrite is then a no-op).
+    """
+    from backend.models.pipeline import Pipeline
+
+    mapping: dict[str, str] = {}
+    for p in db.query(Pipeline).filter(
+        Pipeline.source_connection_id == connection.id,
+    ).all():
+        tables = (p.extraction_config or {}).get("tables") or []
+        if len(tables) == 1 and p.target_table:
+            mapping[str(tables[0]).lower()] = p.target_table
+    return mapping
 
 
 def _instantiate(row):

@@ -372,8 +372,9 @@ def _serve_widget_via_dataplane(
     from backend.services.data_plane_service import (
         get_gcs_duckdb_reader,
         get_plane_for_connection,
+        plane_table_map,
     )
-    from backend.utils.sql_refs import extract_table_refs
+    from backend.utils.sql_refs import extract_table_refs, rewrite_table_refs
 
     connection = db.query(DatabaseConnection).filter(
         DatabaseConnection.id == request.connection_id,
@@ -395,15 +396,20 @@ def _serve_widget_via_dataplane(
     # guarantees the read resolves to where the source Parquet was written.
     plane, scope = get_plane_for_connection(connection)
 
+    # Widget SQL is written against source table names (e.g. `orders`); rewrite
+    # them to the Pipeline's materialized plane table (e.g. `acme__orders`) so
+    # the Parquet glob resolves. No-op when the connection has no pipelines.
+    base_sql, _ = rewrite_table_refs(request.sql, plane_table_map(connection, db))
+
     # ── Dev: local plane → serve live over local Parquet ──────────────────
     if isinstance(plane, LocalFilesystemDataPlane):
-        tables = extract_table_refs(request.sql)
+        tables = extract_table_refs(base_sql)
         if not tables or not all(plane.table_exists(scope, t) for t in tables):
             return None  # cold/missing source → fall back to source DB
-        sql, params = request.sql, None
+        sql, params = base_sql, None
         if request.filters:
             sql, params = inject_filters(
-                request.sql, request.filters,
+                base_sql, request.filters,
                 data_context=data_context, widget_sources=request.widget_sources,
                 dialect="duckdb",
             )
@@ -419,19 +425,24 @@ def _serve_widget_via_dataplane(
         if request.filters:
             # Filtered → no unfiltered cache hit; run the full SQL live (pruned).
             sql, params = inject_filters(
-                request.sql, request.filters,
+                base_sql, request.filters,
                 data_context=data_context, widget_sources=request.widget_sources,
                 dialect="duckdb",
             )
             return _build_widget_response(reader.query(scope, sql, params), request.mapping)
 
-        # Unfiltered → read the warm _dash_* results cache (small, fast).
-        if not (dashboard and request.widget_id):
-            return None
-        from backend.services.dashboard_cache import _sanitize_widget_id
-        cache_table = f'_dash_{request.dashboard_id}__{_sanitize_widget_id(request.widget_id)}'
-        result = reader.query(scope, f'SELECT * FROM "{cache_table}"')
-        return _build_widget_response(result, request.mapping)
+        # Unfiltered → prefer the warm _dash_* results cache (small, fast); if
+        # it's cold or mis-scoped, serve live over the source Parquet (same as
+        # the dev local-plane branch) so the widget still reads from the lake.
+        if dashboard and request.widget_id:
+            from backend.services.dashboard_cache import _sanitize_widget_id
+            cache_table = f'_dash_{request.dashboard_id}__{_sanitize_widget_id(request.widget_id)}'
+            try:
+                result = reader.query(scope, f'SELECT * FROM "{cache_table}"')
+                return _build_widget_response(result, request.mapping)
+            except Exception:
+                pass  # cold/missing cache → live read below
+        return _build_widget_response(reader.query(scope, base_sql), request.mapping)
     except Exception as e:
         logger.warning(
             "DuckDB-over-GCS serve failed for widget %s, falling back: %s",
