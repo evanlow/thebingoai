@@ -70,17 +70,11 @@ def get_default_plane(scope: OwnerScope, db=None):
 
 def _resolve_default_row(scope: OwnerScope, db):
     """Return the first ``is_default`` DataPlaneModel row in the scope chain, or None."""
-    from sqlalchemy import tuple_
-    from backend.models.data_plane import DataPlaneModel
-
     chain = _scope_chain(scope, db)
     row = _resolve_row(chain, db)
     if row is None and _try_provision_on_miss(chain):
         row = _resolve_row(chain, db)
-    if row is not None:
-        return _instantiate(row)
-
-    return _no_row_fallback(scope)
+    return row
 
 
 def _resolve_row(chain, db):
