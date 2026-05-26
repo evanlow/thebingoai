@@ -521,7 +521,7 @@
               </div>
             </div>
 
-            <div class="mt-8 pt-4 border-t border-red-100 dark:border-red-900/30">
+            <div class="mt-8 pt-4 pb-8 border-t border-red-100 dark:border-red-900/30">
               <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
               <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
               <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
@@ -625,7 +625,7 @@
             </div>
           </form>
 
-          <div v-if="editingConnection" class="mt-8 pt-4 border-t border-red-100 dark:border-red-900/30">
+          <div v-if="editingConnection" class="mt-8 pt-4 pb-8 border-t border-red-100 dark:border-red-900/30">
             <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
             <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
             <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
@@ -685,7 +685,8 @@
 
     <!-- Delete Confirmation Dialog -->
     <UiDialog
-      v-model:open="showDeleteDialog"
+      :open="showDeleteDialog"
+      @update:open="(v: boolean) => { if (!v) cancelDelete() }"
       size="sm"
       :closable="false"
     >
@@ -717,7 +718,7 @@
       />
 
       <template #footer>
-        <UiButton variant="outline" @click="showDeleteDialog = false">
+        <UiButton variant="outline" @click="cancelDelete">
           Cancel
         </UiButton>
         <UiButton
@@ -918,6 +919,7 @@ const connectionSuccessMessage = ref('')
 const connectionFailedMessage = ref('')
 const showDeleteDialog = ref(false)
 const deletingConnection = ref<DatabaseConnection | null>(null)
+const wasEditingBeforeDelete = ref(false)
 const deleting = ref(false)
 const refreshingId = ref<number | null>(null)
 const testing = ref(false)
@@ -1799,9 +1801,19 @@ async function refreshSchema(connection: DatabaseConnection) {
 }
 
 function openDeleteDialog(connection: DatabaseConnection) {
+  wasEditingBeforeDelete.value = showFormSheet.value
+  if (wasEditingBeforeDelete.value) showFormSheet.value = false
   deletingConnection.value = connection
   deleteConfirmInput.value = ''
   showDeleteDialog.value = true
+}
+
+function cancelDelete() {
+  showDeleteDialog.value = false
+  if (wasEditingBeforeDelete.value) {
+    showFormSheet.value = true
+    wasEditingBeforeDelete.value = false
+  }
 }
 
 async function refreshAllConnections() {
@@ -1824,6 +1836,7 @@ async function confirmDelete() {
     toast.success('Connection deleted successfully')
     showDeleteDialog.value = false
     showFormSheet.value = false
+    wasEditingBeforeDelete.value = false
     await fetchConnections()
   } catch (err: any) {
     const detail = err?.data?.detail
