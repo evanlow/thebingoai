@@ -69,7 +69,12 @@ def get_default_plane(scope: OwnerScope, db=None):
 
 
 def _resolve_default_row(scope: OwnerScope, db):
-    """Return the first ``is_default`` DataPlaneModel row in the scope chain, or None."""
+    """Return the first ``is_default`` DataPlaneModel row in the scope chain, or None.
+
+    Under lockdown, a no-row miss first invokes the plugin-registered provisioner
+    and re-queries before giving up. Callers handle the None case (instantiate vs
+    fallback) themselves so this stays a pure row lookup.
+    """
     chain = _scope_chain(scope, db)
     row = _resolve_row(chain, db)
     if row is None and _try_provision_on_miss(chain):
