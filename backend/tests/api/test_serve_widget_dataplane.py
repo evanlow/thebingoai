@@ -179,6 +179,109 @@ def test_prod_filtered_runs_live_injected(monkeypatch, current_user, db_with_con
     assert "$_f0" in sql and params == {"_f0": "EMEA"}  # filtered → live injected SQL
 
 
+# --- served_from provenance flag (Parquet badge on widget) ------------------
+
+def test_local_serve_marks_response_data_plane(monkeypatch, plane, scope, current_user, db_with_connection):
+    """Local dev path: a successful DuckDB-over-Parquet serve must tag the
+    response as `served_from='data_plane'` so the frontend renders the
+    "Parquet • synced X ago" badge instead of the plain age stamp.
+    """
+    _write_sales(plane, scope)
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region")
+    resp = _serve_widget_via_dataplane(req, None, current_user, db_with_connection)
+
+    assert resp is not None
+    assert resp.served_from == "data_plane"
+
+
+def test_prod_serve_marks_response_data_plane(monkeypatch, current_user, db_with_connection):
+    """Prod GCS-DuckDB path also tags `served_from='data_plane'`."""
+    reader = _FakeReader(_qr(["region", "total"], [("EMEA", 15)]))
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
+    monkeypatch.setattr(dps, "get_gcs_duckdb_reader", lambda scope, db: reader)
+
+    dashboard = SimpleNamespace(data_context=None)
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region", dashboard_id=5)
+    resp = _serve_widget_via_dataplane(req, dashboard, current_user, db_with_connection)
+
+    assert resp is not None
+    assert resp.served_from == "data_plane"
+
+
+# --- Bootstrap-fallback ("not-ready policy") for pg/mysql ------------------
+
+
+def _pipeline(*, target_table="pg_demo__orders", source_tables=("orders",), first_ingest_done=False):
+    return SimpleNamespace(
+        target_table=target_table,
+        extraction_config={"tables": list(source_tables)},
+        first_ingest_done=first_ingest_done,
+    )
+
+
+def _db_with_pipelines(connection_obj, pipelines):
+    """Fake Session whose `query(DatabaseConnection)` returns *connection_obj*
+    and `query(Pipeline)` returns *pipelines*."""
+    db = MagicMock()
+
+    def query(model):
+        q = MagicMock()
+        if getattr(model, "__name__", "") == "Pipeline":
+            q.filter.return_value.all.return_value = pipelines
+        else:
+            q.filter.return_value.first.return_value = connection_obj
+        return q
+
+    db.query = query
+    return db
+
+
+def test_bootstrap_fallback_when_first_ingest_not_done(monkeypatch, plane, scope, current_user):
+    """No Parquet partition yet, first_ingest_done=False → return None so the
+    caller's legacy source-DB fallback runs (one live query allowed)."""
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+    conn_obj = SimpleNamespace(id=1, user_id="u1", org_id=None, db_type="postgres")
+    db = _db_with_pipelines(conn_obj, [_pipeline(first_ingest_done=False)])
+
+    req = _request("SELECT * FROM orders")
+    resp = _serve_widget_via_dataplane(req, None, current_user, db)
+    # plane.table_exists is False (we never wrote `orders`) AND first_ingest_done
+    # is False → bootstrap fallback path returns None.
+    assert resp is None
+
+
+def test_503_after_first_ingest_done_when_plane_missing(monkeypatch, plane, scope, current_user):
+    """Pipeline reports first ingest finished but Parquet is missing — refuse to
+    re-hammer the source, raise HTTPException(503, code=plane_table_missing)."""
+    from fastapi import HTTPException
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+    conn_obj = SimpleNamespace(id=1, user_id="u1", org_id=None, db_type="postgres")
+    db = _db_with_pipelines(conn_obj, [_pipeline(first_ingest_done=True)])
+
+    req = _request("SELECT * FROM orders")
+    with pytest.raises(HTTPException) as exc:
+        _serve_widget_via_dataplane(req, None, current_user, db)
+    assert exc.value.status_code == 503
+    assert exc.value.detail.get("code") == "plane_table_missing"
+
+
+def test_bootstrap_fallback_ignores_unrelated_pipelines(monkeypatch, plane, scope, current_user):
+    """A done pipeline for a DIFFERENT table must not trigger the 503 for
+    the queried table — only matching pipelines gate the policy."""
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+    conn_obj = SimpleNamespace(id=1, user_id="u1", org_id=None, db_type="postgres")
+    db = _db_with_pipelines(
+        conn_obj,
+        [_pipeline(target_table="pg_demo__users", source_tables=("users",), first_ingest_done=True)],
+    )
+
+    req = _request("SELECT * FROM orders")
+    resp = _serve_widget_via_dataplane(req, None, current_user, db)
+    assert resp is None  # falls through to source DB
+
+
 def test_prod_reader_none_falls_back(monkeypatch, current_user, db_with_connection):
     # residency-locked / customer / no-HMAC plane → factory returns None → BQ fallback.
     monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
