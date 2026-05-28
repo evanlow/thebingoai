@@ -305,9 +305,16 @@ def build_dashboard_agent_prompt(
         # Defensive: hint injection must never block prompt build.
         pass
 
-    # SQL dialect hints: DuckDB once the Org is cut over to DuckDB-over-Parquet
-    # serving, BigQuery otherwise (default / legacy).
-    from backend.agents.profile_defaults import _dialect_hints_for_org
-    prompt += _dialect_hints_for_org(org_id)
+    # SQL dialect hints — driven by Org flag (duckdb_widget_serving) and
+    # target connection db_type. New dashboards now emit source-native SQL
+    # instead of always defaulting to BigQuery.
+    from backend.agents.profile_defaults import _dialect_hints_for_target
+    target_db_type: str | None = None
+    if target_connection_id is not None and connection_metadata:
+        for c in connection_metadata:
+            if c.id == target_connection_id:
+                target_db_type = getattr(c, "db_type", None)
+                break
+    prompt += _dialect_hints_for_target(org_id, target_db_type)
 
     return prompt
