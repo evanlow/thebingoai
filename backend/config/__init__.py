@@ -167,6 +167,9 @@ class Settings(BaseSettings):
     orchestrator_lean_tools: bool = False  # ≤10 primary tools + manage meta-tool + @-mention scope
     template_backfill_on_startup: bool = True  # plugin-template framework: backfill existing connections at boot
 
+    # Connector picker visibility
+    hidden_connector_types: str = ""  # comma-separated connector type_ids hidden from the picker
+
     # Agent mesh settings (Redis DB 4)
     agent_mesh_redis_url: str = "redis://localhost:6379/4"
 
@@ -196,6 +199,10 @@ class Settings(BaseSettings):
                 "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
             )
         return v
+
+    @property
+    def hidden_connector_type_set(self) -> set[str]:
+        return {t.strip().lower() for t in self.hidden_connector_types.split(",") if t.strip()}
 
     model_config = SettingsConfigDict(
         env_file=".env",

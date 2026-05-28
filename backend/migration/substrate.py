@@ -48,7 +48,7 @@ class WidgetPendingManualRewrite(Base):
     status = Column(String(16), nullable=False, default="pending")
     # 'migration' (Phase 3 substrate rewrite) | 'parse_failure' (Phase 6 lineage)
     source = Column(String(16), nullable=False, default="migration")
-    resolved_by_user_id = Column(Integer, nullable=True)
+    resolved_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now(), default=datetime.utcnow)
     resolved_at = Column(DateTime, nullable=True)
 

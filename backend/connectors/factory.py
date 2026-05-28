@@ -31,7 +31,9 @@ def get_connector_registration(type_id: str) -> ConnectorRegistration | None:
 
 
 def get_available_types() -> list[dict]:
-    """Return metadata for all registered connector types."""
+    """Return metadata for all registered connector types (minus hidden ones)."""
+    from backend.config import settings
+    hidden = settings.hidden_connector_type_set
     return [
         {
             "id": reg.type_id,
@@ -44,6 +46,7 @@ def get_available_types() -> list[dict]:
             "skip_schema_refresh": reg.skip_schema_refresh,
         }
         for reg in _CONNECTORS.values()
+        if reg.type_id not in hidden
     ]
 
 

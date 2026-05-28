@@ -277,7 +277,7 @@
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-gray-900 dark:text-neutral-100">{{ type.display_name }}</span>
-                <span class="text-xs text-gray-400 dark:text-neutral-500">v{{ type.version }}</span>
+                <span v-if="type.version" class="text-xs text-gray-400 dark:text-neutral-500">v{{ type.version }}</span>
               </div>
               <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">{{ type.description }}</p>
             </div>
