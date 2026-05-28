@@ -20,8 +20,9 @@ export function createConnectionsApi(fetchWithRefresh: Function, authStore: any,
         body: data
       })
     },
-    async delete(id: string) {
-      return fetchWithRefresh(`/api/connections/${id}`, {
+    async delete(id: string, opts?: { cascade?: boolean }) {
+      const qs = opts?.cascade ? '?cascade=true' : ''
+      return fetchWithRefresh(`/api/connections/${id}${qs}`, {
         method: 'DELETE',
       })
     },

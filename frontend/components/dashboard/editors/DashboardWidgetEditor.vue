@@ -30,6 +30,16 @@
         Configure
       </button>
       <button
+        v-if="props.widget.widget.type === 'table' || props.widget.widget.type === 'kpi'"
+        class="px-3 py-2 text-sm font-medium border-b-2 transition-colors"
+        :class="activeTab === 'style'
+          ? 'border-indigo-500 text-indigo-600'
+          : 'border-transparent text-gray-500 hover:text-gray-700'"
+        @click="activeTab = 'style'"
+      >
+        Style
+      </button>
+      <button
         class="px-3 py-2 text-sm font-medium border-b-2 transition-colors"
         :class="activeTab === 'data'
           ? 'border-indigo-500 text-indigo-600'
@@ -51,9 +61,14 @@
         <component
           :is="editorComponent"
           v-if="editorComponent"
+          :key="props.widget.id"
           :model-value="currentConfig"
           :edit-mode="editMode"
-          v-bind="props.widget.widget.type === 'kpi' ? { dataSource: props.widget.dataSource, sourceColumns, sourceRows: previewRows } : {}"
+          v-bind="props.widget.widget.type === 'kpi'
+            ? { dataSource: props.widget.dataSource, sourceColumns, sourceRows: previewRows }
+            : props.widget.widget.type === 'table'
+              ? { sourceColumns }
+              : {}"
           class="h-full"
           @update:model-value="onConfigUpdate"
           @update:mapping="onMappingUpdate"
@@ -61,6 +76,34 @@
         <div v-else class="flex h-full items-center justify-center p-10 text-sm text-gray-400">
           Configuration editor not yet available for this widget type.
         </div>
+      </div>
+
+      <!-- Style tab (table) -->
+      <div
+        v-else-if="activeTab === 'style' && props.widget.widget.type === 'table'"
+        class="h-full overflow-hidden"
+      >
+        <WidgetEditorTableStyle
+          :key="props.widget.id"
+          :model-value="currentConfig"
+          :edit-mode="editMode"
+          class="h-full"
+          @update:model-value="onConfigUpdate"
+        />
+      </div>
+
+      <!-- Style tab (kpi) -->
+      <div
+        v-else-if="activeTab === 'style' && props.widget.widget.type === 'kpi'"
+        class="h-full overflow-hidden"
+      >
+        <WidgetEditorKpiStyle
+          :key="props.widget.id"
+          :model-value="currentConfig"
+          :edit-mode="editMode"
+          class="h-full"
+          @update:model-value="onConfigUpdate"
+        />
       </div>
 
       <!-- Data Source tab -->
@@ -80,20 +123,66 @@
           </button>
         </div>
 
-        <!-- Connection picker -->
+        <!-- Source picker (Phase 6: Org tables vs Live source connections) -->
         <div class="space-y-1">
-          <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Connection</label>
-          <select
-            v-model="selectedConnectionId"
-            :disabled="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
-            @change="onConnectionChange()"
-          >
-            <option :value="null" disabled>Select a connection…</option>
-            <option v-for="conn in connections" :key="conn.id" :value="conn.id">
-              {{ conn.name }}
-            </option>
-          </select>
+          <div class="flex gap-2 text-[11px]">
+            <button
+              type="button"
+              :disabled="!editMode"
+              :class="sourceTab === 'orgTables'
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'"
+              class="rounded-md border px-2.5 py-1 font-medium transition-colors disabled:opacity-40 disabled:cursor-default"
+              @click="sourceTab = 'orgTables'"
+            >
+              Org tables
+            </button>
+            <button
+              type="button"
+              :disabled="!editMode"
+              :class="sourceTab === 'live'
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'"
+              class="rounded-md border px-2.5 py-1 font-medium transition-colors disabled:opacity-40 disabled:cursor-default"
+              @click="sourceTab = 'live'"
+            >
+              Live source connections
+            </button>
+          </div>
+
+          <!-- Tab 1: Org tables (Pipeline outputs + dbt models) -->
+          <div v-if="sourceTab === 'orgTables'" class="mt-2 space-y-1">
+            <select
+              v-model="selectedOrgTable"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              @change="onOrgTableChange()"
+            >
+              <option value="" disabled>Select a DataPlane table…</option>
+              <option v-for="t in orgTables" :key="t.name" :value="t.name">
+                {{ t.name }}{{ t.writer ? ` — ${t.writer}` : '' }}
+              </option>
+            </select>
+            <p v-if="orgTables.length === 0" class="text-[11px] text-gray-500">
+              No DataPlane tables yet. Switch to <em>Live source connections</em> to query a database directly.
+            </p>
+          </div>
+
+          <!-- Tab 2: Live source connections (legacy default) -->
+          <div v-else class="mt-2 space-y-1">
+            <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Connection</label>
+            <select
+              v-model="selectedConnectionId"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              @change="onConnectionChange()"
+            >
+              <option :value="null" disabled>Select a connection…</option>
+              <option v-for="conn in connections" :key="conn.id" :value="conn.id">
+                {{ conn.name }}
+              </option>
+            </select>
+          </div>
         </div>
 
         <!-- SQL textarea with syntax highlighting -->
@@ -180,6 +269,8 @@
 
 <script lang="ts">
 import { defineAsyncComponent } from 'vue'
+import WidgetEditorTableStyle from './WidgetEditorTableStyle.vue'
+import WidgetEditorKpiStyle from './WidgetEditorKpiStyle.vue'
 
 // Defined at module level so they're singletons, not re-created on each setup call
 const editorComponents: Record<string, ReturnType<typeof defineAsyncComponent>> = {
@@ -217,7 +308,7 @@ const store = useDashboardStore()
 const api = useApi()
 
 // Tab state (only relevant for data widgets)
-const activeTab = ref<'configure' | 'data'>('configure')
+const activeTab = ref<'configure' | 'style' | 'data'>('configure')
 
 // Local meta state
 const localTitle = computed(() => props.widget.title ?? '')
@@ -243,6 +334,11 @@ const previewError = ref<string | null>(null)
 const suggestLoading = ref(false)
 const suggestion = ref<{ suggested_sql: string; explanation: string } | null>(null)
 const sourceColumns = ref<string[]>([])
+
+// Phase 6: Source picker tab — "Org tables" (DataPlane outputs) vs "Live source connections"
+const sourceTab = ref<'orgTables' | 'live'>('live')
+const orgTables = ref<{ name: string; writer?: string; connectionId?: number }[]>([])
+const selectedOrgTable = ref<string>('')
 
 // SQL syntax highlighting
 const sqlHighlightRef = ref<HTMLElement | null>(null)
@@ -298,6 +394,23 @@ const editorComponent = computed(() =>
   editorComponents[props.widget.widget.type] ?? null,
 )
 
+/** Auto-fetch raw SQL columns/rows so the editor's column-key dropdowns stay populated. */
+async function fetchSourceColumns() {
+  const ds = props.widget.dataSource
+  if (!ds?.sql) return
+  try {
+    const response = await api.dashboards.refreshWidget({
+      connection_id: ds.connectionId,
+      sql: ds.sql,
+      mapping: ds.mapping as any,
+    }) as { source_columns?: string[]; source_rows?: any[][] }
+    sourceColumns.value = response.source_columns ?? []
+    previewRows.value = response.source_rows ?? []
+  } catch {
+    // silently ignore — columns will just be empty
+  }
+}
+
 /** Reset local state when a different widget is selected */
 watch(() => props.widget.id, () => {
   localSql.value = tryFormatSql(props.widget.dataSource?.sql ?? '')
@@ -307,6 +420,7 @@ watch(() => props.widget.id, () => {
   previewError.value = null
   suggestion.value = null
   sourceColumns.value = []
+  if (isDataWidget.value) fetchSourceColumns()
   activeTab.value = 'configure'
 })
 
@@ -331,7 +445,14 @@ function onMappingUpdate(patch: Record<string, any>) {
         { columns: sourceColumns.value, rows: previewRows.value },
         newMapping,
       )
-      store.updateWidgetConfig(props.widget.id, { type: 'kpi', config })
+      // Preserve user-configured style/label/comparison fields by merging
+      // existing config under the freshly transformed value/sparkline/trend.
+      const current = props.widget.widget
+      const existingConfig = current.type === 'kpi' ? (current.config as Record<string, any>) : {}
+      store.updateWidgetConfig(props.widget.id, {
+        type: 'kpi',
+        config: { ...existingConfig, ...config } as any,
+      })
     })
   }
 }
@@ -441,6 +562,48 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') emit('close')
 }
 
+function onOrgTableChange() {
+  if (!selectedOrgTable.value) return
+  const t = orgTables.value.find(x => x.name === selectedOrgTable.value)
+  if (!t) return
+  // Use the connection that owns/feeds this DataPlane table when known;
+  // fall back to whatever the user already had selected.
+  if (t.connectionId) selectedConnectionId.value = t.connectionId
+  localSql.value = tryFormatSql(`SELECT * FROM ${t.name} LIMIT 100`)
+  onSqlBlur()
+}
+
+async function loadOrgTables() {
+  try {
+    const { useLineage } = await import('~/composables/useLineage')
+    const { fetchGraph } = useLineage()
+    const g = await fetchGraph()
+    if (!g) return
+    // Build a map: table name → connection that feeds it (if any)
+    const tableConn: Record<string, number | undefined> = {}
+    for (const e of g.edges) {
+      if (e.kind === 'source_to_table' && e.src.startsWith('conn:') && e.dst.startsWith('table:')) {
+        const tname = e.dst.slice('table:'.length)
+        const cid = parseInt(e.src.slice('conn:'.length), 10)
+        if (!isNaN(cid)) tableConn[tname] = cid
+      }
+    }
+    orgTables.value = g.nodes
+      .filter(n => n.kind === 'table' && (n.meta?.writer === 'pipeline' || n.meta?.writer === 'dbt'))
+      .map(n => ({
+        name: n.name,
+        writer: n.meta?.writer,
+        connectionId: tableConn[n.name.toLowerCase()],
+      }))
+    // Default the source tab to "Org tables" iff this dashboard has any
+    if (orgTables.value.length > 0 && !props.widget.dataSource?.connectionId) {
+      sourceTab.value = 'orgTables'
+    }
+  } catch {
+    // Silent failure — picker just shows the legacy tab
+  }
+}
+
 onMounted(async () => {
   document.addEventListener('keydown', onKeydown)
   initHighlighter()
@@ -451,22 +614,10 @@ onMounted(async () => {
     } catch {
       // silently ignore — connections will just be empty
     }
+    loadOrgTables()
 
     // Auto-fetch source columns if data source exists
-    const ds = props.widget.dataSource
-    if (ds?.sql) {
-      try {
-        const response = await api.dashboards.refreshWidget({
-          connection_id: ds.connectionId,
-          sql: ds.sql,
-          mapping: ds.mapping as any,
-        }) as { source_columns?: string[]; source_rows?: any[][] }
-        sourceColumns.value = response.source_columns ?? []
-        previewRows.value = response.source_rows ?? []
-      } catch {
-        // silently ignore — columns will just be empty
-      }
-    }
+    await fetchSourceColumns()
   }
 })
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))

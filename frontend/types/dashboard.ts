@@ -15,6 +15,21 @@ export interface GridPosition {
 }
 
 // KPI scorecard widget
+export interface KpiComparisonConfig {
+  type: 'none' | 'period' | 'value' | 'metric'
+  targetValue?: number
+  targetMetric?: string
+  showAsProgress?: boolean
+  startingValue?: number
+  showAbsoluteChange?: boolean
+  hideComparisonLabel?: boolean
+  comparisonLabel?: string
+  positiveChangeColor?: string
+  negativeChangeColor?: string
+  compactNumbers?: boolean
+  decimalPlaces?: number
+}
+
 export interface KpiWidgetConfig {
   value: number | string
   label: string
@@ -22,6 +37,7 @@ export interface KpiWidgetConfig {
   suffix?: string
   roundValue?: boolean
   decimalPlaces?: number
+  // kept for back-compat with existing saved dashboards
   trend?: {
     direction: 'up' | 'down' | 'neutral'
     value: number
@@ -29,6 +45,44 @@ export interface KpiWidgetConfig {
   }
   sparkline?: number[]
   sparklineLabels?: string[]
+
+  // title (separate from `label`, shown above the widget)
+  title?: string
+  showTitle?: boolean
+  titlePosition?: 'top' | 'bottom'
+
+  // Looker-style comparison model
+  comparison?: KpiComparisonConfig
+
+  // primary metric display
+  compactNumbers?: boolean
+
+  // sparkline appearance
+  sparklineColor?: string
+  sparklineFill?: boolean
+  sparklineSmooth?: boolean
+  sparklineMissingData?: 'linear' | 'breaks' | 'zero'
+
+  // progress visual (used when comparison.showAsProgress is on)
+  progressVisual?: 'bar' | 'circle' | 'none'
+
+  // missing-data display for primary value
+  missingDataDisplay?: 'noData' | 'zero' | 'dash' | 'null' | 'blank'
+
+  // label typography
+  fontFamily?: 'system' | 'sans' | 'serif' | 'mono'
+  fontSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+  fontColor?: string
+  hideFieldName?: boolean
+  alignment?: 'left' | 'center' | 'right'
+
+  // background & border (same shape as TableWidgetConfig)
+  backgroundColor?: string
+  opacity?: number
+  borderColor?: string
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'none'
+  borderWidth?: number
+  borderRadius?: number
 }
 
 // Chart widget — alias for existing ChartConfig (zero migration cost)
@@ -40,16 +94,52 @@ export interface TableColumn {
   label: string
   sortable?: boolean
   filterable?: boolean
-  format?: 'number' | 'currency' | 'percent' | 'date' | 'text'
+  format?: 'number' | 'currency' | 'percent' | 'date' | 'text' | 'duration'
+  role?: 'dimension' | 'metric'   // dimension = group-by; metric = aggregated
   roundValue?: boolean
   decimalPlaces?: number
+  align?: 'left' | 'center' | 'right'
+  displayType?: 'number' | 'bar' | 'heatmap'
+  showBarValue?: boolean
+  // Metrics
+  compactNumbers?: boolean
+  aggregation?: 'none' | 'sum' | 'average' | 'count' | 'countDistinct' | 'min' | 'max' | 'median' | 'stdDev' | 'variance'
+  comparisonCalc?: 'none' | 'percentOfTotal' | 'diffFromTotal' | 'percentDiffFromTotal' | 'percentOfMax' | 'diffFromMax' | 'percentDiffFromMax'
+  runningCalc?: 'none' | 'runningSum' | 'runningMin' | 'runningMax' | 'runningCount' | 'runningAverage' | 'runningDelta' | 'runningPercentageDelta'
 }
 
 export interface TableWidgetConfig {
+  title?: string
+  showTitle?: boolean
   columns: TableColumn[]
   rows: Record<string, any>[]
   pagination?: boolean
   rowsPerPage?: number
+  // Style tab
+  showHeader?: boolean
+  showRowNumbers?: boolean
+  stripedRows?: boolean
+  wrapText?: boolean
+  horizontalScrolling?: boolean
+  showSummaryRow?: boolean
+  missingDataDisplay?: 'dash' | 'blank' | 'noData'
+  columnColors?: Record<string, string>
+  headerBackground?: string
+  cellBorderColor?: string
+  oddRowColor?: string
+  evenRowColor?: string
+  // Border (around table widget)
+  borderColor?: string
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'none'
+  borderWidth?: number       // 0–5 px
+  borderRadius?: number      // 0–16 px
+  // Font (cell text)
+  fontFamily?: 'system' | 'sans' | 'serif' | 'mono'
+  fontSize?: 'xs' | 'sm' | 'md' | 'lg'
+  fontColor?: string
+  // Configure tab
+  defaultSortKey?: string
+  defaultSortDir?: 'asc' | 'desc'
 }
 
 // Text/markdown widget
@@ -74,6 +164,7 @@ export interface FilterControl {
   options?: string[]                 // static fallback options
   optionsSource?: FilterOptionsSource // dynamic SQL-based options
   dateRangeSource?: FilterOptionsSource // dynamic SQL to fetch min/max dates for date_range controls
+  dateRangeDefault?: 'full' | '7d' | '30d' | '90d' | 'ytd'
 }
 
 export interface FilterWidgetConfig {
@@ -90,7 +181,9 @@ export interface ChartDataSourceMapping {
 export interface KpiDataSourceMapping {
   type: 'kpi'
   valueColumn: string
-  aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max' | 'first' | 'last'
+  // Primary-field role: dimension shows raw value, metric applies aggregation
+  role?: 'dimension' | 'metric'
+  aggregation?: 'sum' | 'avg' | 'count' | 'countDistinct' | 'min' | 'max' | 'first' | 'last'
   // Auto-trend: derive trend + sparkline from multi-row time-series results
   autoTrend?: boolean
   trendDateColumn?: string      // date column for period-based trend comparison
@@ -151,6 +244,7 @@ export interface Dashboard {
   schedule_value?: string | null
   cron_expression?: string | null
   schedule_active?: boolean
+  timezone?: string
   next_run_at?: string | null
   last_run_at?: string | null
 }
@@ -176,9 +270,16 @@ export interface DashboardListItem {
   title: string
   description?: string
   createdAt?: string
+  updatedAt?: string
   widgetCount: number
   widgetTypes: WidgetType[]
   widgets: { type: WidgetType; position: GridPosition; chartType?: ChartType }[]
+  scheduleActive?: boolean
+  scheduleType?: 'preset' | 'cron' | null
+  scheduleValue?: string | null
+  cronExpression?: string | null
+  sourceTitle?: string | null
+  sourceThreadId?: string | null
 }
 
 // Default grid sizes per widget type
@@ -193,11 +294,13 @@ export const WIDGET_DEFAULTS: Record<WidgetType, GridPosition> = {
 // Derive a DashboardListItem from a full Dashboard
 export function toDashboardListItem(dashboard: Dashboard): DashboardListItem {
   const types = [...new Set(dashboard.widgets.map(w => w.widget.type))]
+  const ctx = dashboard.data_context as any
   return {
     id: dashboard.id,
     title: dashboard.title,
     description: dashboard.description,
     createdAt: dashboard.createdAt,
+    updatedAt: dashboard.updatedAt,
     widgetCount: dashboard.widgets.length,
     widgetTypes: types,
     widgets: dashboard.widgets.map(w => ({
@@ -205,5 +308,11 @@ export function toDashboardListItem(dashboard: Dashboard): DashboardListItem {
       position: w.position,
       chartType: w.widget.type === 'chart' ? (w.widget.config as ChartWidgetConfig).type : undefined,
     })),
+    scheduleActive: dashboard.schedule_active,
+    scheduleType: dashboard.schedule_type,
+    scheduleValue: dashboard.schedule_value,
+    cronExpression: dashboard.cron_expression,
+    sourceTitle: ctx?.source_title ?? ctx?.source_name ?? ctx?.source_task ?? null,
+    sourceThreadId: ctx?.source_thread_id ?? null,
   }
 }

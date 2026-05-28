@@ -1,98 +1,106 @@
 <template>
   <div class="relative flex-1 flex flex-col min-h-0">
-    <!-- Header bar — full-width background keeps scroll content below the toggle button -->
-    <div class="flex-shrink-0 flex items-center h-16 bg-white dark:bg-neutral-900 pl-14 pr-2 md:pr-4 pt-1">
-      <div v-if="chatStore.currentThreadId" class="flex w-full items-center">
-        <div class="flex-1 min-w-0 pointer-events-none">
-          <input
-            v-if="isEditingTitle"
-            ref="titleInput"
-            v-model="editTitle"
-            @blur="saveTitle"
-            @keydown.enter="saveTitle"
-            @keydown.escape="cancelEdit"
-            class="w-full pointer-events-auto text-sm text-gray-700 dark:text-gray-300 bg-transparent border-b border-gray-300 dark:border-neutral-600 outline-none w-48 "
-          />
-          <span
-            v-else
-            @click="startEditTitle"
-            class="pointer-events-auto text-sm text-gray-700 dark:text-gray-300 cursor-pointer hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            {{ currentTitle }}
-          </span>
-        </div>
-        <!-- Info panel toggle + archive area -->
-        <div class="flex items-center gap-1 shrink-0 ml-2">
-          <!-- Telegram connection indicator (permanent chat + plugin enabled) -->
+    <!-- Header bar -->
+    <div class="flex-shrink-0 flex items-center h-[68px] bg-[var(--paper-0)] border-b border-[var(--line)] px-6">
+      <div v-if="chatStore.currentThreadId" class="flex w-full items-center gap-3">
+        <!-- Action buttons (icon-only) -->
+        <div class="flex items-center gap-1 shrink-0 ml-auto">
+          <!-- Telegram indicator -->
           <button
             v-if="isTelegramEnabled && chatStore.currentConversation?.type === 'permanent'"
             @click="router.push('/settings?tab=channels')"
-            class="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-neutral-800"
-            :class="telegramConnected ? 'text-green-500' : 'text-gray-400'"
+            class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--paper-2)]"
+            :class="telegramConnected ? 'text-[var(--ok)]' : 'text-[var(--ink-3)]'"
             :title="telegramConnected ? 'Telegram connected' : 'Connect Telegram'"
           >
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/>
             </svg>
           </button>
+
+          <!-- Schedule (icon only) — Bingo only, links to Settings → Jobs -->
           <button
-            @click="chatStore.toggleInfoPanel()"
-            class="w-7 h-7 flex items-center justify-center rounded-md transition-colors"
-            :class="chatStore.infoPanelOpen ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-500' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800'"
-            title="Toggle info panel"
+            v-if="chatStore.currentConversation?.type === 'permanent'"
+            @click="router.push('/settings?tab=jobs')"
+            class="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--ink-2)] hover:bg-[var(--paper-2)] transition-colors"
+            title="Schedule"
           >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <Activity class="w-4 h-4" :class="{ 'animate-pulse text-[var(--ember)]': hasActiveJobs }" />
+          </button>
+
+          <!-- Details / toggle dataset pane (icon only) -->
+          <button
+            v-if="showInfoButton"
+            @click="chatStore.toggleInfoPanel()"
+            class="relative w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+            :class="chatStore.infoPanelOpen
+              ? 'bg-[var(--ember-wash)] text-[var(--ember)]'
+              : 'text-[var(--ink-2)] hover:bg-[var(--paper-2)]'"
+            title="Datasets"
+          >
+            <Info class="w-4 h-4" />
+            <span
+              v-if="datasetCount > 0"
+              class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full
+                     bg-[var(--ember)] text-white text-[10px] font-semibold
+                     flex items-center justify-center leading-none pointer-events-none"
+            >
+              {{ datasetCount }}
+            </span>
           </button>
         </div>
       </div>
     </div>
 
     <!-- Scrollable message content -->
-    <div ref="threadRef" class="flex-1 overflow-y-auto pl-4 md:pl-24 pt-6 pb-36">
-      <div v-if="chatStore.messages.length === 0" class="flex h-full items-center justify-center">
-        <div v-if="chatStore.currentConversation?.type === 'permanent'" class="text-center max-w-sm">
-          <h2 class="text-2xl font-medium text-gray-900 dark:text-white mb-2">Welcome to {{ chatStore.permanentConversation?.title || 'Bingo AI' }}</h2>
-          <p class="text-gray-500 dark:text-gray-400 mb-4">I'm your personal assistant — you can give me a name, set my personality, and teach me how you like to work.</p>
-          <p class="text-gray-400 dark:text-gray-500 text-sm">For one-off data queries, use <span class="font-medium text-gray-500 dark:text-gray-400">New Task</span>.</p>
-        </div>
-        <div v-else class="text-center">
-          <h2 class="text-2xl font-medium text-gray-900 dark:text-white mb-2">Ask me anything about your data</h2>
-          <p class="text-gray-500 dark:text-gray-400">I can write SQL queries and analyze your database</p>
-        </div>
-      </div>
-      <div v-else>
-        <template v-for="(message, index) in chatStore.messages" :key="message.id">
-          <!-- Date header (shown when date changes between messages) -->
-          <div
-            v-if="message.source !== 'context_reset' && !isQaAnswerMessage(message, index) && getDateLabel(message, index)"
-            class="flex items-center gap-3 my-4 pr-4 md:pr-32"
-          >
-            <div class="flex-1 border-t border-gray-100" />
-            <span class="text-xs text-gray-400">{{ getDateLabel(message, index) }}</span>
-            <div class="flex-1 border-t border-gray-100" />
+    <div ref="threadRef" class="flex-1 overflow-y-auto px-14 pt-7 pb-6">
+      <div class="max-w-[760px] mx-auto">
+        <div v-if="chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
+          <div v-if="chatStore.currentConversation?.type === 'permanent'" class="text-center max-w-sm">
+            <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">
+              Welcome to {{ chatStore.permanentConversation?.title || 'Bingo' }}
+            </h2>
+            <p class="text-[14px] text-[var(--ink-2)] mb-4 leading-relaxed">I'm your personal assistant — you can give me a name, set my personality, and teach me how you like to work.</p>
+            <p class="text-[13px] text-[var(--ink-3)]">For one-off data queries, use <span class="font-medium text-[var(--ink-2)]">New Task</span>.</p>
           </div>
-
-          <!-- Context reset divider -->
-          <div v-if="message.source === 'context_reset'" class="flex items-center gap-3 my-6 pr-4 md:pr-32">
-            <div class="flex-1 border-t border-gray-200" />
-            <span class="text-xs text-gray-400 whitespace-nowrap">New Topic</span>
-            <div class="flex-1 border-t border-gray-200" />
+          <div v-else class="text-center">
+            <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">Ask me anything about your data</h2>
+            <p class="text-[14px] text-[var(--ink-2)]">I can write SQL queries and analyze your database</p>
           </div>
+        </div>
+        <div v-else class="flex flex-col gap-7">
+          <template v-for="(message, index) in chatStore.messages" :key="message.id">
+            <!-- Date header -->
+            <div
+              v-if="message.source !== 'context_reset' && !isQaAnswerMessage(message, index) && getDateLabel(message, index)"
+              class="flex items-center gap-3"
+            >
+              <div class="flex-1 border-t border-[var(--line)]" />
+              <span class="text-[11px] text-[var(--ink-3)]">{{ getDateLabel(message, index) }}</span>
+              <div class="flex-1 border-t border-[var(--line)]" />
+            </div>
 
-          <!-- Skip Q&A answer user bubbles (shown as answered card instead) -->
-          <!-- Regular message bubble -->
-          <ChatMessageBubble
-            v-else-if="!isQaAnswerMessage(message, index)"
-            :message="message"
-            :show-actions="shouldShowActions(message, index)"
-            :action-type="getActionType(message)"
-            :following-user-content="getFollowingUserContent(index)"
-            :is-last="index === chatStore.messages.length - 1"
-            @send-action="(text: string, source?: string) => emit('send-action', text, source as any)"
-          />
-        </template>
+            <!-- Context reset divider -->
+            <div v-if="message.source === 'context_reset'" class="flex items-center gap-3">
+              <div class="flex-1 border-t border-[var(--line-2)]" />
+              <span class="text-[11px] text-[var(--ink-3)] whitespace-nowrap">New Topic</span>
+              <div class="flex-1 border-t border-[var(--line-2)]" />
+            </div>
+
+            <!-- Regular message bubble -->
+            <ChatMessageBubble
+              v-else-if="!isQaAnswerMessage(message, index)"
+              :message="message"
+              :show-actions="shouldShowActions(message, index)"
+              :action-type="getActionType(message)"
+              :following-user-content="getFollowingUserContent(index)"
+              :is-last="index === chatStore.messages.length - 1"
+              :agent-avatar-url="agentProfile.profile.value?.published_avatar_url ?? null"
+              :agent-name="agentProfile.profile.value?.published_display_name ?? 'Bingo'"
+              @send-action="(text: string, source?: string) => emit('send-action', text, source as any)"
+            />
+          </template>
+        </div>
       </div>
     </div>
   </div>
@@ -100,8 +108,12 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue'
+import { Activity, Info } from 'lucide-vue-next'
 import { formatDateLabel, isSameDay, parseUtcDate } from '~/utils/format'
 import type { Message } from '~/stores/chat'
+import { useAgentProfile } from '~/composables/useAgentProfile'
+import { useDatasetStatus } from '~/composables/useDatasetStatus'
+import { useBriefingsList } from '~/composables/useBriefingsList'
 
 const emit = defineEmits<{
   'send-action': [text: string, source?: Message['source']]
@@ -111,16 +123,43 @@ const chatStore = useChatStore()
 const chat = useChat()
 const router = useRouter()
 const { config: featureConfig } = useFeatureConfig()
-const { telegram } = useApi()
+const api = useApi()
+const agentProfile = useAgentProfile()
+const { datasets } = useDatasetStatus()
+const { briefings, ensure: ensureBriefings } = useBriefingsList()
+
+const datasetCount = computed(() => datasets.value.length)
+const isPermanentThread = computed(() =>
+  chatStore.currentThreadId === chatStore.permanentConversation?.id
+)
+const showInfoButton = computed(() =>
+  datasetCount.value > 0 ||
+  (isPermanentThread.value && briefings.value.length > 0)
+)
+
+// Load the briefings list on the assistant thread so the info-panel toggle
+// (and its Briefings tab) appears whenever >0 briefings exist. ensure() fetches once.
+watch(isPermanentThread, (v) => { if (v) ensureBriefings() }, { immediate: true })
 
 const isTelegramEnabled = computed(() => featureConfig.value?.telegram_enabled === true)
 const telegramConnected = ref(false)
+const hasActiveJobs = ref(false)
+
+// Pulse the schedule icon while the user has ≥1 active scheduled job. Use a watcher
+// (not onMounted) because the permanent conversation loads async — mirrors the briefings watch above.
+watch(() => chatStore.currentConversation?.type === 'permanent', (isPerm) => {
+  if (!isPerm) return
+  api.heartbeatJobs.list()
+    .then((jobs) => { hasActiveJobs.value = (jobs as { is_active: boolean }[]).some(j => j.is_active) })
+    .catch(() => { /* silently ignore — icon stays static */ })
+}, { immediate: true })
 
 onMounted(async () => {
+  agentProfile.fetchProfile()
   if (isTelegramEnabled.value && chatStore.currentConversation?.type === 'permanent') {
     try {
-      const status = await telegram.getStatus()
-      telegramConnected.value = status.connected
+      const status = await api.connections.list()
+      telegramConnected.value = status?.some((c: any) => c.type === 'telegram' && c.connected) ?? false
     } catch {
       // silently ignore — icon stays gray
     }

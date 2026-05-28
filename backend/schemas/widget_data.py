@@ -14,7 +14,7 @@ class WidgetRefreshRequest(BaseModel):
     mapping: Dict[str, Any]
     filters: Optional[List[FilterParam]] = None
     dashboard_id: Optional[int] = None        # For dimension-aware filter injection
-    widget_id: Optional[str] = None           # For SQLite cache reads
+    widget_id: Optional[str] = None           # For DataPlane cache reads
     widget_sources: Optional[List[str]] = None  # Sources this widget uses (from data_context)
 
 
@@ -26,15 +26,11 @@ class WidgetRefreshResponse(BaseModel):
     refreshed_at: str
     source_columns: List[str] = []
     source_rows: List[List[Any]] = []
-    cache_built_at: Optional[str] = None
-    cache_status: Optional[str] = None
 
 
 class BulkRefreshResponse(BaseModel):
     # widgetId -> {config, refreshed_at} on success, or {error} on failure
     widgets: Dict[str, Any]
-    cache_built_at: Optional[str] = None
-    cache_status: Optional[str] = None
 
 
 class WidgetSuggestFixRequest(BaseModel):

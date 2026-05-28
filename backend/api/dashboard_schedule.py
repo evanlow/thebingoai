@@ -17,6 +17,7 @@ from backend.schemas.dashboard_schedule import (
     DashboardRefreshRunResponse,
     DashboardRefreshRunListResponse,
 )
+from backend.utils.cron import compute_next_run
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,6 @@ async def set_schedule(
     db: Session = Depends(get_db),
 ):
     """Set or update the refresh schedule for a dashboard."""
-    from croniter import croniter
     from backend.schemas.heartbeat import resolve_cron_expression
 
     dashboard = _get_dashboard_or_404(dashboard_id, current_user.id, db)
@@ -51,12 +51,13 @@ async def set_schedule(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    now = datetime.utcnow()
+    tz_name = payload.timezone or dashboard.timezone or "UTC"
     dashboard.schedule_type = payload.schedule_type
     dashboard.schedule_value = payload.schedule_value
     dashboard.cron_expression = cron_expr
     dashboard.schedule_active = True
-    dashboard.next_run_at = croniter(cron_expr, now).get_next(datetime)
+    dashboard.timezone = tz_name
+    dashboard.next_run_at = compute_next_run(cron_expr, tz_name)
 
     db.commit()
     db.refresh(dashboard)
@@ -71,8 +72,6 @@ async def toggle_schedule(
     db: Session = Depends(get_db),
 ):
     """Toggle the active/inactive state of a dashboard schedule."""
-    from croniter import croniter
-
     dashboard = _get_dashboard_or_404(dashboard_id, current_user.id, db)
 
     if not dashboard.cron_expression:
@@ -82,8 +81,9 @@ async def toggle_schedule(
 
     # Recompute next_run_at when reactivating
     if payload.schedule_active:
-        now = datetime.utcnow()
-        dashboard.next_run_at = croniter(dashboard.cron_expression, now).get_next(datetime)
+        dashboard.next_run_at = compute_next_run(
+            dashboard.cron_expression, dashboard.timezone or "UTC"
+        )
 
     db.commit()
     db.refresh(dashboard)
@@ -168,7 +168,6 @@ async def set_analysis_schedule(
     On each firing the orchestrator agent analyzes the dashboard and delivers
     a narrative summary to the user's chat via the HeartbeatJob mechanism.
     """
-    from croniter import croniter
     from backend.schemas.heartbeat import resolve_cron_expression
     from backend.models.heartbeat_job import HeartbeatJob
 
@@ -180,8 +179,8 @@ async def set_analysis_schedule(
         raise HTTPException(status_code=400, detail=str(e))
 
     job_name = f"{_ANALYSIS_JOB_PREFIX}{dashboard.title}"
-    now = datetime.utcnow()
-    next_run = croniter(cron_expr, now).get_next(datetime)
+    tz_name = payload.timezone or dashboard.timezone or "UTC"
+    next_run = compute_next_run(cron_expr, tz_name)
 
     existing = db.query(HeartbeatJob).filter(
         HeartbeatJob.user_id == current_user.id,
@@ -192,8 +191,10 @@ async def set_analysis_schedule(
         existing.schedule_type = payload.schedule_type
         existing.schedule_value = payload.schedule_value
         existing.cron_expression = cron_expr
+        existing.timezone = tz_name
         existing.next_run_at = next_run
         existing.is_active = True
+        existing.kind = "briefing"
         job = existing
     else:
         job = HeartbeatJob(
@@ -205,7 +206,9 @@ async def set_analysis_schedule(
             schedule_type=payload.schedule_type,
             schedule_value=payload.schedule_value,
             cron_expression=cron_expr,
+            timezone=tz_name,
             agent_type=None,  # orchestrator (default)
+            kind="briefing",
             is_active=True,
             next_run_at=next_run,
         )

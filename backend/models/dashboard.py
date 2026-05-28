@@ -8,6 +8,7 @@ class Dashboard(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    org_id = Column(String, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     widgets = Column(JSON, nullable=False, default=list)
@@ -20,11 +21,8 @@ class Dashboard(Base, TimestampMixin):
     schedule_active = Column(Boolean, default=False, nullable=False)
     next_run_at = Column(DateTime, nullable=True)
     last_run_at = Column(DateTime, nullable=True)
+    timezone = Column(String(64), nullable=False, server_default="UTC")
 
-    # SQLite cache columns
-    cache_key = Column(String(500), nullable=True)          # DO Spaces key for SQLite file
-    cache_built_at = Column(DateTime, nullable=True)        # When cache was last built
-    cache_status = Column(String(20), nullable=True)        # 'building' | 'ready' | 'failed'
     cache_date_range_days = Column(Integer, default=90)     # Date window for materialization
 
     user = relationship("User", back_populates="dashboards")

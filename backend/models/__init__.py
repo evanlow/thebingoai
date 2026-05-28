@@ -28,6 +28,7 @@ from backend.models.custom_agent import CustomAgent
 # Dashboard Persistence
 from backend.models.dashboard import Dashboard
 from backend.models.dashboard_refresh_run import DashboardRefreshRun
+from backend.models.briefing import Briefing
 
 # Phase 5: User Skills & Memories
 from backend.models.user_skill import UserSkill
@@ -48,3 +49,12 @@ from backend.models.agent_profile import AgentProfile
 
 # Conversation Summaries
 from backend.models.conversation_summary import ConversationSummary
+
+# Phase 1: DataPlane (must precede Pipeline — FK pipelines.data_plane_id)
+from backend.models.data_plane import DataPlaneModel
+
+# Phase 2: Pipelines
+from backend.models.pipeline import Pipeline, PipelineRun, DltPipelineState
+
+# Phase 4: dbt Transforms
+from backend.models.transforms import DbtModel, DbtRun

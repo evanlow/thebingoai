@@ -18,17 +18,13 @@ from backend.schemas.heartbeat import (
 from datetime import datetime
 import logging
 
+from backend.utils.cron import compute_next_run
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/heartbeat-jobs", tags=["heartbeat-jobs"])
 
 _JOB_LIMIT = 20
-
-
-def _compute_next_run(cron_expression: str) -> datetime:
-    """Compute the next run time from a cron expression."""
-    from croniter import croniter
-    return croniter(cron_expression, datetime.utcnow()).get_next(datetime)
 
 
 def _to_response(job: HeartbeatJob) -> HeartbeatJobResponse:
@@ -39,7 +35,9 @@ def _to_response(job: HeartbeatJob) -> HeartbeatJobResponse:
         schedule_type=job.schedule_type,
         schedule_value=job.schedule_value,
         cron_expression=job.cron_expression,
+        timezone=job.timezone or "UTC",
         is_active=job.is_active,
+        kind=job.kind,
         next_run_at=job.next_run_at,
         last_run_at=job.last_run_at,
         created_at=job.created_at,
@@ -77,7 +75,8 @@ async def create_job(
         )
 
     cron_expression = resolve_cron_expression(request.schedule_type, request.schedule_value)
-    next_run_at = _compute_next_run(cron_expression)
+    tz_name = request.timezone or "UTC"
+    next_run_at = compute_next_run(cron_expression, tz_name)
 
     job = HeartbeatJob(
         user_id=current_user.id,
@@ -86,6 +85,7 @@ async def create_job(
         schedule_type=request.schedule_type,
         schedule_value=request.schedule_value,
         cron_expression=cron_expression,
+        timezone=tz_name,
         next_run_at=next_run_at,
     )
     db.add(job)
@@ -132,12 +132,14 @@ async def update_job(
 
     schedule_type = request.schedule_type or job.schedule_type
     schedule_value = request.schedule_value or job.schedule_value
-    if request.schedule_type is not None or request.schedule_value is not None:
+    if request.timezone is not None:
+        job.timezone = request.timezone or "UTC"
+    if request.schedule_type is not None or request.schedule_value is not None or request.timezone is not None:
         cron_expression = resolve_cron_expression(schedule_type, schedule_value)
         job.schedule_type = schedule_type
         job.schedule_value = schedule_value
         job.cron_expression = cron_expression
-        job.next_run_at = _compute_next_run(cron_expression)
+        job.next_run_at = compute_next_run(cron_expression, job.timezone or "UTC")
 
     db.commit()
     db.refresh(job)
@@ -162,7 +164,7 @@ async def toggle_job(
     job.is_active = request.is_active
     # Recompute next_run_at when re-activating
     if request.is_active:
-        job.next_run_at = _compute_next_run(job.cron_expression)
+        job.next_run_at = compute_next_run(job.cron_expression, job.timezone or "UTC")
     db.commit()
     db.refresh(job)
     return _to_response(job)

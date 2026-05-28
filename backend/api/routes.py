@@ -1,14 +1,20 @@
 from fastapi import APIRouter
-from backend.api import upload, query, health, jobs, auth, connections, usage, chat, memory, sql_query, chat_files, sqlite_upload, credits
-from backend.api import agents as custom_agents, skills, heartbeat_jobs, dashboards, widget_data, dashboard_schedule, dashboard_analyze
-from backend.api import feature_config
+from backend.api import upload, query, health, jobs, auth, connections, usage, chat, memory, sql_query, chat_files, sqlite_upload, credits, maintenance
+from backend.api import agents as custom_agents, skills, heartbeat_jobs, dashboards, widget_data, dashboard_schedule
+from backend.api import feature_config, briefings
 from backend.auth.webhooks import router as webhook_router
-from backend.api import query_results, agent_sessions
+from backend.api import query_results, agent_sessions, agent_profile, llm_models
+from backend.pipelines.api import router as pipelines_router
+from backend.transforms.api import router as transforms_router
+from backend.lineage.api import router as lineage_router
 
 router = APIRouter()
 
 # Authentication
 router.include_router(auth.router)
+
+# Maintenance mode bypass (frontend-only gate)
+router.include_router(maintenance.router)
 
 # SSO Webhooks
 router.include_router(webhook_router)
@@ -55,8 +61,8 @@ router.include_router(widget_data.router)
 # Dashboard Schedule Management
 router.include_router(dashboard_schedule.router)
 
-# Dashboard One-Shot Analysis
-router.include_router(dashboard_analyze.router)
+# Briefings
+router.include_router(briefings.router)
 
 # Agent Sessions (Mesh)
 router.include_router(agent_sessions.router)
@@ -64,8 +70,23 @@ router.include_router(agent_sessions.router)
 # Feature Config
 router.include_router(feature_config.router)
 
+# Agent Profile
+router.include_router(agent_profile.router)
+
+# LLM Models (drives Agent Settings dropdown)
+router.include_router(llm_models.router)
+
 # Query Result Fetch (schema-only side-channel)
 router.include_router(query_results.router)
+
+# Pipelines (Phase 2)
+router.include_router(pipelines_router)
+
+# Transforms / dbt models (Phase 4)
+router.include_router(transforms_router)
+
+# Lineage (Phase 6)
+router.include_router(lineage_router)
 
 
 # Upload

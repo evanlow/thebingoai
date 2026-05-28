@@ -1,9 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from backend.vectordb.qdrant import ensure_collection
 from backend.api import routes
 from backend.api.websocket import router as ws_router
+from backend.data_plane.errors import NoPlaneProvisionedError
 from backend.logging_config import setup_logging
 from backend.api import health as health_module
 from backend.config import settings
@@ -18,6 +20,11 @@ async def lifespan(app: FastAPI):
     """Application lifespan - startup and shutdown."""
     # Startup
     logger.info("Starting BINGO Backend...")
+
+    # Fail fast in production if the data-plane lockdown is half-configured.
+    from backend.services.data_plane_service import check_internal_gcp_config
+    check_internal_gcp_config()
+
     try:
         ensure_collection(settings.qdrant_documents_collection, settings.qdrant_vector_size)
         ensure_collection(settings.qdrant_memories_collection, settings.qdrant_vector_size)
@@ -31,6 +38,26 @@ async def lifespan(app: FastAPI):
     for router, prefix in get_plugin_routers():
         app.include_router(router, prefix=prefix)
 
+    # Verify provision-on-miss is wired up after plugin load (fail fast under lockdown)
+    if getattr(settings, "disable_local_data_plane", False):
+        from backend.services.data_plane_service import _provision_on_miss
+        if _provision_on_miss is None:
+            raise RuntimeError(
+                "DISABLE_LOCAL_DATA_PLANE=true but no plane provisioner registered. "
+                "bingo-admin plugin on_startup must call register_plane_provisioner()."
+            )
+
+    # Backfill dynamic SQL pipeline templates for core connectors (postgres /
+    # mysql / sqlite) which are registered at module import in
+    # `backend.connectors.factory`, not via a BingoPlugin.
+    try:
+        from backend.database.session import SessionLocal
+        from backend.services.template_materializer import backfill_templates_for_core_connectors
+        with SessionLocal() as db:
+            backfill_templates_for_core_connectors(db)
+    except Exception:
+        logger.warning("Core-connector template backfill failed", exc_info=True)
+
     # Backfill profiling for existing connections (runs once after deploy)
     try:
         from backend.tasks.profiling_tasks import backfill_profile_all_connections
@@ -38,9 +65,21 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Failed to queue backfill profiling task", exc_info=True)
 
+    # Phase 6: lineage cache invalidation subscriber
+    try:
+        from backend.lineage.cache import start_subscriber as _start_lineage_subscriber
+        _start_lineage_subscriber()
+    except Exception:
+        logger.warning("Failed to start lineage cache subscriber", exc_info=True)
+
     yield
     # Shutdown
     logger.info("Shutting down...")
+    try:
+        from backend.lineage.cache import stop_subscriber as _stop_lineage_subscriber
+        _stop_lineage_subscriber()
+    except Exception:
+        pass
     shutdown_plugins()
 
 app = FastAPI(
@@ -58,6 +97,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(NoPlaneProvisionedError)
+async def _no_plane_provisioned_handler(_: Request, exc: NoPlaneProvisionedError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": str(exc),
+            "code": "no_data_plane",
+            "scope_kind": exc.scope.kind,
+            "scope_id": exc.scope.id,
+        },
+    )
+
 
 app.include_router(routes.router, prefix="/api")
 app.include_router(ws_router)  # WebSocket at /ws (no /api prefix — WS upgrade bypasses proxy)

@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database.session import get_db
 from backend.auth.dependencies import get_current_user
 from backend.models.user import User
-from backend.models.database_connection import DatabaseConnection
+from backend.models.database_connection import DatabaseConnection, ProfilingStatus
 from backend.models.team_membership import TeamMembership
 from backend.models.team_connection_policy import TeamConnectionPolicy
 from backend.schemas.connection import (
@@ -12,7 +12,12 @@ from backend.schemas.connection import (
     ConnectionTestResponse, SchemaRefreshResponse, ConnectorTypeResponse,
     SchemaResponse
 )
-from backend.connectors.factory import get_connector, get_available_types, get_connector_registration
+from backend.connectors.factory import (
+    get_connector,
+    get_available_types,
+    get_connector_registration,
+    get_connector_for_connection,
+)
 from backend.services.schema_discovery import (
     discover_schema, generate_schema_json, save_schema_file,
     refresh_schema, delete_schema_file, load_schema_file, schema_key_for,
@@ -37,55 +42,60 @@ def _schema_item_count(db_type: str, schema_data: dict) -> int:
     return len(schema_data.get("table_names", []))
 
 
-def _invalidate_dashboard_caches_for_connection(
-    connection_id: int, user_id: str, db: Session,
-) -> int:
-    """Mark all dashboard caches as 'stale' that reference the given connection.
-
-    Returns the number of dashboards marked stale.
-    """
-    from backend.models.dashboard import Dashboard
-
-    dashboards = db.query(Dashboard).filter(
-        Dashboard.user_id == user_id,
-        Dashboard.cache_status.in_(["ready", "building"]),
-    ).all()
-
-    count = 0
-    for dashboard in dashboards:
-        for widget in (dashboard.widgets or []):
-            ds = widget.get("dataSource")
-            if ds and ds.get("connectionId") == connection_id:
-                dashboard.cache_status = "stale"
-                count += 1
-                break
-
-    if count:
-        db.flush()
-        logger.info(
-            "Marked %d dashboard cache(s) as stale for connection %d",
-            count, connection_id,
-        )
-    return count
-
-
-def _find_connection(db: Session, key, user_id: str):
+def _find_connection(db: Session, key, current_user):
     """Look up a connection by either its UUID or its numeric id.
 
     Accepts str (FastAPI path params) or int (internal callers / tests).
-    Returns None if no matching connection is owned by this user.
+    Returns the connection if visible to ``current_user`` under the Phase 3
+    collaborative-workspace rules:
+
+      - Same-org members see every connection in their org.
+      - Users without an ``org_id`` (legacy / community) fall back to the
+        previous owner-only behaviour.
+
+    Mutating routes still need to call ``governance.require(...)`` separately
+    to enforce per-org-admin / owner mutate semantics.
     """
     key_str = str(key)
     q = db.query(DatabaseConnection)
     if key_str.isdigit():
-        return q.filter(
-            DatabaseConnection.user_id == user_id,
-            DatabaseConnection.id == int(key_str),
-        ).first()
-    return q.filter(
-        DatabaseConnection.user_id == user_id,
-        DatabaseConnection.uuid == key_str,
-    ).first()
+        q = q.filter(DatabaseConnection.id == int(key_str))
+    else:
+        q = q.filter(DatabaseConnection.uuid == key_str)
+
+    org_id = getattr(current_user, "org_id", None)
+    if org_id is not None:
+        # Visible if: row already carries org_id, OR row's owner currently
+        # belongs to this org (covers pre-Phase-3 rows that never recorded
+        # org_id directly).
+        from sqlalchemy import or_
+        q = q.outerjoin(User, DatabaseConnection.user_id == User.id).filter(
+            or_(
+                DatabaseConnection.org_id == org_id,
+                User.org_id == org_id,
+            )
+        )
+    else:
+        q = q.filter(DatabaseConnection.user_id == current_user.id)
+    return q.first()
+
+
+def _governance_require_mutate_connection(current_user, connection) -> None:
+    """Phase 3 inline guard for PATCH/PUT/DELETE on a connection.
+
+    The collaborative-workspace policy lets any org-mate see a connection,
+    but only the owner, a per-org admin, or a bingo_admin may mutate it.
+    """
+    from backend.governance.contract import require as governance_require
+    governance_require(
+        user=current_user,
+        action="update",
+        resource={
+            "type": "connection",
+            "org_id": str(connection.org_id) if connection.org_id else None,
+            "owner_user_id": str(connection.user_id) if connection.user_id else None,
+        },
+    )
 
 
 router = APIRouter(prefix="/connections", tags=["connections"])
@@ -94,6 +104,7 @@ router = APIRouter(prefix="/connections", tags=["connections"])
 @router.post("", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_connection(
     request: ConnectionCreate,
+    force: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -109,6 +120,33 @@ async def create_connection(
     logger.info("Creating connection '%s' (type=%s, host=%s, port=%s, db=%s, ssl=%s)",
         request.name, request.db_type, request.host, request.port, request.database, request.ssl_enabled)
 
+    from backend.governance.contract import (
+        find_duplicate_connection,
+        require as governance_require,
+    )
+    governance_require(
+        user=current_user,
+        action="create",
+        resource={"type": "connection", "db_type": request.db_type},
+    )
+
+    if not force:
+        existing_id = find_duplicate_connection(
+            user=current_user,
+            connection_payload=request.model_dump(),
+        )
+        if existing_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": (
+                        "An organization-scoped connection with the same identity "
+                        "already exists. Pass ?force=true to create a duplicate."
+                    ),
+                    "existing_connection_id": existing_id,
+                },
+            )
+
     # Create connection (without schema info yet)
     # password and ssl_ca_cert use hybrid_property setters and cannot be passed
     # as constructor kwargs (SQLAlchemy only accepts mapped column attribute names)
@@ -116,13 +154,26 @@ async def create_connection(
     password = data.pop('password')
     ssl_ca_cert = data.pop('ssl_ca_cert', None)
 
-    connection = DatabaseConnection(user_id=current_user.id, **data)
+    connection = DatabaseConnection(
+        user_id=current_user.id,
+        org_id=current_user.org_id,
+        owner_scope_kind="user",
+        owner_scope_id=current_user.id,
+        **data,
+    )
     connection.password = password
     connection.ssl_ca_cert = ssl_ca_cert
 
     db.add(connection)
     db.commit()
     db.refresh(connection)
+
+    from backend.governance.contract import emit_resource_created
+    emit_resource_created(
+        resource_type="connection",
+        resource=connection,
+        creator_user=current_user,
+    )
 
     # Auto-enable connection for creator's teams (governance only)
     if settings.enable_governance:
@@ -140,7 +191,51 @@ async def create_connection(
 
     db.refresh(connection)
 
-    # Auto-discover schema for all connector types except BigQuery (too many datasets)
+    # Materialize plugin-shipped pipeline + transform templates for this connector type.
+    # Also covers dynamic SQL registrations (postgres / mysql / sqlite) which
+    # ship no static templates but fan out one Pipeline per source table at
+    # materialise time. Idempotent — safe even if a later retry hits the same
+    # connection.
+    reg = get_connector_registration(connection.db_type)
+    from backend.services.template_materializer import (
+        materialize_templates_for_connection,
+        _is_dynamic_sql_registration,
+    )
+    if reg and (
+        reg.pipeline_templates
+        or reg.transform_templates
+        or _is_dynamic_sql_registration(reg)
+    ):
+        try:
+            new_p, new_t = materialize_templates_for_connection(connection, reg, db)
+            db.commit()
+            db.refresh(connection)
+        except Exception as e:
+            logger.warning(
+                "Template materialization failed for connection %s (%s): %s",
+                connection.id, connection.db_type, e,
+            )
+            db.rollback()
+            new_p, new_t = [], []
+
+        # If any pipelines or stg_ dbt models were materialised, refresh the
+        # per-Org dbt project synth so the new sources.yml + stg files are on
+        # disk before the user's first dbt run. Failures are non-fatal — the
+        # next dbt run will re-synth from scratch.
+        if new_p or new_t:
+            try:
+                from backend.transforms.project_synth import synthesize_project
+                from backend.data_plane.scope import OwnerScope
+                synthesize_project(OwnerScope.from_connection(connection), db)
+            except Exception:
+                logger.warning(
+                    "synthesize_project failed for connection %s after materialise; "
+                    "next dbt run will retry", connection.id, exc_info=True,
+                )
+
+    # Auto-discover schema for all connector types except BigQuery (legacy —
+    # opted out because projects often have hundreds of datasets). BigQuery GA4
+    # is single-project and runs discovery so the dashboard agent gets context.
     if request.db_type != "bigquery":
         try:
             with get_connector(
@@ -154,6 +249,11 @@ async def create_connection(
                 ssl_ca_cert=request.ssl_ca_cert
             ) as connector:
                 schema_data = discover_schema(connector)
+                # Inject materialised pipeline tables (e.g. bigquery_ga4 dedup
+                # view) so dashboard/briefing agents see flat columns rather
+                # than just raw source schema. No-op for other db_types.
+                from backend.services.schema_discovery import augment_schema_with_pipelines
+                schema_data = augment_schema_with_pipelines(schema_data, connection)
                 schema_json = generate_schema_json(
                     connection.id,
                     connection.name,
@@ -169,12 +269,17 @@ async def create_connection(
                 db.refresh(connection)
 
             from backend.tasks.profiling_tasks import profile_connection
-            connection.profiling_status = "pending"
+            connection.profiling_status = ProfilingStatus.PENDING.value
             db.commit()
             profile_connection.delay(connection.id)
 
         except Exception as e:
             logger.error("Schema discovery failed for connection %s: %s", connection.id, e, exc_info=True)
+    else:
+        # GA4 / BigQuery: no traditional schema discovery.  Clear the profiling
+        # status so the UI doesn't show a stuck spinner on the connection card.
+        connection.profiling_status = ""
+        db.commit()
 
     db.refresh(connection)
     logger.info("Connection '%s' (id=%s) created successfully", connection.name, connection.id)
@@ -187,14 +292,24 @@ async def list_connections(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List all database connections for current user.
+    """List database connections visible to the current user.
 
-    By default, ephemeral datasets (created via chat uploads) are hidden.
-    Pass include_ephemeral=true to include them.
+    Phase 3 collaborative workspace: returns every connection in the caller's
+    org. Users without an `org_id` (legacy / community standalone) still see
+    only their own. Ephemeral datasets (chat uploads) are hidden unless
+    explicitly requested.
     """
-    query = db.query(DatabaseConnection).filter(
-        DatabaseConnection.user_id == current_user.id
-    )
+    query = db.query(DatabaseConnection)
+    if current_user.org_id is not None:
+        from sqlalchemy import or_
+        query = query.outerjoin(User, DatabaseConnection.user_id == User.id).filter(
+            or_(
+                DatabaseConnection.org_id == current_user.org_id,
+                User.org_id == current_user.org_id,
+            )
+        )
+    else:
+        query = query.filter(DatabaseConnection.user_id == current_user.id)
     if not include_ephemeral:
         query = query.filter(DatabaseConnection.is_ephemeral == False)  # noqa: E712
 
@@ -320,7 +435,7 @@ async def get_connection(
     db: Session = Depends(get_db)
 ):
     """Get a specific database connection."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -336,17 +451,16 @@ async def update_connection(
     db: Session = Depends(get_db)
 ):
     """Update a database connection."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
 
+    _governance_require_mutate_connection(current_user, connection)
+
     # Update fields
     for field, value in request.model_dump(exclude_unset=True).items():
         setattr(connection, field, value)
-
-    # Invalidate dashboard caches that use this connection
-    _invalidate_dashboard_caches_for_connection(connection.id, current_user.id, db)
 
     db.commit()
     db.refresh(connection)
@@ -357,17 +471,50 @@ async def update_connection(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: str,
+    cascade: bool = Query(False, description="If true, also delete dependent pipelines (and their run history)."),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete a database connection and its cached schema."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    """Delete a database connection and its cached schema.
+
+    When ``cascade=false`` (default), returns HTTP 409 ``connection_in_use``
+    listing dependent pipelines so the UI can re-confirm. When ``cascade=true``,
+    dependent pipelines (and their PipelineRun / DltPipelineState rows) are
+    deleted first via ``resource_lifecycle.delete_pipeline``.
+    """
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    # Invalidate dashboard caches that use this connection
-    _invalidate_dashboard_caches_for_connection(connection.id, current_user.id, db)
+    _governance_require_mutate_connection(current_user, connection)
+
+    # Delegates dependency check + optional cascade to the lifecycle helper.
+    # Re-raises the helper's RuntimeError as the existing 409 payload so the
+    # frontend's error parser is unchanged.
+    from backend.models.pipeline import Pipeline
+    from backend.services.resource_lifecycle import guard_connection_delete
+    try:
+        guard_connection_delete(connection.id, db, cascade=cascade)
+    except RuntimeError:
+        blocking = db.query(Pipeline.id, Pipeline.name).filter(
+            Pipeline.source_connection_id == connection.id
+        ).all()
+        pipeline_list = [{"id": p.id, "name": p.name} for p in blocking]
+        names_preview = ", ".join(p["name"] for p in pipeline_list[:3])
+        if len(pipeline_list) > 3:
+            names_preview += f", +{len(pipeline_list) - 3} more"
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "connection_in_use",
+                "message": (
+                    f"This connection is used by {len(pipeline_list)} pipeline"
+                    f"{'s' if len(pipeline_list) != 1 else ''} ({names_preview})."
+                ),
+                "pipelines": pipeline_list,
+            },
+        )
 
     # Run type-specific delete hook if registered (e.g., dataset cleanup)
     reg = get_connector_registration(connection.db_type)
@@ -377,10 +524,8 @@ async def delete_connection(
         except Exception as e:
             logger.warning("on_delete hook failed for connection %s: %s", connection.id, e)
 
-    # Delete schema and context JSON files
+    # Delete schema JSON file; connection context lives on the row and is removed by the DELETE below.
     delete_schema_file(connection.schema_json_path)
-    from backend.services.connection_context import delete_context_file
-    delete_context_file(connection.id)
 
     # Remove any team connection policies first to avoid FK violations
     db.query(TeamConnectionPolicy).filter(
@@ -399,7 +544,7 @@ async def test_connection(
     db: Session = Depends(get_db)
 ):
     """Test a database connection."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -438,7 +583,7 @@ async def test_write_access(
     db: Session = Depends(get_db)
 ):
     """Test write access (roles/bigquery.dataEditor) for a saved connection."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -475,10 +620,12 @@ async def refresh_connection_schema(
     Re-discovers full schema and regenerates JSON file.
     Useful when database structure changes.
     """
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
+
+    _governance_require_mutate_connection(current_user, connection)
 
     reg = get_connector_registration(connection.db_type)
     if reg and reg.skip_schema_refresh:
@@ -497,22 +644,14 @@ async def refresh_connection_schema(
         )
 
     try:
-        with get_connector(
-            db_type=connection.db_type,
-            host=connection.host,
-            port=connection.port,
-            database=connection.database,
-            username=connection.username,
-            password=connection.password,
-            ssl_enabled=connection.ssl_enabled,
-            ssl_ca_cert=connection.ssl_ca_cert
-        ) as connector:
+        with get_connector_for_connection(connection) as connector:
             schema_path = refresh_schema(
                 schema_key_for(connection),
                 connector,
                 connection.id,
                 connection.name,
                 connection.db_type,
+                connection=connection,
             )
 
             # Load refreshed schema to get table count
@@ -525,7 +664,7 @@ async def refresh_connection_schema(
 
             # Re-trigger profiling since schema changed
             from backend.tasks.profiling_tasks import profile_connection
-            connection.profiling_status = "pending"
+            connection.profiling_status = ProfilingStatus.PENDING.value
             db.commit()
             profile_connection.delay(connection.id)
 
@@ -556,7 +695,7 @@ async def get_connection_schema(
     Returns the full schema including schemas, tables, columns, and relationships.
     Returns 404 if schema has not been generated yet.
     """
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -582,7 +721,7 @@ async def get_profiling_status(
     db: Session = Depends(get_db),
 ):
     """Get profiling status for a connection (used for polling during profiling)."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -603,10 +742,12 @@ async def reprofile_connection(
     db: Session = Depends(get_db),
 ):
     """Manually trigger re-profiling for a connection."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
+
+    _governance_require_mutate_connection(current_user, connection)
 
     if connection.profiling_status == "in_progress":
         raise HTTPException(status_code=400, detail="Profiling is already in progress")
@@ -615,7 +756,7 @@ async def reprofile_connection(
         raise HTTPException(status_code=400, detail="Schema has not been discovered yet. Refresh the schema first.")
 
     from backend.tasks.profiling_tasks import profile_connection
-    connection.profiling_status = "pending"
+    connection.profiling_status = ProfilingStatus.PENDING.value
     connection.profiling_error = None
     connection.profiling_progress = None
     db.commit()
@@ -631,7 +772,7 @@ async def get_connection_context(
     db: Session = Depends(get_db),
 ):
     """Get the data context for a connection (used by the dashboard agent)."""
-    connection = _find_connection(db, connection_id, current_user.id)
+    connection = _find_connection(db, connection_id, current_user)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -642,8 +783,8 @@ async def get_connection_context(
             detail=f"Data context is not ready. Current profiling status: {connection.profiling_status}",
         )
 
-    from backend.services.connection_context import load_context_file
-    try:
-        return load_context_file(connection.id)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Context file not found. Try re-profiling the connection.")
+    from backend.services.connection_context import load_connection_context
+    ctx = load_connection_context(db, connection.id)
+    if ctx is None:
+        raise HTTPException(status_code=404, detail="Context not found. Try re-profiling the connection.")
+    return ctx

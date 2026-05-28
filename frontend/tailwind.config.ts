@@ -12,12 +12,19 @@ export default {
   ],
   theme: {
     extend: {
+      colors: {
+        primary: {
+          DEFAULT: '#6E489D',
+          soft: '#DAC7E1',
+        },
+      },
       fontFamily: {
         sans: ['DM Sans', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace']
+        mono: ['JetBrains Mono', 'monospace'],
+        display: ['Instrument Serif', 'serif']
       },
       spacing: {
-        'sidebar': '250px',
+        'sidebar': '220px',
         'upload-panel': '300px'
       },
       borderRadius: {

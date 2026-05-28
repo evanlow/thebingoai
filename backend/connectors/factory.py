@@ -1,8 +1,18 @@
 from typing import Any, Type
 from backend.connectors.base import BaseConnector
-from backend.connectors.postgres import PostgresConnector
-from backend.connectors.mysql import MySQLConnector
+from backend.connectors.postgres import (
+    PostgresConnector,
+    dlt_source_for as _postgres_dlt_source_for,
+    fingerprint as _postgres_fingerprint,
+)
+from backend.connectors.mysql import (
+    MySQLConnector,
+    dlt_source_for as _mysql_dlt_source_for,
+    fingerprint as _mysql_fingerprint,
+)
+from backend.connectors.sql_dlt import SqlExtractionConfig
 from backend.connectors.sqlite import SqliteFileConnector
+from backend.connectors.data_plane import DataPlaneConnector
 from backend.models.database_connection import DatabaseType, DatabaseConnection
 from backend.plugins.base import ConnectorRegistration
 
@@ -21,7 +31,9 @@ def get_connector_registration(type_id: str) -> ConnectorRegistration | None:
 
 
 def get_available_types() -> list[dict]:
-    """Return metadata for all registered connector types."""
+    """Return metadata for all registered connector types (minus hidden ones)."""
+    from backend.config import settings
+    hidden = settings.hidden_connector_type_set
     return [
         {
             "id": reg.type_id,
@@ -31,8 +43,10 @@ def get_available_types() -> list[dict]:
             "badge_variant": reg.badge_variant,
             "version": reg.version,
             "card_meta_items": reg.card_meta_items or [],
+            "skip_schema_refresh": reg.skip_schema_refresh,
         }
         for reg in _CONNECTORS.values()
+        if reg.type_id not in hidden
     ]
 
 
@@ -117,6 +131,10 @@ register_connector(ConnectorRegistration(
     badge_variant="info",
     connector_class=PostgresConnector,
     card_meta_items=["ssl", "table_count", "schema_date"],
+    default_scope_hint="org",
+    fingerprint=_postgres_fingerprint,
+    dlt_source_for=_postgres_dlt_source_for,
+    extraction_config_model=SqlExtractionConfig,
 ))
 
 register_connector(ConnectorRegistration(
@@ -127,6 +145,10 @@ register_connector(ConnectorRegistration(
     badge_variant="warning",
     connector_class=MySQLConnector,
     card_meta_items=["ssl", "table_count", "schema_date"],
+    default_scope_hint="org",
+    fingerprint=_mysql_fingerprint,
+    dlt_source_for=_mysql_dlt_source_for,
+    extraction_config_model=SqlExtractionConfig,
 ))
 
 
@@ -165,4 +187,28 @@ register_connector(ConnectorRegistration(
         "no :: type casting — use CAST() instead. "
         "Database may have multiple tables with foreign keys."
     ),
+))
+
+
+def _test_data_plane(connection):
+    from backend.connectors.data_plane import DataPlaneConnector
+    connector = DataPlaneConnector.from_connection(connection)
+    try:
+        connector.test_connection()
+        return {"success": True, "message": "DataPlane is reachable"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+register_connector(ConnectorRegistration(
+    type_id="data_plane",
+    display_name="Data Plane",
+    description="Org-level materialized data layer (Parquet + query engine)",
+    default_port=0,
+    badge_variant="info",
+    connector_class=DataPlaneConnector,
+    on_test=_test_data_plane,
+    skip_schema_refresh=True,
+    default_scope_hint="org",
+    card_meta_items=["table_count"],
 ))

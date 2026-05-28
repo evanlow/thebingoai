@@ -20,7 +20,19 @@ async def get_status() -> StatusResponse:
 
 async def health_detailed() -> dict:
     """Detailed health check."""
-    checks = {"api": "healthy", "redis": "unknown", "qdrant": "unknown"}
+    checks = {"api": "healthy", "db": "unknown", "redis": "unknown", "qdrant": "unknown"}
+
+    # Check DB (cheap SELECT 1 — surfaces lost pooler / SSL connectivity fast)
+    try:
+        from sqlalchemy import text
+        from backend.database.session import engine
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        checks["db"] = "healthy"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"DB check failed: {e}", exc_info=True)
+        checks["db"] = "unhealthy"
 
     # Check Redis
     try:

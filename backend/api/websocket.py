@@ -115,10 +115,9 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
         "content_type": "text",
     }
 
-    if conn.profiling_status == "ready" and conn.data_context_path:
+    if conn.profiling_status == "ready" and conn.data_context is not None:
         try:
-            from backend.services.connection_context import load_context_file
-            context = load_context_file(connection_id)
+            context = conn.data_context
             profile_lines = [f"=== Dataset Profile: {conn.source_filename or conn.name} ==="]
             profile_lines.append(f"Connection ID: {connection_id} (queryable via SQL)")
             tables = context.get("tables", {})
@@ -138,7 +137,7 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
             file_data["profile_text"] = profile_text
             file_data["truncated_text"] = profile_text
             file_data["profile_status"] = "ready"
-        except (FileNotFoundError, Exception):
+        except Exception:
             file_data.update(_build_schema_fallback(conn, connection_id))
     elif conn.profiling_status in ("pending", "in_progress"):
         file_data["profile_status"] = "processing"
@@ -336,6 +335,105 @@ async def _persist_and_postprocess(
         ))
 
 
+async def _wait_for_file_processing(
+    file_ids: list,
+    db: Session,
+    user: User,
+    send,
+    request_id: str,
+    thread_id: str,
+) -> bool:
+    """Gate: wait until all connection:N file_ids have profiling_status == 'ready'.
+
+    Pushes chat.waiting events while polling, chat.ready when done,
+    chat.error on failure/timeout. Returns True if all files are ready,
+    False if the turn should abort.
+    """
+    if not file_ids:
+        return True
+
+    MAX_WAIT_S = 300  # 5-minute timeout per file
+    POLL_INTERVAL_S = 2
+
+    pending: dict[int, str] = {}  # connection_id → name
+    for fid in file_ids:
+        if not fid.startswith("connection:"):
+            continue
+        try:
+            cid = int(fid.split(":", 1)[1])
+            conn = db.query(DatabaseConnection).filter(
+                DatabaseConnection.id == cid,
+                DatabaseConnection.user_id == user.id,
+            ).first()
+            if conn and conn.profiling_status not in ("ready", "failed"):
+                pending[cid] = conn.source_filename or conn.name or f"file #{cid}"
+        except (ValueError, Exception):
+            continue
+
+    if not pending:
+        return True
+
+    for cid, name in pending.items():
+        await send({
+            "type": "chat.waiting",
+            "request_id": request_id,
+            "thread_id": thread_id,
+            "content": {
+                "file_id": f"connection:{cid}",
+                "name": name,
+                "connection_id": cid,
+            },
+        })
+
+    elapsed = 0
+    while pending:
+        await asyncio.sleep(POLL_INTERVAL_S)
+        elapsed += POLL_INTERVAL_S
+
+        resolved: list[int] = []
+        for cid in list(pending.keys()):
+            conn = db.query(DatabaseConnection).filter(
+                DatabaseConnection.id == cid,
+                DatabaseConnection.user_id == user.id,
+            ).first()
+            if conn is None:
+                resolved.append(cid)
+                continue
+            db.refresh(conn)  # see updates from Celery worker session
+            if conn.profiling_status == "ready":
+                resolved.append(cid)
+            elif conn.profiling_status == "failed":
+                name = pending[cid]
+                await send({
+                    "type": "chat.error",
+                    "request_id": request_id,
+                    "thread_id": thread_id,
+                    "content": f"Processing failed for {name}",
+                })
+                return False
+
+        for cid in resolved:
+            del pending[cid]
+
+        if elapsed >= MAX_WAIT_S:
+            names = ", ".join(pending.values())
+            await send({
+                "type": "chat.error",
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "content": f"Timed out waiting for {names} to finish processing",
+            })
+            return False
+
+    await send({
+        "type": "chat.ready",
+        "request_id": request_id,
+        "thread_id": thread_id,
+        "content": "All files ready",
+    })
+    return True
+
+
 async def _handle_chat_send(
     ws: WebSocket,
     user: User,
@@ -392,6 +490,12 @@ async def _handle_chat_send(
                 history = history[i + 1:]
                 break
 
+        # Wait for any connection:N files still being profiled by Celery
+        if not await _wait_for_file_processing(
+            file_ids, db, user, send, request_id, active_thread_id,
+        ):
+            return  # processing failed — error already pushed
+
         # Resolve attachments
         file_contents, attachments = await _resolve_attachments(file_ids, chat_file_service, db=db, user=user)
 
@@ -407,9 +511,10 @@ async def _handle_chat_send(
             attachments=attachments if attachments else None,
         )
 
-        # Resolve LLM provider from environment config
-        from backend.llm.factory import get_provider
-        user_provider = get_provider(settings.default_llm_provider)
+        # Resolve provider + LLM call settings from the published agent profile
+        # (draft edits stay confined to settings until publish).
+        from backend.agents.profile_llm import resolve_published_llm
+        user_provider, profile_temperature, profile_max_tokens = resolve_published_llm(ctx.profile)
 
         # Set Redis streaming flag (TTL 5 min safety net)
         streaming_key = f"streaming:{conversation.thread_id}"
@@ -435,7 +540,22 @@ async def _handle_chat_send(
             await _credit_mgr.__aenter__()
         except Exception as _credit_setup_err:
             if _InsufficientCreditsError and isinstance(_credit_setup_err, _InsufficientCreditsError):
-                await send({"type": "chat.error", "request_id": request_id, "thread_id": conversation.thread_id, "content": "Daily credits used up. Resets at midnight.", "error_code": "insufficient_credits"})
+                # Phase 4 of multi-user-org: distinguish per-user daily cap
+                # exhaustion from org pool exhaustion so the UI can render
+                # the right copy.
+                cap = getattr(_credit_setup_err, "reason", "user_daily")
+                if cap == "org_pool":
+                    msg = "Organization credit pool exhausted. Contact your bingo admin."
+                else:
+                    msg = "Daily credits used up. Resets at midnight."
+                await send({
+                    "type": "chat.error",
+                    "request_id": request_id,
+                    "thread_id": conversation.thread_id,
+                    "content": msg,
+                    "error_code": "insufficient_credits",
+                    "cap": cap,
+                })
                 return
             logger.warning("Credit context setup failed: %s", _credit_setup_err)
             _credit_mgr = None
@@ -462,6 +582,8 @@ async def _handle_chat_send(
             profile=ctx.profile,
             llm_provider=user_provider,
             mentions=mentions or None,
+            temperature=profile_temperature,
+            max_tokens=profile_max_tokens,
         ):
             # Map SSE event type → WS event type
             event_type = event.get("type", "")

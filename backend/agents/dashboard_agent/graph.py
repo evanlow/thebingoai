@@ -5,6 +5,7 @@ from backend.agents.dashboard_agent.prompts import build_dashboard_agent_prompt
 from backend.agents.invoke_helpers import extract_final_answer, run_inline_react, run_via_mesh_runtime
 from backend.agents.prompt_resolver import resolve_agent_prompt
 from backend.agents.context import AgentContext
+from backend.services.dashboard_cache import _get_org_for_user
 from backend.agents.loop_detector import make_loop_detector
 from backend.config import settings
 from typing import Dict, Any, Callable, List
@@ -34,6 +35,7 @@ def _resolve_dashboard_agent_prompt(
             mesh_enabled=mesh_enabled,
             target_connection_id=target_connection_id,
             connection_metadata=context.connection_metadata,
+            org_id=_get_org_for_user(context.user_id),
         ),
         log_prefix=__name__,
     )
@@ -88,6 +90,9 @@ async def invoke_dashboard_agent(
             system_prompt=_resolve_dashboard_agent_prompt(context, db_session_factory, target_connection_id),
             message=request,
             pre_model_hook=make_loop_detector(max_repeats=2, max_same_tool=15, max_total_calls=40),
+            agent_type="dashboard_agent",
+            user_id=getattr(context, "user_id", None),
+            session_id=getattr(context, "session_id", None),
         )
 
         dashboard_id, steps = _extract_results(messages)
@@ -99,7 +104,7 @@ async def invoke_dashboard_agent(
         )
 
         return {
-            "success": True,
+            "success": dashboard_id is not None,
             "message": extract_final_answer(messages) or "Dashboard creation completed.",
             "dashboard_id": dashboard_id,
             "dashboard_name": dashboard_name,

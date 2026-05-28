@@ -1,10 +1,18 @@
 <template>
-  <div class="mb-6">
+  <div>
     <!-- User message: left-aligned chat bubble -->
     <div v-if="message.role === 'user'">
-      <div class="inline-block bg-gray-900 text-white rounded-2xl px-4 py-2.5 max-w-[80%] whitespace-pre-wrap dark:bg-neutral-700 dark:text-neutral-100">
-        {{ message.content }}
+      <!-- Name + time label -->
+      <div class="mb-1.5 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[var(--ink-2)]">
+        {{ senderName }} · {{ messageTime }}
       </div>
+
+      <!-- Bubble with inline @mention pill rendering -->
+      <div
+        class="inline-block bg-[var(--ink-0)] text-[var(--paper-0)] px-4 py-3 max-w-[80%] text-[14px] leading-[1.5] tracking-[-0.005em]"
+        style="border-radius: 14px 14px 14px 4px;"
+        v-html="renderMentions(message.content)"
+      />
 
       <!-- Attachments -->
       <div v-if="message.attachments && message.attachments.length > 0" class="mt-2 flex flex-wrap gap-2 max-w-[80%]">
@@ -70,6 +78,12 @@
 
     <!-- Assistant message: left-aligned plain text -->
     <div v-else class="pr-4 md:pr-32">
+      <div class="flex gap-2.5 items-start">
+        <div class="w-7 h-7 rounded-[var(--r-md)] bg-transparent flex items-center justify-center flex-shrink-0 overflow-hidden mt-0.5" :class="{ 'avatar-spin': isLoading }">
+          <img v-if="agentAvatarUrl" :src="agentAvatarUrl" class="w-full h-full object-cover" alt="Agent" />
+          <img v-else src="/logo/BINGO Logo Design_FA_Icon_W.png" class="w-full h-full object-contain p-1" :alt="agentName || 'Bingo'" />
+        </div>
+        <div class="flex-1 min-w-0">
       <!-- Heartbeat source label -->
       <div v-if="message.source === 'heartbeat'" class="mb-1.5 flex items-center gap-1.5">
         <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 uppercase tracking-wide">
@@ -80,15 +94,13 @@
         </span>
       </div>
 
-      <!-- Typing indicator when assistant message is empty during streaming -->
-      <div v-if="!message.content && chatStore.isStreaming && props.isLast" class="typing-indicator">
-        <span class="typing-dot"></span>
-        <span class="typing-dot"></span>
-        <span class="typing-dot"></span>
-      </div>
-
       <!-- Assistant message with markdown -->
-      <UiMarkdownRenderer v-else :content="message.content" />
+      <UiMarkdownRenderer :content="message.content" />
+
+      <!-- Briefing card -->
+      <div v-if="message.briefing_id" class="mt-3">
+        <BriefingCard :briefing-id="message.briefing_id" />
+      </div>
 
       <!-- Live steps log (collapses when final answer arrives) -->
       <div v-if="message.steps_log?.length" class="mt-1 font-mono text-[11px] text-gray-400 dark:text-neutral-400 bg-gray-50/80 dark:bg-neutral-800/60 border border-gray-100 dark:border-neutral-700 rounded-md px-3 py-2 leading-relaxed">
@@ -178,6 +190,8 @@
           {{ actionType === 'dashboard' ? 'Revise' : 'No thanks' }}
         </UiButton>
       </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -186,6 +200,8 @@
 import type { Message } from '~/stores/chat'
 import type { SkillSuggestion } from '~/types/skillSuggestion'
 import { useDashboardStore } from '~/stores/dashboard'
+import { parseUtcDate, formatDate } from '~/utils/format'
+import { IMAGE_MIME_TYPES } from '~/composables/_chatConstants'
 
 const props = defineProps<{
   message: Message
@@ -193,6 +209,8 @@ const props = defineProps<{
   actionType?: 'soul' | 'dashboard' | 'dashboard_question' | 'dashboard_created' | 'user_question' | null
   followingUserContent?: string
   isLast?: boolean
+  agentAvatarUrl?: string | null
+  agentName?: string
 }>()
 
 const emit = defineEmits<{
@@ -201,7 +219,70 @@ const emit = defineEmits<{
 
 const chatStore = useChatStore()
 const dashboardStore = useDashboardStore()
+const authStore = useAuthStore()
 const api = useApi()
+const { resolvedMentions } = useMentions()
+
+const isLoading = computed(() =>
+  !props.message.content && chatStore.isStreaming && props.isLast
+)
+
+// ── User message display helpers ─────────────────────────────
+const senderName = computed(() => {
+  const email = authStore.user?.email ?? ''
+  // Use the part before @ as the display name, title-cased
+  const local = email.split('@')[0] ?? email
+  return local.charAt(0).toUpperCase() + local.slice(1)
+})
+
+const messageTime = computed(() => {
+  try {
+    return formatDate(props.message.created_at, 'h:mm a').toLowerCase()
+  } catch {
+    return ''
+  }
+})
+
+// Type → CSS class + SVG icon path for mention pills
+const MENTION_TYPE_META: Record<string, { typeClass: string; iconPath: string }> = {
+  connection:  { typeClass: 'dataset',   iconPath: 'M4 6h16M4 10h16M4 14h16M4 18h16' }, // Database rows
+  dashboard:   { typeClass: 'dashboard', iconPath: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z' }, // Grid
+  notion_page: { typeClass: 'notion',    iconPath: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' }, // File
+  skill:       { typeClass: 'skill',     iconPath: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z' }, // Zap
+  person:      { typeClass: 'person',    iconPath: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 11a4 4 0 100-8 4 4 0 000 8z' },
+}
+
+function pillIcon(typeClass: string): string {
+  const meta = Object.values(MENTION_TYPE_META).find(m => m.typeClass === typeClass)
+  if (!meta) return ''
+  return `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-1px;margin-right:3px"><path d="${meta.iconPath}"/></svg>`
+}
+
+// Escape HTML and render @mentions as type-aware pills with icons (dark-bubble variant)
+const renderMentions = (text: string): string => {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/\n/g, '<br>')
+
+  return escaped.replace(/@([\w][\w.\-]*)/g, (_match, name) => {
+    const item = resolvedMentions.value.get(name)
+    const typeClass = item ? (MENTION_TYPE_META[item.type]?.typeClass ?? 'default') : 'default'
+    const icon = pillIcon(typeClass)
+    const displayName = item?.displayName ?? name.replace(/-/g, ' ')
+
+    // Notion page: show as parent/child pill
+    if (item?.type === 'notion_page' && item.connectionId) {
+      return `<span class="mention-pc mention-pc--${typeClass}"><span class="mention-pc__parent">${icon}@${displayName}</span></span>`
+    }
+
+    // Standard pill — use dark-bubble variant so it reads on ink-0 background
+    return `<span class="mention-pill mention-pill--${typeClass} mention-pill--dark">${icon}@${displayName}</span>`
+  })
+}
 
 const pendingSuggestions = computed(() =>
   (props.message.skillSuggestions ?? []).filter(s => chatStore.skillSuggestions.some(ss => ss.id === s.id))
@@ -243,11 +324,16 @@ const isQuestionAnswered = computed(() => {
 })
 
 const createdDashboardId = computed<number | null>(() => {
+  // Recognise both the direct tool (create_dashboard / update_dashboard) and
+  // the sub-agent wrapper (dashboard_agent) -- the orchestrator increasingly
+  // delegates dashboard creation through the wrapper, which returns the
+  // same {success, dashboard_id} shape but under a different tool_name.
+  const DASHBOARD_TOOLS = new Set(['create_dashboard', 'update_dashboard', 'dashboard_agent'])
   for (const step of props.message.agent_steps ?? []) {
-    if (step.tool_name !== 'create_dashboard' && step.tool_name !== 'update_dashboard') continue
+    if (!DASHBOARD_TOOLS.has(step.tool_name)) continue
     try {
       const result = typeof step.content?.result === 'string' ? JSON.parse(step.content.result) : step.content?.result
-      if (result?.success === true) return result.dashboard_id ?? null
+      if (result?.success === true && result?.dashboard_id) return result.dashboard_id
     } catch { continue }
   }
   return null
@@ -256,8 +342,6 @@ const createdDashboardId = computed<number | null>(() => {
 const viewDashboard = async () => {
   await navigateTo(createdDashboardId.value ? `/dashboard?id=${createdDashboardId.value}` : '/dashboard')
 }
-
-const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
 const isImageType = (mimeType: string) => IMAGE_MIME_TYPES.has(mimeType)
 
@@ -310,41 +394,12 @@ const userQuestion = computed(() => {
 </script>
 
 <style scoped>
-.typing-indicator {
-  display: flex;
-  gap: 4px;
-  padding: 8px 0;
+.avatar-spin {
+  animation: avatar-spin 2s linear infinite;
 }
 
-.typing-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: #9ca3af;
-  animation: typing-bounce 1.4s infinite ease-in-out;
-}
-
-.typing-dot:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes typing-bounce {
-  0%, 60%, 100% {
-    transform: translateY(0);
-    opacity: 0.7;
-  }
-  30% {
-    transform: translateY(-10px);
-    opacity: 1;
-  }
+@keyframes avatar-spin {
+  to { transform: rotate(360deg); }
 }
 
 .suggestion-list-leave-active {

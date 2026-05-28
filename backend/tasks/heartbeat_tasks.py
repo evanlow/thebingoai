@@ -7,8 +7,9 @@ from datetime import datetime
 from celery import shared_task
 from backend.database.session import SessionLocal
 from backend.models.heartbeat_job import HeartbeatJob
-from backend.models.heartbeat_job_run import HeartbeatJobRun
+from backend.models.heartbeat_job_run import HeartbeatJobRun, HeartbeatRunStatus
 from backend.models.user import User
+from backend.tasks._helpers import record_run_failure
 
 logger = logging.getLogger(__name__)
 
@@ -21,43 +22,35 @@ def dispatch_heartbeat_jobs():
     Queries all active jobs whose next_run_at is due and dispatches
     an execute_heartbeat_job task for each, then advances next_run_at.
     """
-    from croniter import croniter
+    from backend.tasks.cron_dispatcher import dispatch_due_rows
 
     db = SessionLocal()
     now = datetime.utcnow()
 
+    def _dispatch_heartbeat_row(job, _now=now):
+        if getattr(job, "kind", "chat") == "briefing":
+            execute_heartbeat_briefing.delay(job.id)
+        elif job.agent_type and job.agent_type != "orchestrator":
+            execute_agent_heartbeat_job.delay(job.id)
+        else:
+            execute_heartbeat_job.delay(job.id)
+        job.last_run_at = _now
+
     try:
-        due_jobs = (
-            db.query(HeartbeatJob)
-            .filter(
-                HeartbeatJob.is_active == True,
-                HeartbeatJob.next_run_at <= now,
-            )
-            .all()
+        count = dispatch_due_rows(
+            db,
+            model_cls=HeartbeatJob,
+            enabled_field="is_active",
+            cron_field="cron_expression",
+            next_run_field="next_run_at",
+            dispatch_fn=_dispatch_heartbeat_row,
+            now=now,
         )
-
-        if not due_jobs:
-            return
-
-        logger.info(f"Dispatching {len(due_jobs)} due heartbeat job(s)")
-
-        for job in due_jobs:
-            try:
-                # Route to agent-specific task if agent_type is set
-                if job.agent_type and job.agent_type != "orchestrator":
-                    execute_agent_heartbeat_job.delay(job.id)
-                else:
-                    execute_heartbeat_job.delay(job.id)
-                # Advance next_run_at
-                job.next_run_at = croniter(job.cron_expression, now).get_next(datetime)
-                job.last_run_at = now
-            except Exception as dispatch_err:
-                logger.error(f"Failed to dispatch job {job.id}: {dispatch_err}")
-
+        if count:
+            logger.info("Dispatched %d due heartbeat job(s)", count)
         db.commit()
-
     except Exception as e:
-        logger.error(f"dispatch_heartbeat_jobs failed: {e}")
+        logger.error("dispatch_heartbeat_jobs failed: %s", e)
         db.rollback()
     finally:
         db.close()
@@ -89,7 +82,7 @@ def execute_heartbeat_job(job_id: str):
         # Create a run record
         run = HeartbeatJobRun(
             job_id=job_id,
-            status="running",
+            status=HeartbeatRunStatus.RUNNING.value,
             started_at=started_at,
             prompt=job.prompt,
         )
@@ -99,14 +92,22 @@ def execute_heartbeat_job(job_id: str):
 
         logger.info(f"Executing heartbeat job {job_id} (run {run.id})")
 
-        # --- Credit tracking (bingo-credits plugin) ---
-        _credit_mgr = None
-        try:
-            from backend.plugins.loader import get_loaded_plugins
-            if "bingo-admin" in get_loaded_plugins():
-                from bingo_admin.credit_context import CreditContextManager
-            else:
-                from backend.services.token_tracking_service import CreditContextManager
+        with record_run_failure(
+            db,
+            run,
+            HeartbeatRunStatus.FAILED.value,
+            started_at,
+            logger=logger,
+            task_label=f"Heartbeat job {job_id}",
+        ):
+            # --- Credit tracking (bingo-credits plugin) ---
+            _credit_mgr = None
+            try:
+                from backend.plugins.loader import get_loaded_plugins
+                if "bingo-admin" in get_loaded_plugins():
+                    from bingo_admin.credit_context import CreditContextManager
+                else:
+                    from backend.services.token_tracking_service import CreditContextManager
                 _credit_mgr = CreditContextManager(
                     db=db,
                     user_id=job.user_id,
@@ -115,41 +116,28 @@ def execute_heartbeat_job(job_id: str):
                     conversation_id=None,
                     block_on_insufficient=False,
                 )
-        except Exception as _credit_err:
-            logger.warning("Credit context setup failed for heartbeat: %s", _credit_err)
-            _credit_mgr = None
+            except Exception as _credit_err:
+                logger.warning("Credit context setup failed for heartbeat: %s", _credit_err)
+                _credit_mgr = None
 
-        # Sync context manager propagates ContextVar into asyncio.run()
-        from contextlib import nullcontext
-        with (_credit_mgr if _credit_mgr is not None else nullcontext()):
-            response = asyncio.run(_run_orchestrator_for_job(job, user))
+            # Sync context manager propagates ContextVar into asyncio.run()
+            from contextlib import nullcontext
+            with (_credit_mgr if _credit_mgr is not None else nullcontext()):
+                response = asyncio.run(_run_orchestrator_for_job(job, user))
 
-        completed_at = datetime.utcnow()
-        duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+            completed_at = datetime.utcnow()
+            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-        run.status = "completed"
-        run.response = response
-        run.completed_at = completed_at
-        run.duration_ms = duration_ms
-        db.commit()
+            run.status = HeartbeatRunStatus.COMPLETED.value
+            run.response = response
+            run.completed_at = completed_at
+            run.duration_ms = duration_ms
+            db.commit()
 
-        logger.info(f"Heartbeat job {job_id} run {run.id} completed in {duration_ms}ms")
+            logger.info(f"Heartbeat job {job_id} run {run.id} completed in {duration_ms}ms")
 
-        # Deliver result to user's permanent conversation
-        _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
-
-    except Exception as e:
-        logger.error(f"Heartbeat job {job_id} failed: {e}")
-        if run is not None:
-            try:
-                completed_at = datetime.utcnow()
-                run.status = "failed"
-                run.error = str(e)
-                run.completed_at = completed_at
-                run.duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-                db.commit()
-            except Exception:
-                db.rollback()
+            # Deliver result to user's permanent conversation
+            _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
     finally:
         db.close()
 
@@ -222,6 +210,8 @@ async def _run_orchestrator_for_job(job: HeartbeatJob, user: User) -> str:
     finally:
         db.close()
 
+    from backend.agents.profile_llm import resolve_published_llm
+    user_provider, profile_temperature, profile_max_tokens = resolve_published_llm(ctx.profile)
     db_factory = SessionLocal
     result = await run_orchestrator(
         user_question=job.prompt,
@@ -234,6 +224,10 @@ async def _run_orchestrator_for_job(job: HeartbeatJob, user: User) -> str:
         user_memories_context=ctx.user_memories_context,
         soul_prompt=ctx.soul_prompt,
         skill_suggestions=ctx.skill_suggestions,
+        profile=ctx.profile,
+        llm_provider=user_provider,
+        temperature=profile_temperature,
+        max_tokens=profile_max_tokens,
     )
 
     return result.get("message", "")
@@ -263,7 +257,7 @@ def execute_agent_heartbeat_job(job_id: str):
 
         run = HeartbeatJobRun(
             job_id=job_id,
-            status="running",
+            status=HeartbeatRunStatus.RUNNING.value,
             started_at=started_at,
             prompt=job.prompt,
         )
@@ -273,14 +267,22 @@ def execute_agent_heartbeat_job(job_id: str):
 
         logger.info(f"Executing agent heartbeat job {job_id} (type={job.agent_type}, run={run.id})")
 
-        # --- Credit tracking (bingo-credits plugin) ---
-        _credit_mgr = None
-        try:
-            from backend.plugins.loader import get_loaded_plugins
-            if "bingo-admin" in get_loaded_plugins():
-                from bingo_admin.credit_context import CreditContextManager
-            else:
-                from backend.services.token_tracking_service import CreditContextManager
+        with record_run_failure(
+            db,
+            run,
+            HeartbeatRunStatus.FAILED.value,
+            started_at,
+            logger=logger,
+            task_label=f"Agent heartbeat job {job_id}",
+        ):
+            # --- Credit tracking (bingo-credits plugin) ---
+            _credit_mgr = None
+            try:
+                from backend.plugins.loader import get_loaded_plugins
+                if "bingo-admin" in get_loaded_plugins():
+                    from bingo_admin.credit_context import CreditContextManager
+                else:
+                    from backend.services.token_tracking_service import CreditContextManager
                 _credit_mgr = CreditContextManager(
                     db=db,
                     user_id=job.user_id,
@@ -289,39 +291,26 @@ def execute_agent_heartbeat_job(job_id: str):
                     conversation_id=None,
                     block_on_insufficient=False,
                 )
-        except Exception as _credit_err:
-            logger.warning("Credit context setup failed for heartbeat: %s", _credit_err)
-            _credit_mgr = None
+            except Exception as _credit_err:
+                logger.warning("Credit context setup failed for heartbeat: %s", _credit_err)
+                _credit_mgr = None
 
-        from contextlib import nullcontext
-        with (_credit_mgr if _credit_mgr is not None else nullcontext()):
-            response = asyncio.run(
-                _run_agent_for_job(job, user)
-            )
+            from contextlib import nullcontext
+            with (_credit_mgr if _credit_mgr is not None else nullcontext()):
+                response = asyncio.run(
+                    _run_agent_for_job(job, user)
+                )
 
-        completed_at = datetime.utcnow()
-        duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+            completed_at = datetime.utcnow()
+            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-        run.status = "completed"
-        run.response = response
-        run.completed_at = completed_at
-        run.duration_ms = duration_ms
-        db.commit()
+            run.status = HeartbeatRunStatus.COMPLETED.value
+            run.response = response
+            run.completed_at = completed_at
+            run.duration_ms = duration_ms
+            db.commit()
 
-        _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
-
-    except Exception as e:
-        logger.error(f"Agent heartbeat job {job_id} failed: {e}")
-        if run is not None:
-            try:
-                completed_at = datetime.utcnow()
-                run.status = "failed"
-                run.error = str(e)
-                run.completed_at = completed_at
-                run.duration_ms = int((completed_at - started_at).total_seconds() * 1000)
-                db.commit()
-            except Exception:
-                db.rollback()
+            _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
     finally:
         db.close()
 
@@ -372,5 +361,56 @@ async def _run_agent_for_job(job: HeartbeatJob, user: User) -> str:
         result = await runtime.execute(job.prompt, tools, prompt)
         return result.get("message", "")
 
+    finally:
+        db.close()
+
+
+@shared_task(name="execute_heartbeat_briefing", time_limit=60)
+def execute_heartbeat_briefing(job_id: str):
+    """For a briefing-kind HeartbeatJob: create a Briefing row and dispatch generate_briefing."""
+    from backend.models.briefing import Briefing
+    from backend.tasks.briefing_tasks import generate_briefing
+    import re
+
+    db = SessionLocal()
+    try:
+        job = db.query(HeartbeatJob).filter(HeartbeatJob.id == job_id).first()
+        if not job:
+            logger.error("execute_heartbeat_briefing: job %s missing", job_id)
+            return
+
+        # Extract dashboard_id from prompt: "analyze dashboard {id} ..."
+        m = re.search(r"dashboard\s+(\d+)", job.prompt or "")
+        if not m:
+            logger.error("execute_heartbeat_briefing: cannot find dashboard id in prompt %r", job.prompt)
+            return
+        dashboard_id = int(m.group(1))
+
+        # Idempotency: skip if there's already an in-flight briefing for this job within the last minute
+        from datetime import timedelta
+        recent = (
+            db.query(Briefing)
+            .filter(
+                Briefing.heartbeat_job_id == job.id,
+                Briefing.created_at >= datetime.utcnow() - timedelta(minutes=1),
+            )
+            .first()
+        )
+        if recent:
+            logger.info("execute_heartbeat_briefing: recent run exists (briefing %s), skipping", recent.id)
+            return
+
+        briefing = Briefing(
+            user_id=job.user_id,
+            dashboard_id=dashboard_id,
+            source="scheduled",
+            heartbeat_job_id=job.id,
+            status="generating",
+        )
+        db.add(briefing)
+        db.commit()
+        db.refresh(briefing)
+
+        generate_briefing.delay(briefing.id)
     finally:
         db.close()
