@@ -12,6 +12,7 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
 
   const hasDataSource = computed(() => !!widget.value.dataSource)
   const lastRefreshedAt = computed(() => widget.value.dataSource?.lastRefreshedAt ?? null)
+  const servedFrom = computed(() => widget.value.dataSource?.servedFrom ?? null)
 
   async function refresh() {
     const ds = widget.value.dataSource
@@ -35,7 +36,7 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
         filters,
         dashboard_id: store.currentDashboardId ?? undefined,
         widget_sources: widget.value.sources ?? undefined,
-      }) as { config: Record<string, any>; refreshed_at: string }
+      }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source' }
 
       if (seq !== refreshSeq) return
       // For table widgets, preserve editor-only column fields (aggregation,
@@ -52,6 +53,7 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
       }
       Object.assign(widget.value.widget.config, response.config)
       ds.lastRefreshedAt = response.refreshed_at
+      ds.servedFrom = response.served_from
     } catch (err: any) {
       if (seq !== refreshSeq) return
       error.value = err?.data?.detail ?? err?.message ?? 'Refresh failed'
@@ -69,5 +71,5 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
     }
   })
 
-  return { loading, error, lastRefreshedAt, hasDataSource, refresh }
+  return { loading, error, lastRefreshedAt, servedFrom, hasDataSource, refresh }
 }
