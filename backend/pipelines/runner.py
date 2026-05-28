@@ -21,8 +21,9 @@ def compute_pipeline_fingerprint(connection_fingerprint: str | None, extraction_
 
 def run_pipeline(
     pipeline_id: str,
-    triggered_by: Literal["cron", "manual", "api"],
+    triggered_by: Literal["cron", "manual", "api", "bootstrap", "manual-backfill"],
     triggered_by_user_id: str | None = None,
+    backfill_since: datetime | None = None,
 ) -> str:
     """Execute a Pipeline; return the new pipeline_run_id.
 
@@ -122,8 +123,25 @@ def run_pipeline(
                 if hasattr(connector_cls, "pre_run"):
                     connector_cls.pre_run(connection)
 
-                # Build dlt source
-                extraction_config = pipeline.extraction_config or {}
+                # Build dlt source. Inject the per-pipeline incremental cursor
+                # + optional backfill window into extraction_config so SQL
+                # connectors (postgres / mysql) can hand it to dlt's
+                # `sources.incremental` for true incremental extracts. Other
+                # connectors (CSV, notion, GA4, …) ignore unknown keys.
+                extraction_config = dict(pipeline.extraction_config or {})
+                if pipeline.mode == "incremental" and pipeline.incremental_key:
+                    # SQL source resources are named by the source table (see
+                    # `_build_sql_pipeline_templates` — `extraction_config.tables`
+                    # carries the source name; `target_table` is the prefixed
+                    # plane-side name). Key the cursor by the source table so
+                    # `sql_dlt_source` can match dlt's `resources.get(name)`.
+                    src_tables = extraction_config.get("tables") or []
+                    if src_tables:
+                        extraction_config.setdefault("incremental_keys", {})[src_tables[0]] = (
+                            pipeline.incremental_key
+                        )
+                if backfill_since is not None:
+                    extraction_config["backfill_since"] = backfill_since
                 source = source_fn(connection, extraction_config)
 
                 # Build dlt destination wrapping DataPlane
@@ -140,11 +158,17 @@ def run_pipeline(
                     destination=destination,
                 )
                 write_disposition = "replace" if pipeline.mode == "full" else "merge"
+                # dlt `primary_key` drives merge dedup — must be the natural-key
+                # column(s) populated by the template materializer from the
+                # source table's PRIMARY KEY, NOT the watermark cursor.
+                # `incremental_key` is consumed above via extraction_config and
+                # `sql_dlt_source` -> `dlt.sources.incremental`.
+                primary_key = tuple(pipeline.unique_key) if pipeline.unique_key else None
                 load_info = dlt_pipeline.run(
                     source,
                     table_name=pipeline.target_table,
                     write_disposition=write_disposition,
-                    primary_key=pipeline.incremental_key or None,
+                    primary_key=primary_key,
                 )
 
                 # Rows: closure counter from the custom destination is the
@@ -194,6 +218,13 @@ def run_pipeline(
 
         pipeline.last_run_status = status
         pipeline.last_run_at = finished_at
+
+        # Flip the bootstrap-flag latch on first successful ingest. Phase 2
+        # widget / chat plane-redirect paths read this to decide whether to
+        # allow a live source-DB fallback ("not-ready policy" — one live query
+        # per missing partition until the first ingest lands, then plane-only).
+        if status == "success" and not pipeline.first_ingest_done:
+            pipeline.first_ingest_done = True
 
         # Advance next_run_at for cron pipelines
         if pipeline.cron:

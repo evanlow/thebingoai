@@ -30,6 +30,13 @@ class Pipeline(Base, TimestampMixin):
     last_run_status = Column(String(16), nullable=True)    # success | failed | running
     next_run_at = Column(DateTime, nullable=True)
     enabled = Column(Boolean, nullable=False, default=True)
+    # Latches True after the bootstrap (first) successful ingest. Read by the
+    # widget / chat plane-redirect paths to gate the "one live source query as
+    # bootstrap fallback" policy: missing Parquet partition + this=False →
+    # fall through to source DB; missing partition + this=True → plane-only
+    # (caller raises 503 `code=plane_table_missing` rather than re-hammer the
+    # source). Flipped inside `runner.run_pipeline` on success.
+    first_ingest_done = Column(Boolean, nullable=False, default=False, server_default="false")
     created_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
 
     runs = relationship("PipelineRun", back_populates="pipeline", cascade="all, delete-orphan")

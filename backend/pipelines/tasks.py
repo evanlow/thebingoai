@@ -1,6 +1,6 @@
 """Celery tasks for Pipeline scheduling and execution (Phase 2)."""
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from celery import shared_task
 
@@ -86,13 +86,82 @@ def dispatch_pipelines():
 
 
 @shared_task(name="run_pipeline_task", time_limit=3600)
-def run_pipeline_task(pipeline_id: str, triggered_by: str, triggered_by_user_id: str | None):
-    """Execute a single pipeline run. Delegates to runner.run_pipeline()."""
+def run_pipeline_task(
+    pipeline_id: str,
+    triggered_by: str,
+    triggered_by_user_id: str | None,
+    backfill_since_iso: str | None = None,
+):
+    """Execute a single pipeline run. Delegates to runner.run_pipeline().
+
+    `backfill_since_iso` is an ISO-8601 string (Celery args must be JSON-safe)
+    that the runner forwards to `sql_dlt_source` as the initial cursor for
+    incremental tables — used by `first_ingest_task` and the Phase 3
+    "Load history" endpoint.
+    """
     from backend.pipelines.runner import run_pipeline
-    run_id = run_pipeline(pipeline_id, triggered_by, triggered_by_user_id)
+    backfill_since = None
+    if backfill_since_iso:
+        try:
+            backfill_since = datetime.fromisoformat(backfill_since_iso)
+        except Exception:
+            logger.warning("run_pipeline_task: bad backfill_since_iso=%r, ignoring", backfill_since_iso)
+    run_id = run_pipeline(pipeline_id, triggered_by, triggered_by_user_id, backfill_since=backfill_since)
     if run_id:
         logger.info("Pipeline %s run completed: run_id=%s", pipeline_id, run_id)
     return run_id
+
+
+@shared_task(name="first_ingest_task", time_limit=3600)
+def first_ingest_task(connection_id: int, triggered_by_user_id: str | None):
+    """Bootstrap ingest: run every pipeline freshly materialised for `connection_id`.
+
+    Fired from `api/connections.create_connection` immediately after
+    `materialize_templates_for_connection` succeeds. Pulls
+    `now - settings.first_ingest_lookback_days` forward for incremental tables;
+    full-snapshot tables ignore the lookback and load everything.
+
+    Runs sequentially (one pipeline per loop iter) so multiple tables on the
+    same connection don't fan out a herd of concurrent dlt processes against
+    the same source DB.
+    """
+    from backend.config import settings
+    from backend.database.session import SessionLocal
+    from backend.models.pipeline import Pipeline
+    from backend.pipelines.runner import run_pipeline
+
+    db = SessionLocal()
+    try:
+        pipelines = (
+            db.query(Pipeline)
+            .filter(Pipeline.source_connection_id == connection_id)
+            .all()
+        )
+        if not pipelines:
+            logger.info("first_ingest_task: no pipelines for connection %s", connection_id)
+            return 0
+
+        backfill_since = datetime.now(timezone.utc) - timedelta(
+            days=int(getattr(settings, "first_ingest_lookback_days", 1)),
+        )
+        ran = 0
+        for p in pipelines:
+            if p.first_ingest_done:
+                continue
+            try:
+                run_pipeline(
+                    p.id, "bootstrap", triggered_by_user_id,
+                    # Full-snapshot tables ignore this; incremental ones use it
+                    # as the dlt `initial_value` for their cursor.
+                    backfill_since=backfill_since,
+                )
+                ran += 1
+            except Exception:
+                logger.exception("first_ingest_task: pipeline %s failed", p.id)
+        logger.info("first_ingest_task: ran %d pipeline(s) for connection %s", ran, connection_id)
+        return ran
+    finally:
+        db.close()
 
 
 @shared_task(name="pipeline_health_check")

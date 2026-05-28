@@ -177,6 +177,16 @@ class Settings(BaseSettings):
     # Agent mesh settings (Redis DB 4)
     agent_mesh_redis_url: str = "redis://localhost:6379/4"
 
+    # Connector → DataPlane materialization (Phase 1)
+    # Bootstrap (first) ingest pulls from now - this many days forward; full-
+    # snapshot tables (no watermark) ignore the lookback and load everything.
+    first_ingest_lookback_days: int = 1
+    # When set, `services.watermark_classifier.resolve_watermark` calls an LLM
+    # to pick the best incremental cursor per table; empty → deterministic
+    # ranked matcher only. Provider mirrors `default_llm_provider`.
+    watermark_classifier_model: str = ""
+    watermark_classifier_provider: str = ""
+
     @field_validator("chunk_overlap")
     @classmethod
     def validate_overlap(cls, v):

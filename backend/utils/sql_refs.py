@@ -95,6 +95,39 @@ def transpile_bq_to_duckdb(sql: str) -> str:
     return out
 
 
+_DIALECT_MAP = {
+    "postgres": "postgres",
+    "postgresql": "postgres",
+    "mysql": "mysql",
+    "bigquery": "bigquery",
+    "bigquery_ga4": "bigquery",
+    "duckdb": "duckdb",
+    "sqlite": "sqlite",
+}
+
+
+def transpile_to_engine(sql: str, *, src: str, dst: str) -> str:
+    """Transpile *sql* from *src* dialect to *dst* via sqlglot.
+
+    Used by the Phase-2 read-path cutover to run stored postgres / mysql widget
+    SQL on DuckDB-over-Parquet without forcing a per-widget migration. Falls
+    back to the input *sql* on any sqlglot error — the caller is expected to
+    handle that by reverting to the source DB.
+
+    Unlike `transpile_bq_to_duckdb`, this never raises: the dashboard/chat
+    redirect paths are best-effort and graceful fallback is the contract.
+    """
+    src_d = _DIALECT_MAP.get((src or "").lower(), src)
+    dst_d = _DIALECT_MAP.get((dst or "").lower(), dst)
+    if src_d == dst_d:
+        return sql
+    try:
+        ast = sqlglot.parse_one(sql, read=src_d, error_level=sqlglot.ErrorLevel.RAISE)
+        return ast.sql(dialect=dst_d)
+    except Exception:
+        return sql
+
+
 def extract_table_refs(sql: str) -> list[str]:
     """Return list of table names referenced in *sql* (lower-cased, deduplicated, sorted).
     Returns [] on parse failure."""
