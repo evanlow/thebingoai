@@ -81,55 +81,13 @@ def discover_and_load_plugins() -> None:
                 except Exception:
                     logger.exception("Failed to register tool builders from plugin '%s'", plugin.name)
 
-                try:
-                    from backend.agents.tool_registry import register_data_agent_plugin_tool_builder
-                    for tool_name, builder in plugin.data_agent_tool_builders().items():
-                        register_data_agent_plugin_tool_builder(tool_name, builder)
-                        logger.info(
-                            "Registered data-agent tool builder '%s' from plugin '%s'",
-                            tool_name, plugin.name,
-                        )
-                except Exception:
-                    logger.exception(
-                        "Failed to register data-agent tool builders from plugin '%s'", plugin.name,
-                    )
-
                 plugin.on_startup()
-                _backfill_templates_for_plugin(plugin)
                 _loaded_plugins[plugin.name] = plugin
                 logger.info("Loaded plugin: %s v%s", plugin.name, plugin.version)
             except Exception:
                 logger.exception("Failed to initialize plugin '%s', skipping", plugin.name)
     finally:
         _is_discovering = False
-
-
-def _backfill_templates_for_plugin(plugin: BingoPlugin) -> None:
-    """For each templated connector this plugin registers, materialize templates
-    against every existing connection of that type.
-
-    Idempotent — relies on the materializer's dedup logic. Safe to run on every
-    boot. Gated by settings.template_backfill_on_startup so it can be disabled.
-    Dynamic SQL registrations (postgres / mysql / sqlite) are also included so
-    plugin-shipped SQL sources fan out per table on startup.
-    """
-    from backend.config import settings
-    if not settings.template_backfill_on_startup:
-        return
-
-    from backend.database.session import SessionLocal
-    from backend.services.template_materializer import (
-        backfill_templates_for_registrations,
-    )
-
-    with SessionLocal() as db:
-        backfilled = backfill_templates_for_registrations(plugin.connectors(), db)
-        for type_id, count in backfilled.items():
-            if count:
-                logger.info(
-                    "Backfilled templates for %d %s connection(s) (plugin '%s')",
-                    count, type_id, plugin.name,
-                )
 
 
 def import_plugin_celery_tasks() -> list[str]:

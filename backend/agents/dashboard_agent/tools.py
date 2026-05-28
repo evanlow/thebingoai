@@ -53,7 +53,7 @@ def _build_dashboard_context_tool(context: AgentContext, db_session_factory: Cal
         """
         import json
         from backend.models.database_connection import DatabaseConnection
-        from backend.services.connection_context import load_connection_context
+        from backend.services.connection_context import load_context_file
 
         if not context.can_access_connection(connection_id):
             return json.dumps({"success": False, "message": f"Connection {connection_id} not authorized"})
@@ -87,13 +87,13 @@ def _build_dashboard_context_tool(context: AgentContext, db_session_factory: Cal
                         "Dashboard creation will be available once profiling completes."
                     ),
                 })
-
-            conn_context = load_connection_context(db, connection_id)
         finally:
             db.close()
 
-        if conn_context is None:
-            return json.dumps({"success": False, "message": "Connection context not built yet. Try re-profiling."})
+        try:
+            conn_context = load_context_file(connection_id)
+        except FileNotFoundError:
+            return json.dumps({"success": False, "message": "Connection context not found. Try re-profiling."})
 
         ctx_tables = conn_context.get("tables", {})
 
@@ -212,11 +212,6 @@ def _build_dashboard_context_tool(context: AgentContext, db_session_factory: Cal
             }
             if col_data.get("cardinality") is not None:
                 dim_output[dim_name]["cardinality"] = col_data["cardinality"]
-            # Include actual date range so the AI can generate dateRangeSource SQL
-            if col_data.get("min") is not None:
-                dim_output[dim_name]["min"] = col_data["min"]
-            if col_data.get("max") is not None:
-                dim_output[dim_name]["max"] = col_data["max"]
 
         dashboard_context = {
             "sources": sources,

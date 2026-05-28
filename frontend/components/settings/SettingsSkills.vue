@@ -1,21 +1,14 @@
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-
-    <!-- Page header -->
-    <div class="px-7 pt-3 pb-2 border-b border-[var(--line)] flex-shrink-0">
-      <p class="eyebrow mb-0.5 text-gray-400 dark:text-neutral-500">Settings · Skills</p>
-      <h1 class="settings-h1 text-3xl text-gray-900 dark:text-white select-none mb-1">Skills</h1>
+  <div class="p-6">
+    <div class="mb-6">
+      <h2 class="text-2xl font-medium text-gray-900 dark:text-white select-none">Skills</h2>
+      <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">Manage your custom skills. Create new skills by asking the AI in chat.</p>
     </div>
-
-    <!-- Scrolling body -->
-    <div class="flex-1 overflow-y-auto px-7 py-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400 max-w-2xl mb-6">Skills are reusable tasks Bingo can perform. Create them by asking Bingo in chat, or accept suggestions where it spots a repeating pattern.</p>
 
     <!-- Suggestions Banner -->
     <div v-if="suggestions.length > 0" class="mb-6 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-4">
-      <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-3">
-        Suggested skills · {{ suggestions.length }} pattern{{ suggestions.length === 1 ? '' : 's' }} detected
-      </h3>
+      <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-3">Suggested Skills</h3>
+      <p class="text-xs text-amber-700 dark:text-amber-400 mb-3">Background analysis detected these repeated patterns. Accept to create a skill automatically.</p>
       <div class="flex flex-col gap-2">
         <div
           v-for="suggestion in suggestions"
@@ -24,7 +17,7 @@
         >
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-0.5">
-              <p class="text-sm font-medium text-gray-900 dark:text-white truncate font-mono">{{ suggestion.suggested_name }}</p>
+              <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ suggestion.suggested_name }}</p>
               <span class="shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
                 {{ Math.round(suggestion.confidence * 100) }}% match
               </span>
@@ -35,10 +28,10 @@
             <button
               type="button"
               :disabled="respondingTo === suggestion.id"
-              @click="previewSuggestion(suggestion)"
-              class="text-xs font-medium px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 transition-colors"
+              @click="respondToSuggestion(suggestion.id, 'accept')"
+              class="text-xs font-medium px-2.5 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
             >
-              Preview
+              Create
             </button>
             <button
               type="button"
@@ -48,21 +41,10 @@
             >
               Dismiss
             </button>
-            <button
-              type="button"
-              :disabled="respondingTo === suggestion.id"
-              @click="respondToSuggestion(suggestion.id, 'accept')"
-              class="text-xs font-medium px-2.5 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
-            >
-              Create skill
-            </button>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Section eyebrow -->
-    <p v-if="!loading && skills.length > 0" class="eyebrow mb-3">Your skills · {{ skills.length }}</p>
 
     <!-- Loading State -->
     <div v-if="loading" class="flex flex-wrap gap-4">
@@ -125,7 +107,7 @@
               :title="skill.is_active ? 'Deactivate skill' : 'Activate skill'"
               @click="handleToggle(skill)"
               class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
-              :class="skill.is_active ? 'bg-violet-600' : 'bg-gray-200'"
+              :class="skill.is_active ? 'bg-blue-600' : 'bg-gray-200'"
             >
               <span
                 class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
@@ -145,42 +127,6 @@
         </div>
       </UiCard>
     </div>
-
-    <!-- Suggestion Preview Dialog -->
-    <UiDialog
-      v-model:open="showPreviewDialog"
-      :title="previewingSuggestion?.suggested_name || 'Suggested skill'"
-      size="md"
-    >
-      <div v-if="previewingSuggestion" class="space-y-3">
-        <div class="flex items-center gap-2">
-          <UiBadge :variant="skillTypeBadgeVariant(previewingSuggestion.suggested_skill_type)" size="sm">
-            {{ skillTypeLabel(previewingSuggestion.suggested_skill_type) }}
-          </UiBadge>
-          <span class="text-xs text-amber-700 dark:text-amber-300">
-            {{ Math.round(previewingSuggestion.confidence * 100) }}% confidence
-          </span>
-        </div>
-        <p v-if="previewingSuggestion.suggested_description" class="text-sm text-gray-600 dark:text-neutral-300">
-          {{ previewingSuggestion.suggested_description }}
-        </p>
-        <div v-if="previewingSuggestion.pattern_summary">
-          <p class="text-xs font-medium text-gray-500 mb-1">Detected pattern</p>
-          <p class="text-sm text-gray-700 dark:text-neutral-300 italic">{{ previewingSuggestion.pattern_summary }}</p>
-        </div>
-      </div>
-
-      <template #footer>
-        <UiButton variant="outline" @click="showPreviewDialog = false">Close</UiButton>
-        <UiButton
-          variant="primary"
-          :loading="respondingTo === previewingSuggestion?.id"
-          @click="acceptFromPreview"
-        >
-          Create skill
-        </UiButton>
-      </template>
-    </UiDialog>
 
     <!-- Skill Detail Dialog -->
     <UiDialog
@@ -292,7 +238,6 @@
         </UiButton>
       </template>
     </UiDialog>
-    </div>
   </div>
 </template>
 
@@ -318,21 +263,8 @@ const showDeleteDialog = ref(false)
 const deletingSkill = ref<UserSkill | null>(null)
 const deleting = ref(false)
 
-// Suggestion preview + responding
-const showPreviewDialog = ref(false)
-const previewingSuggestion = ref<SkillSuggestion | null>(null)
+// Suggestion responding
 const respondingTo = ref<string | null>(null)
-
-function previewSuggestion(suggestion: SkillSuggestion) {
-  previewingSuggestion.value = suggestion
-  showPreviewDialog.value = true
-}
-
-async function acceptFromPreview() {
-  if (!previewingSuggestion.value) return
-  await respondToSuggestion(previewingSuggestion.value.id, 'accept')
-  showPreviewDialog.value = false
-}
 
 onMounted(async () => {
   await Promise.all([fetchSkills(), fetchSuggestions()])

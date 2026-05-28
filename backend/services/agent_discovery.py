@@ -10,18 +10,21 @@ from typing import List, Optional
 
 import redis
 
-from backend.models.agent_session import SessionStatus
-from backend.services._agent_mesh import assert_session_owned, get_redis
+from backend.config import settings
 from backend.services.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _get_redis() -> redis.Redis:
+    return redis.from_url(settings.agent_mesh_redis_url, decode_responses=True)
 
 
 class AgentDiscovery:
     """Discover active agent sessions for a specific user."""
 
     def __init__(self, redis_client: Optional[redis.Redis] = None):
-        self.redis = redis_client or get_redis()
+        self.redis = redis_client or _get_redis()
         self._registry = AgentRegistry(redis_client=self.redis)
 
     def list_sessions(
@@ -43,7 +46,7 @@ class AgentDiscovery:
             data = self._registry.get_session(sid)
             if not data:
                 continue
-            if data.get("status") == SessionStatus.TERMINATED.value:
+            if data.get("status") == "terminated":
                 continue
             if filter_type and data.get("agent_type") != filter_type:
                 continue
@@ -58,7 +61,10 @@ class AgentDiscovery:
             PermissionError: If session is not owned by user
             ValueError: If session not found
         """
-        assert_session_owned(self.redis, user_id, session_id)
+        if not self.redis.sismember(f"agent:user_sessions:{user_id}", session_id):
+            raise PermissionError(
+                f"Session {session_id} is not owned by user {user_id}"
+            )
 
         data = self._registry.get_session(session_id)
         if not data:
@@ -77,6 +83,6 @@ class AgentDiscovery:
         sessions = self.list_sessions(user_id, filter_type=agent_type)
         if sessions:
             # Prefer active over idle
-            active = [s for s in sessions if s.get("status") == SessionStatus.ACTIVE.value]
+            active = [s for s in sessions if s.get("status") == "active"]
             return active[0] if active else sessions[0]
         return None

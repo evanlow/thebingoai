@@ -186,7 +186,6 @@ export interface ConversationMessage {
   content: string
   sources?: SourceInfo[]
   timestamp: string
-  briefing_id?: number | null
 }
 
 export interface Activity {

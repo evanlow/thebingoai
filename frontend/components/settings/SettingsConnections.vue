@@ -1,37 +1,8 @@
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-
-    <!-- Page header -->
-    <div class="px-7 pt-3 pb-2 border-b border-[var(--line)] flex-shrink-0">
-      <p class="eyebrow mb-0.5 text-gray-400 dark:text-neutral-500">Settings · Data Sources</p>
-      <h1 class="settings-h1 text-3xl text-gray-900 dark:text-neutral-100 mb-1">Connections</h1>
-    </div>
-
-    <!-- Scrolling body -->
-    <div class="flex-1 overflow-y-auto">
-    <div class="px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3">
-
-    <!-- Row 2: search (left) + Refresh all + Add (right) -->
-    <div class="mt-2 mb-6 flex flex-wrap items-center gap-3">
-      <div class="relative flex-1 min-w-0">
-        <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-neutral-500 pointer-events-none" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Search connections…"
-          class="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-800 text-gray-900 dark:text-neutral-100 placeholder-gray-400 dark:placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-violet-500"
-        />
-      </div>
-      <div class="flex items-center gap-2 flex-shrink-0 ml-auto">
-        <UiButton variant="outline" size="sm" :loading="refreshingAll" @click="refreshAllConnections">
-          <RefreshCw class="h-3.5 w-3.5" />
-          Refresh all
-        </UiButton>
-        <UiButton size="sm" @click="openCreateDialog">
-          <Plus class="h-3.5 w-3.5" />
-          Add
-        </UiButton>
-      </div>
+  <div>
+  <div class="p-4 md:p-6">
+    <div class="mb-6">
+      <h2 class="text-2xl font-medium text-gray-900 dark:text-neutral-100">Connections</h2>
     </div>
 
     <!-- Loading State -->
@@ -57,288 +28,208 @@
 
 
     <!-- Connections Grid -->
-    <div v-if="!loading && connections.length > 0" class="flex flex-col gap-8">
-      <!-- WAREHOUSES · DATABASES -->
-      <div>
-        <div class="flex items-center gap-3 mb-3">
-          <p class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest shrink-0">Warehouses · Databases</p>
-          <div class="flex-1 border-t border-dashed border-gray-200 dark:border-neutral-700"></div>
-          <span class="text-xs text-gray-400 dark:text-neutral-500 shrink-0">
-            {{ warehouseConnections.length }} {{ warehouseConnections.length === 1 ? 'connection' : 'connections' }}
-          </span>
-        </div>
-        <div class="flex flex-wrap gap-4">
-          <UiCard
-            v-for="connection in warehouseConnections"
-            :key="connection.id"
-            class="overflow-hidden h-56 w-56 max-md:w-full cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
-            @click="openEditDialog(connection)"
-          >
-            <div :class="[CARD_BAND[connection.db_type] ?? 'bg-gray-100 dark:bg-neutral-400/60', 'h-[3px] w-full flex-shrink-0']" />
-            <div class="flex flex-col flex-1 min-h-0 px-4 pt-3 pb-4">
-              <div class="flex items-start gap-2.5">
-                <ConnectorAvatar :db-type="connection.db_type" :icon-html="connectorIcons[connection.db_type]" size="sm" />
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType(connection.db_type)?.display_name || connection.db_type }}</p>
-                  <div v-if="getConnectorType(connection.db_type)?.version" class="flex items-center gap-1 mt-0.5">
-                    <span class="text-[11px] text-gray-400 dark:text-neutral-300">v{{ getConnectorType(connection.db_type)?.version }}</span>
-                    <button
-                      @click.stop="openChangelog(connection.db_type)"
-                      class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-500 inline-flex items-center justify-center text-gray-400 dark:text-neutral-300 hover:text-gray-600 dark:hover:text-neutral-100 hover:border-gray-400 dark:hover:border-neutral-300"
-                    >
-                      <Info class="h-2 w-2" />
-                    </button>
-                  </div>
-                </div>
-                <Loader2
-                  v-if="connection.profiling_status === 'in_progress' || connection.profiling_status === 'pending'"
-                  class="h-4 w-4 text-yellow-500 animate-spin shrink-0 mt-1"
-                />
-              </div>
-              <div v-if="connection.db_type === 'bigquery' && connection.host" class="flex items-center gap-1 mt-1">
-                <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.host }}</span>
-              </div>
-              <div v-else-if="connection.database" class="flex items-center gap-1 mt-1">
-                <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.database }}</span>
-              </div>
-              <div v-else-if="connection.source_filename" class="flex items-center gap-1 mt-1">
-                <FileText class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.source_filename }}</span>
-              </div>
-              <ConnectionCardMeta :connection="connection" />
-            </div>
-          </UiCard>
-
-          <!-- Add Connection card -->
-          <button
-            @click="openCreateDialog"
-            class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-neutral-500 rounded-lg h-56 w-56 max-md:w-full hover:border-gray-400 dark:hover:border-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
-          >
-            <Plus class="h-6 w-6 text-gray-400 dark:text-neutral-300" />
-            <span class="text-sm text-gray-500 dark:text-neutral-300">Add connection</span>
-            <span class="text-xs text-gray-400 dark:text-neutral-400">
-              {{ connectorTypes.slice(0, 3).map(t => t.display_name).join(' · ') }}
-              <template v-if="connectorTypes.length > 3"> · {{ connectorTypes.length - 3 }} more</template>
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <!-- FILES & UPLOADS -->
-      <div v-if="fileUngroupedConnections.length > 0 || filteredDatasetGroups.length > 0">
-        <div class="flex items-center gap-3 mb-3">
-          <p class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest shrink-0">Files & Uploads</p>
-          <div class="flex-1 border-t border-dashed border-gray-200 dark:border-neutral-700"></div>
-          <span class="text-xs text-gray-400 dark:text-neutral-500 shrink-0">Grouped by schema</span>
-        </div>
-        <div class="flex flex-wrap gap-4">
-          <!-- Ungrouped file connections (sqlite, facebook_ads, standalone datasets) -->
-          <UiCard
-            v-for="connection in fileUngroupedConnections"
-            :key="connection.id"
-            class="overflow-hidden h-56 w-56 max-md:w-full cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
-            @click="openEditDialog(connection)"
-          >
-            <div :class="[CARD_BAND[connection.db_type] ?? 'bg-gray-100 dark:bg-neutral-400/60', 'h-[3px] w-full flex-shrink-0']" />
-            <div class="flex flex-col flex-1 min-h-0 px-4 pt-3 pb-4">
-              <div class="flex items-start gap-2.5">
-                <ConnectorAvatar :db-type="connection.db_type" :icon-html="connectorIcons[connection.db_type]" size="sm" />
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType(connection.db_type)?.display_name || connection.db_type }}</p>
-                  <div v-if="getConnectorType(connection.db_type)?.version" class="flex items-center gap-1 mt-0.5">
-                    <span class="text-[11px] text-gray-400 dark:text-neutral-300">v{{ getConnectorType(connection.db_type)?.version }}</span>
-                    <button
-                      @click.stop="openChangelog(connection.db_type)"
-                      class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-500 inline-flex items-center justify-center text-gray-400 dark:text-neutral-300 hover:text-gray-600 dark:hover:text-neutral-100 hover:border-gray-400 dark:hover:border-neutral-300"
-                    >
-                      <Info class="h-2 w-2" />
-                    </button>
-                  </div>
-                </div>
-                <Loader2
-                  v-if="connection.profiling_status === 'in_progress' || connection.profiling_status === 'pending'"
-                  class="h-4 w-4 text-yellow-500 animate-spin shrink-0 mt-1"
-                />
-              </div>
-              <div v-if="connection.db_type === 'facebook_ads'" class="flex items-center gap-1 mt-1">
-                <User class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">Account: {{ connection.name }}</span>
-              </div>
-              <div v-else-if="connection.source_filename" class="flex items-center gap-1 mt-1">
-                <FileText class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.source_filename }}</span>
-              </div>
-              <ConnectionCardMeta :connection="connection" />
-            </div>
-          </UiCard>
-
-          <!-- Grouped dataset connections (shared schema_fingerprint) -->
-          <UiCard
-            v-for="group in filteredDatasetGroups"
-            :key="group.fingerprint"
-            class="overflow-hidden w-56 max-md:w-full hover:shadow-lg transition-shadow flex flex-col"
-            :class="!expandedGroups[group.fingerprint] ? 'h-56' : ''"
-          >
-            <div :class="[CARD_BAND['dataset'], 'h-[3px] w-full flex-shrink-0']" />
-            <div :class="['flex flex-col px-4 pt-3 pb-4',
-                          !expandedGroups[group.fingerprint] ? 'flex-1 min-h-0' : '']">
-              <button
-                class="flex items-start gap-2.5 w-full text-left cursor-pointer"
-                @click="toggleGroup(group.fingerprint)"
-              >
-                <ConnectorAvatar db-type="dataset" :icon-html="connectorIcons['dataset']" size="sm" />
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType('dataset')?.display_name || 'Dataset' }}</p>
-                  <div class="flex items-center gap-1 mt-0.5">
-                    <span class="text-[11px] text-gray-400 dark:text-neutral-300">v{{ getConnectorType('dataset')?.version }}</span>
-                    <button
-                      @click.stop="openChangelog('dataset')"
-                      class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-500 inline-flex items-center justify-center text-gray-400 dark:text-neutral-300 hover:text-gray-600 dark:hover:text-neutral-100 hover:border-gray-400 dark:hover:border-neutral-300"
-                    >
-                      <Info class="h-2 w-2" />
-                    </button>
-                  </div>
-                </div>
-                <component :is="expandedGroups[group.fingerprint] ? ChevronDown : ChevronRight" class="h-4 w-4 text-gray-400 dark:text-neutral-300 shrink-0 mt-1" />
-              </button>
-              <p class="text-[13px] text-gray-500 dark:text-neutral-300 mt-2.5">{{ group.connections.length }} datasets</p>
-              <div v-if="expandedGroups[group.fingerprint]" class="mt-3 space-y-2 border-t border-gray-100 dark:border-neutral-600 pt-3">
-                <div
-                  v-for="conn in group.connections"
-                  :key="conn.id"
-                  class="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-neutral-700 cursor-pointer"
-                  @click="openEditDialog(conn)"
+    <div v-if="!loading && connections.length > 0" class="flex flex-wrap gap-4">
+      <!-- Ungrouped connections (non-dataset or unique fingerprint datasets) -->
+      <UiCard
+        v-for="connection in ungroupedConnections"
+        :key="connection.id"
+        class="relative overflow-hidden px-4 py-5 h-56 w-56 max-md:w-full cursor-pointer hover:shadow-lg transition-shadow"
+        @click="openEditDialog(connection)"
+      >
+        <!-- Top accent border -->
+        <div
+          class="absolute top-0 left-0 right-0 h-[3px]"
+          :class="getAccentClass(connection)"
+        />
+        <div class="flex flex-col h-full">
+          <!-- Header: icon + type name + spinner -->
+          <div class="flex items-start gap-2.5">
+            <div
+              class="h-8 w-8 shrink-0"
+              v-if="connectorIcons[connection.db_type]"
+              v-html="connectorIcons[connection.db_type]"
+            />
+            <component v-else :is="Database" class="h-8 w-8 text-gray-400 shrink-0" />
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType(connection.db_type)?.display_name || connection.db_type }}</p>
+              <div v-if="getConnectorType(connection.db_type)?.version" class="flex items-center gap-1 mt-0.5">
+                <span class="text-[11px] text-gray-400 dark:text-neutral-500">v{{ getConnectorType(connection.db_type)?.version }}</span>
+                <button
+                  @click.stop="openChangelog(connection.db_type)"
+                  class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-600 inline-flex items-center justify-center text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300 hover:border-gray-400 dark:hover:border-neutral-400"
                 >
-                  <div class="min-w-0 flex-1">
-                    <p class="text-xs font-medium text-gray-700 dark:text-neutral-200 truncate">{{ conn.name }}</p>
-                    <p v-if="conn.source_filename" class="text-xs text-gray-400 dark:text-neutral-300 truncate">{{ conn.source_filename }}</p>
-                  </div>
-                  <button @click.stop="openDeleteDialog(conn)" class="text-gray-400 hover:text-red-500 shrink-0">
-                    <Trash2 class="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-              <div v-else class="mt-auto flex flex-col gap-0.5">
-                <p class="text-xs text-gray-400 dark:text-neutral-300">{{ group.connections.map(c => c.source_filename || c.name).join(', ') }}</p>
+                  <Info class="h-2 w-2" />
+                </button>
               </div>
             </div>
-          </UiCard>
-        </div>
-      </div>
-    </div>
-
-    <!-- Type Picker Dialog -->
-    <UiDialog
-      :open="showTypePicker"
-      @update:open="handleTypePickerClose"
-      :closable="false"
-      size="full"
-      panel-class="max-w-7xl h-[90vh] flex flex-col"
-      body-class="flex-1 min-h-0 overflow-y-auto"
-    >
-      <template #header>
-        <div class="flex items-center justify-between w-full gap-4">
-          <span class="text-xs font-semibold text-gray-400 uppercase tracking-widest shrink-0">Connection · Step 1/3</span>
-          <div class="relative flex-1 max-w-sm">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            <input
-              v-model="typeSearchQuery"
-              type="text"
-              :placeholder="`Search ${connectorTypes.length} connectors…`"
-              class="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-gray-900 dark:text-neutral-100 placeholder-gray-400 dark:placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-violet-500"
+            <!-- Spinner while sync or profile is running -->
+            <Loader2
+              v-if="connection.profiling_status === 'in_progress' || connection.profiling_status === 'pending'"
+              class="h-4 w-4 text-yellow-500 animate-spin shrink-0 mt-1"
             />
           </div>
-          <button
-            @click="handleTypePickerClose(false)"
-            class="text-sm text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200 shrink-0"
-          >Cancel</button>
-        </div>
-      </template>
-
-      <div class="px-6 py-8 max-w-7xl mx-auto w-full">
-        <h2 class="text-3xl font-medium text-gray-900 dark:text-neutral-100 mb-8">
-          What are we
-          <em class="text-violet-500 not-italic">connecting to?</em>
-        </h2>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <button
-            v-for="type in filteredTypes"
-            :key="type.id"
-            @click="selectedTypeId = type.id"
-            class="relative flex items-start gap-3 p-4 rounded-xl border text-left transition-all cursor-pointer"
-            :class="selectedTypeId === type.id
-              ? 'ring-2 ring-violet-500 border-transparent'
-              : 'border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600'"
-          >
-            <ConnectorAvatar :db-type="type.id" :icon-html="connectorIcons[type.id]" size="sm" />
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-gray-900 dark:text-neutral-100">{{ type.display_name }}</span>
-                <span v-if="type.version" class="text-xs text-gray-400 dark:text-neutral-500">v{{ type.version }}</span>
-              </div>
-              <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">{{ type.description }}</p>
+          <!-- Connected account (Facebook Ads) or source filename (file-based connectors) -->
+          <div v-if="connection.db_type === 'bigquery' && connection.host" class="flex items-center gap-1 mt-1">
+            <Database class="h-3 w-3 text-gray-400 shrink-0" />
+            <span class="text-[11px] text-gray-400 truncate">{{ connection.host }}</span>
+          </div>
+          <div v-else-if="connection.db_type === 'facebook_ads'" class="flex items-center gap-1 mt-1">
+            <User class="h-3 w-3 text-gray-400 dark:text-neutral-500 shrink-0" />
+            <span class="text-[11px] text-gray-400 dark:text-neutral-500 truncate">Account: {{ connection.name }}</span>
+          </div>
+          <div v-else-if="connection.source_filename" class="flex items-center gap-1 mt-1">
+            <FileText class="h-3 w-3 text-gray-400 dark:text-neutral-500 shrink-0" />
+            <span class="text-[11px] text-gray-400 dark:text-neutral-500 truncate">{{ connection.source_filename }}</span>
+          </div>
+          <!-- Bottom metadata row -->
+          <div class="mt-auto border-t border-gray-100 dark:border-neutral-700 pt-2.5 flex items-end gap-4">
+            <!-- Profiling status (always first) -->
+            <div class="flex flex-col items-center gap-1" :title="getProfilingTitle(connection)">
+              <Activity class="h-3.5 w-3.5" :class="getProfilingIconClass(connection)" />
+              <span class="text-[10px]" :class="getProfilingTextClass(connection)">{{ getProfilingLabel(connection) }}</span>
             </div>
-            <span
-              v-if="selectedTypeId === type.id"
-              class="absolute top-3 right-3 text-[10px] bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded font-medium"
-            >SELECTED</span>
-          </button>
-        </div>
-      </div>
-
-      <template #footer>
-        <div class="w-full flex items-center justify-between">
-          <span class="text-xs text-gray-400 dark:text-neutral-500">Pressing Continue uses the selected type. You can still cancel or switch types from the next step.</span>
-          <div class="flex items-center gap-3">
-            <UiButton variant="outline" size="sm" @click="handleTypePickerClose(false)">Cancel</UiButton>
-            <UiButton
-              size="sm"
-              :disabled="!selectedTypeId"
-              @click="selectConnectorType(selectedTypeId!)"
-            >
-              Continue{{ selectedConnectorType ? ` · ${selectedConnectorType.display_name}` : '' }}
-            </UiButton>
+            <!-- Dynamic meta items from connector type -->
+            <template v-for="item in (getConnectorType(connection.db_type)?.card_meta_items || [])" :key="item">
+              <div v-if="item === 'ssl' && connection.ssl_enabled" class="flex flex-col items-center gap-1" title="SSL Enabled">
+                <Lock class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-400" />
+                <span class="text-[10px] text-gray-500 dark:text-neutral-400">SSL</span>
+              </div>
+              <div v-if="item === 'table_count' && connection.table_count != null" class="flex flex-col items-center gap-1" :title="`${connection.table_count} tables`">
+                <Table2 class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-400" />
+                <span class="text-[10px] text-gray-500 dark:text-neutral-400">{{ connection.table_count }} tables</span>
+              </div>
+              <div v-if="item === 'dataset_count' && connection.table_count != null" class="flex flex-col items-center gap-1" :title="`${connection.table_count} datasets`">
+                <Database class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-400" />
+                <span class="text-[10px] text-gray-500 dark:text-neutral-400">{{ connection.table_count }} datasets</span>
+              </div>
+              <div v-if="item === 'schema_date' && connection.schema_generated_at" class="flex flex-col items-center gap-1" :title="`Schema refreshed ${formatRelativeDate(connection.schema_generated_at)}`">
+                <Clock class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-400" />
+                <span class="text-[10px] text-gray-500 dark:text-neutral-400">{{ formatRelativeDate(connection.schema_generated_at) }}</span>
+              </div>
+              <div v-if="item === 'lookback'" class="flex flex-col items-center gap-1" title="Lookback window">
+                <Clock class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-400" />
+                <span class="text-[10px] text-gray-500 dark:text-neutral-400">{{ parseLookbackDays(connection) }}d lookback</span>
+              </div>
+              <div v-if="item === 'last_sync' && connection.schema_generated_at" class="flex flex-col items-center gap-1" :title="`Last synced ${formatRelativeDate(connection.schema_generated_at)}`">
+                <RefreshCw class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-400" />
+                <span class="text-[10px] text-gray-500 dark:text-neutral-400">{{ formatRelativeDate(connection.schema_generated_at) }}</span>
+              </div>
+            </template>
           </div>
         </div>
-      </template>
-    </UiDialog>
+      </UiCard>
 
-    <!-- Connection Form Dialog -->
-    <UiDialog
+      <!-- Grouped dataset connections (shared schema_fingerprint) -->
+      <UiCard
+        v-for="group in datasetGroups"
+        :key="group.fingerprint"
+        :class="`relative overflow-hidden px-4 py-5 w-56 max-md:w-full hover:shadow-lg transition-shadow${!expandedGroups[group.fingerprint] ? ' h-56' : ''}`"
+      >
+        <div class="absolute top-0 left-0 right-0 h-[3px] bg-green-500" />
+        <div class="flex flex-col h-full">
+          <button
+            class="flex items-start gap-2.5 w-full text-left cursor-pointer"
+            @click="toggleGroup(group.fingerprint)"
+          >
+            <div class="h-8 w-8 shrink-0" v-html="connectorIcons['dataset']" />
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType('dataset')?.display_name || 'Dataset' }}</p>
+              <div class="flex items-center gap-1 mt-0.5">
+                <span class="text-[11px] text-gray-400 dark:text-neutral-500">v{{ getConnectorType('dataset')?.version }}</span>
+                <button
+                  @click.stop="openChangelog('dataset')"
+                  class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-600 inline-flex items-center justify-center text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300 hover:border-gray-400 dark:hover:border-neutral-400"
+                >
+                  <Info class="h-2 w-2" />
+                </button>
+              </div>
+            </div>
+            <component :is="expandedGroups[group.fingerprint] ? ChevronDown : ChevronRight" class="h-4 w-4 text-gray-400 dark:text-neutral-500 shrink-0 mt-1" />
+          </button>
+          <p class="text-[13px] text-gray-500 dark:text-neutral-400 mt-2.5">{{ group.connections.length }} datasets</p>
+          <!-- Expanded: list individual datasets -->
+          <div v-if="expandedGroups[group.fingerprint]" class="mt-3 space-y-2 border-t border-gray-100 dark:border-neutral-700 pt-3">
+            <div
+              v-for="conn in group.connections"
+              :key="conn.id"
+              class="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-neutral-700 cursor-pointer"
+              @click="openEditDialog(conn)"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium text-gray-700 dark:text-neutral-200 truncate">{{ conn.name }}</p>
+                <p v-if="conn.source_filename" class="text-xs text-gray-400 dark:text-neutral-500 truncate">{{ conn.source_filename }}</p>
+              </div>
+              <button
+                @click.stop="openDeleteDialog(conn)"
+                class="text-gray-400 hover:text-red-500 shrink-0"
+              >
+                <Trash2 class="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          <div v-else class="mt-auto flex flex-col gap-0.5">
+            <p class="text-xs text-gray-400 dark:text-neutral-500">{{ group.connections.map(c => c.source_filename || c.name).join(', ') }}</p>
+          </div>
+        </div>
+      </UiCard>
+
+      <!-- Add Connection card -->
+      <button
+        @click="openCreateDialog"
+        class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-neutral-600 rounded-lg h-56 w-56 max-md:w-full hover:border-gray-400 dark:hover:border-neutral-500 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+      >
+        <component :is="Plus" class="h-6 w-6 text-gray-400 dark:text-neutral-500" />
+        <span class="text-sm text-gray-500 dark:text-neutral-400">Add Connection</span>
+      </button>
+    </div>
+
+    <!-- Type Picker Bottom Sheet -->
+    <UiBottomSheet
+      :open="showTypePicker"
+      @update:open="handleTypePickerClose"
+      :title="typePickerTitle"
+      fullHeight
+    >
+      <div class="flex flex-wrap gap-4">
+        <button
+          v-for="type in connectorTypes"
+          :key="type.id"
+          @click="selectConnectorType(type.id)"
+          class="flex flex-col items-center justify-center gap-2 rounded-lg border border-gray-200 p-4 h-56 w-56 max-md:w-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer dark:border-neutral-700 dark:bg-neutral-800/50 dark:hover:bg-neutral-700/50"
+        >
+          <div v-if="connectorIcons[type.id]" class="h-10 w-10" v-html="connectorIcons[type.id]" />
+          <component v-else :is="Database" class="h-10 w-10 text-gray-400" />
+          <div class="text-center">
+            <h3 class="text-xs font-normal text-gray-900 dark:text-neutral-100">{{ type.display_name }}</h3>
+            <p class="text-xs text-gray-600 dark:text-neutral-400 line-clamp-2">{{ type.description }}</p>
+          </div>
+        </button>
+      </div>
+    </UiBottomSheet>
+
+    <!-- Connection Form Bottom Sheet -->
+    <UiBottomSheet
       :open="showFormSheet"
       @update:open="handleFormSheetClose"
       :closable="false"
-      size="full"
-      panel-class="max-w-7xl h-[90vh] flex flex-col"
-      body-class="flex-1 min-h-0 overflow-hidden"
+      panelClass="h-[calc(80vh-6rem)]"
     >
       <template #header>
-        <div class="flex items-center justify-between w-full gap-4">
-          <div class="min-w-0">
-            <div class="flex items-center gap-3">
-              <button
-                v-if="!editingConnection"
-                @click="goBackToTypePicker"
-                class="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:text-neutral-400 dark:hover:bg-neutral-700 shrink-0"
-              >
-                <ArrowLeft class="h-5 w-5" />
-              </button>
-              <span class="text-lg font-medium text-gray-900 dark:text-neutral-100 truncate">
-                {{ editingConnection ? `Edit · ${editingConnection.name}` : getFormTitle() }}
-              </span>
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between w-full gap-2">
+          <div class="flex items-center gap-3">
+            <button
+              v-if="!editingConnection"
+              @click="goBackToTypePicker"
+              class="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+            >
+              <ArrowLeft class="h-5 w-5" />
+            </button>
+            <span class="text-lg font-normal text-gray-900 dark:text-neutral-100">{{ getFormTitle() }}</span>
+            <div v-if="testSuccess" class="flex items-center justify-center w-6 h-6 rounded-full bg-green-500">
+              <Check class="h-3.5 w-3.5 text-white" />
             </div>
-            <p v-if="editingConnection" class="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 ml-0">
-              #{{ editingConnection.id }} · last edited {{ formatRelativeDate(editingConnection.updated_at) }}
-            </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2 shrink-0">
-            <div v-if="testSuccess" class="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
-              <Check class="h-4 w-4" />
-              <span>Test passed</span>
-            </div>
+          <div class="flex flex-wrap items-center gap-2">
             <UiButton
               variant="outline"
               size="sm"
@@ -346,7 +237,9 @@
             >
               Cancel
             </UiButton>
-            <!-- Edit-mode lifecycle buttons: connector-agnostic, capability-gated. -->
+            <!-- Edit-mode lifecycle buttons: connector-agnostic, capability-gated.
+                 These act on a saved connection id and don't depend on community form state,
+                 so they render even when a plugin form owns the left column. -->
             <UiButton
               v-if="editingConnection && showRefresh"
               variant="outline"
@@ -384,6 +277,7 @@
 
             <!-- Form-state-dependent buttons: only when community owns the form body. -->
             <template v-if="!hasPluginForm">
+              <!-- Create-mode Test Connection for built-in types (needs form state). -->
               <UiButton
                 v-if="!editingConnection && !isFileUploadConnection && !testSuccess"
                 variant="outline"
@@ -408,10 +302,9 @@
         </div>
       </template>
 
-      <div class="flex flex-col md:flex-row h-full min-h-0">
+      <div class="flex flex-col md:flex-row">
         <!-- 40% form -->
-        <div class="w-full md:w-2/5 md:pr-6 pb-4 md:pb-0 overflow-y-auto px-6 py-6">
-          <p class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-4">Connection</p>
+        <div class="w-full md:w-2/5 md:pr-6 pb-4 md:pb-0">
 
           <!-- Plugin-provided create form (when registered for this db_type) -->
           <template v-if="!editingConnection && pluginCreateForm">
@@ -419,7 +312,6 @@
               :is="pluginCreateForm"
               @saved="onPluginFormSaved"
               @close="showFormSheet = false"
-              @preview="csvPreviewColumns = $event"
             />
           </template>
 
@@ -521,12 +413,17 @@
               </div>
             </div>
 
-            <div class="mt-8 pt-4 border-t border-red-100 dark:border-red-900/30">
-              <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
-              <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
-              <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
-                <Trash2 class="h-3.5 w-3.5" /> Delete
-              </UiButton>
+            <div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-6 hidden md:block">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
+                  <p class="text-xs text-gray-500 dark:text-neutral-400">This action cannot be undone.</p>
+                </div>
+                <UiButton variant="danger" size="sm" @click="openDeleteDialog(editingConnection!)">
+                  <Trash2 class="h-3.5 w-3.5" />
+                  Delete
+                </UiButton>
+              </div>
             </div>
           </template>
 
@@ -594,7 +491,7 @@
                   type="button"
                   @click="form.ssl_enabled = !form.ssl_enabled"
                   class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-                  :class="form.ssl_enabled ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
+                  :class="form.ssl_enabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-neutral-600'"
                 >
                   <span
                     class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
@@ -625,108 +522,91 @@
             </div>
           </form>
 
-          <div v-if="editingConnection" class="mt-8 pt-4 border-t border-red-100 dark:border-red-900/30">
-            <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
-            <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
-            <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
-              <Trash2 class="h-3.5 w-3.5" /> Delete
-            </UiButton>
+          <div v-if="editingConnection" class="border-t border-gray-200 pt-4 mt-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
+                <p class="text-xs text-gray-500 dark:text-neutral-400">This action cannot be undone.</p>
+              </div>
+              <UiButton variant="danger" size="sm" @click="openDeleteDialog(editingConnection!)">
+                <Trash2 class="h-3.5 w-3.5" />
+                Delete
+              </UiButton>
+            </div>
           </div>
           </template><!-- end v-else standard form -->
         </div>
 
         <!-- 60% right-column panel — renders plugin editPanel when registered, otherwise community default. -->
-        <div v-if="showRightColumn" class="w-full md:w-3/5 border-t md:border-t-0 md:border-l border-gray-200 dark:border-neutral-700 pt-4 md:pt-6 md:pl-6 px-6 py-6 flex flex-col gap-3 overflow-y-auto">
-          <!-- Plugin-provided panel: during edit, OR during CSV create (pluginEditPanel = CsvUploadPreviewPanel). -->
-          <template v-if="pluginEditPanel && (editingConnection || isDatasetConnection)">
+        <div v-if="showRightColumn" class="w-full md:w-3/5 border-t md:border-t-0 md:border-l border-gray-200 dark:border-neutral-700 pt-4 md:pt-0 md:pl-6 flex flex-col gap-3 overflow-hidden">
+          <!-- Plugin-provided edit panel (when registered for this db_type). -->
+          <template v-if="pluginEditPanel && editingConnection">
             <component
               :is="pluginEditPanel"
-              v-bind="isDatasetConnection && !editingConnection
-                ? { connection: undefined, columns: csvPreviewColumns }
-                : { connection: editingConnection ?? undefined }"
+              :connection="editingConnection"
               @saved="onPluginFormSaved"
             />
           </template>
-          <template v-else-if="editingConnection">
-            <div class="flex items-center justify-between mb-3 shrink-0">
-              <span class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
-                Schema<template v-if="schema"> · {{ schema.table_names?.length ?? 0 }} tables · {{ Object.keys(schema.schemas ?? {}).length }} schemas</template>
-              </span>
-              <span v-if="schema" class="text-xs text-gray-400 dark:text-neutral-500">
-                Last refresh: {{ formatRelativeDate(schema.generated_at) }}
-              </span>
-            </div>
+          <template v-else>
+          <!-- No editingConnection yet -->
+          <div v-if="!editingConnection" class="flex items-center gap-2 text-sm text-gray-400 dark:text-neutral-400">
+            <Database class="h-4 w-4" />
+            <span v-if="isFileUploadConnection">Upload the file to explore its schema.</span>
+            <span v-else>Save the connection to explore its schema.</span>
+          </div>
+
+          <!-- editing connection: schema panel for all non-BigQuery, or BigQuery with file drop -->
+          <template v-else>
+            <!-- Community default: schema tree. Plugin connectors (notion/bigquery) override via editPanel. -->
             <ConnectionSchemaTree
               :schema="schema"
               :loading="schemaLoading"
               :error="schemaError"
             />
-          </template>
-          <template v-else>
-            <div class="flex items-center gap-2 text-sm text-gray-400 dark:text-neutral-400">
-              <Database class="h-4 w-4" />
-              <span>Save the connection to explore its schema.</span>
+          </template><!-- end editing connection block -->
+          </template><!-- end community default right column -->
+        </div>
+
+        <!-- Mobile-only delete section (appears after schema) -->
+        <div v-if="isFileUploadConnection && editingConnection" class="border-t border-gray-200 pt-4 mt-2 md:hidden">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-gray-900">Delete this dataset</p>
+              <p class="text-xs text-gray-500">This action cannot be undone.</p>
             </div>
-          </template>
+            <UiButton variant="danger" size="sm" @click="openDeleteDialog(editingConnection!)">
+              <Trash2 class="h-3.5 w-3.5" />
+              Delete
+            </UiButton>
+          </div>
         </div>
       </div>
-
-      <template #footer>
-        <div
-          v-if="testSuccess"
-          class="border-t border-gray-100 dark:border-neutral-700 px-6 py-2 text-xs text-gray-500 dark:text-neutral-400 flex items-center gap-2"
-        >
-          <span class="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
-          <span class="text-green-600 dark:text-green-400 font-medium">Handshake OK</span>
-          <span>· {{ testMessage }}</span>
-        </div>
-      </template>
-    </UiDialog>
+    </UiBottomSheet>
 
     <!-- Delete Confirmation Dialog -->
     <UiDialog
       v-model:open="showDeleteDialog"
+      title="Delete Connection"
       size="sm"
-      :closable="false"
     >
-      <template #header>
-        <div class="flex items-center gap-3">
-          <div class="h-9 w-9 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-            <Trash2 class="h-4 w-4 text-red-600 dark:text-red-400" />
-          </div>
-          <span class="text-lg font-medium text-gray-900 dark:text-neutral-100">
-            Delete <em class="text-violet-500 not-italic">{{ deletingConnection?.name }}</em>?
-          </span>
-        </div>
-      </template>
-
-      <p class="text-sm text-gray-600 dark:text-neutral-400 mb-4">
-        This removes the
-        {{ getConnectorType(deletingConnection?.db_type ?? '')?.display_name ?? 'connection' }},
-        its profiled schema, and will break any skills or jobs that reference it.
+      <p class="text-sm text-gray-600">
+        Are you sure you want to delete <strong>{{ deletingConnection?.name }}</strong>?
+        This action cannot be undone.
       </p>
 
-      <label class="block text-sm text-gray-700 dark:text-neutral-300 mb-1.5">
-        Type <code class="text-violet-600 dark:text-violet-400 font-mono">{{ deletingConnection?.name }}</code> to confirm
-      </label>
-      <input
-        v-model="deleteConfirmInput"
-        type="text"
-        :placeholder="deletingConnection?.name"
-        class="w-full border border-gray-300 dark:border-neutral-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-neutral-800 text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-      />
-
       <template #footer>
-        <UiButton variant="outline" @click="showDeleteDialog = false">
+        <UiButton
+          variant="outline"
+          @click="showDeleteDialog = false"
+        >
           Cancel
         </UiButton>
         <UiButton
           variant="danger"
-          :disabled="deleteConfirmInput !== deletingConnection?.name"
           :loading="deleting"
           @click="confirmDelete"
         >
-          <Trash2 class="h-3.5 w-3.5" /> Delete connection
+          Delete
         </UiButton>
       </template>
     </UiDialog>
@@ -780,7 +660,6 @@
       </div>
       <pre v-else class="text-sm text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">{{ changelogContent }}</pre>
     </UiBottomSheet>
-  </div>
   </div>
 
   <!-- Connection notifications -->
@@ -846,44 +725,23 @@
 </template>
 
 <script setup lang="ts">
-import { Database, Plus, RefreshCw, Trash2, ArrowLeft, X, Check, ChevronDown, ChevronRight, Key, Link2, Search, Sheet, Info, Loader2, FileText, User, CheckCircle2, XCircle, ExternalLink } from 'lucide-vue-next'
+import { Database, Plus, RefreshCw, Trash2, ArrowLeft, X, Check, ChevronDown, ChevronRight, Table2, Key, Link2, Search, Sheet, Info, Loader2, Lock, Clock, Activity, FileText, User, CheckCircle2, XCircle, ExternalLink } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import type { DatabaseConnection, ConnectionFormData, ConnectorType, DatabaseSchema, DatasetUploadResponse } from '~/types/connection'
 import { parseUtcDate } from '~/utils/format'
-import connectorPostgres from '~/assets/icons/connector/postgres.svg?raw'
-import connectorMysql from '~/assets/icons/connector/mysql.svg?raw'
-import connectorDataset from '~/assets/icons/connector/dataset.svg?raw'
-import connectorFacebookAds from '~/assets/icons/connector/facebook_ads.svg?raw'
-import connectorSqlite from '~/assets/icons/connector/sqlite.svg?raw'
-import connectorBigquery from '~/assets/icons/connector/bigquery.svg?raw'
-import connectorNotion from '~/assets/icons/connector/notion.svg?raw'
 
 const api = useApi() as any
 const connectorForms = useConnectorForms()
 
 // Icon registry — keyed by connector id
 const connectorIcons: Record<string, string> = {
-  postgres:     connectorPostgres,
-  mysql:        connectorMysql,
-  dataset:      connectorDataset,
-  facebook_ads: connectorFacebookAds,
-  sqlite:       connectorSqlite,
-  bigquery_ga4: connectorBigquery,
-  notion:       connectorNotion,
-}
-
-// Card top band colors keyed by connector type
-const CARD_BAND: Record<string, string> = {
-  postgres:     'bg-blue-100 dark:bg-blue-500/70',
-  mysql:        'bg-cyan-100 dark:bg-cyan-500/70',
-  bigquery:     'bg-blue-100 dark:bg-blue-500/70',
-  snowflake:    'bg-sky-100 dark:bg-sky-400/70',
-  redshift:     'bg-red-100 dark:bg-red-500/70',
-  clickhouse:   'bg-yellow-100 dark:bg-yellow-400/70',
-  sqlite:       'bg-sky-100 dark:bg-sky-400/70',
-  dataset:      'bg-gray-100 dark:bg-neutral-400/60',
-  facebook_ads: 'bg-blue-100 dark:bg-blue-500/70',
-  notion:       'bg-gray-100 dark:bg-neutral-400/60',
+  postgres: `<svg viewBox="0 0 432.071 445.383" xmlns="http://www.w3.org/2000/svg"><g fill="#336791"><path d="M323.205 324.227c2.833-23.601 1.984-27.062 19.563-23.239l4.463.392c13.517.615 31.199-2.174 41.587-7 22.362-10.376 35.622-27.7 13.572-23.148-50.297 10.376-53.755-6.655-53.755-6.655 53.111-78.803 75.313-178.836 56.149-203.322C352.514-5.534 262.036 26.049 260.522 26.869l-.482.089c-9.938-2.062-21.06-3.294-33.554-3.496-22.761-.374-40.032 5.967-53.133 15.904 0 0-161.408-66.498-153.899 83.628 1.597 31.936 45.777 241.655 98.47 178.31 19.259-23.163 37.871-42.748 37.871-42.748 9.242 6.14 20.307 9.272 31.912 8.147l.897-.765c-.281 2.876-.157 5.689.359 9.019-13.572 15.167-9.584 17.83-36.723 23.416-27.457 5.659-11.326 15.734-.797 18.367 12.768 3.193 42.305 7.716 62.268-20.224l-.795 3.188c5.325 4.26 4.965 30.619 5.72 49.452.756 18.834 1.05 36.196 3.86 45.739 2.808 9.54 8.315 33.577 36.2 26.732 23.413-5.736 35.94-20.08 37.448-44.38 1.183-19.093 3.585-25.045 3.507-48.974l2.525-1.812c.029 18.28 2.146 33.381 3.854 47.105 1.707 13.725 9.166 26.379 26.988 33.04 25.011 9.362 40.544-4.25 43.141-13.351 2.598-9.101 4.725-25.13 2.017-41.794-2.708-16.665-2.976-27.017-2.976-27.017s5.029-6.461 4.382-30.619c-.647-24.158-1.183-38.447 7.525-50.175l-.256.021z"/></g></svg>`,
+  mysql: `<svg viewBox="0 0 256 252" xmlns="http://www.w3.org/2000/svg"><path fill="#00546B" d="M235.648 194.212c-13.918-.347-24.705 1.045-33.752 4.872-2.61 1.043-6.786 1.044-7.134 4.35 1.392 1.392 1.566 3.654 2.784 5.567 2.09 3.479 5.741 8.177 9.047 10.614 3.653 2.783 7.308 5.566 11.134 8.002 6.786 4.176 14.442 6.611 21.053 10.787 3.829 2.434 7.654 5.568 11.482 8.177 1.914 1.39 3.131 3.654 5.568 4.523v-.521c-1.219-1.567-1.567-3.828-2.784-5.568-1.738-1.74-3.48-3.306-5.221-5.046-5.048-6.784-11.308-12.7-18.093-17.571-5.396-3.83-17.75-9.047-20.008-15.485 0 0-.175-.173-.348-.347 3.827-.348 8.35-1.566 12.005-2.436 5.912-1.565 11.308-1.217 17.398-2.784 2.783-.696 5.567-1.566 8.35-2.436v-1.565c-3.13-3.132-5.392-7.307-8.698-10.265-8.873-7.657-18.617-15.137-28.837-21.055-5.394-3.132-12.005-5.048-17.75-7.654-2.09-.696-5.567-1.566-6.784-3.306-3.133-3.827-4.698-8.699-7.135-13.047-5.04-9.568-9.866-20.184-14.576-30.23-3.13-6.786-5.044-13.572-8.872-19.834-17.92-29.577-37.406-47.497-67.33-65.07-6.438-3.653-14.093-5.219-22.27-7.132-4.348-.175-8.699-.522-13.046-.697-2.784-1.218-5.568-4.523-8.004-6.089C34.006 4.573 8.429-8.996 1.122 8.924c-4.698 11.308 6.96 22.441 10.96 28.143 2.96 4.001 6.786 8.524 8.874 13.046 1.392 3.132 1.566 6.263 2.958 9.569 2.784 7.654 5.221 16.178 8.872 23.311 1.914 3.653 4.001 7.48 6.437 10.786 1.392 2.088 3.827 2.957 4.348 5.915-2.435 3.48-2.61 8.7-4.003 13.049-6.263 19.66-3.826 44.017 5.046 58.457 2.784 4.348 9.395 13.572 18.268 10.091 7.83-3.132 6.09-13.046 8.35-21.75.522-2.09.176-3.48 1.219-4.872v.349c2.436 4.87 4.871 9.569 7.133 14.44 5.394 8.524 14.788 17.398 22.617 23.314 4.177 3.13 7.482 8.524 12.707 10.438v-.523h-.349c-1.044-1.566-2.61-2.261-4.001-3.48-3.131-3.13-6.612-6.958-9.047-10.438-7.306-9.744-13.745-20.357-19.486-31.665-2.784-5.392-5.22-11.308-7.481-16.701-1.045-2.088-1.045-5.22-2.784-6.263-2.61 3.827-6.437 7.133-8.351 11.83-3.304 7.481-3.653 16.702-4.871 26.27-.696.176-.349 0-.697.35-6.089-1.567-8.177-8.005-10.265-13.398-5.22-13.919-6.089-36.363-.175-52.19 1.565-4.176 8.702-17.398 5.915-21.23-1.391-3.654-6.263-5.742-8.872-8.525-2.959-3.477-6.088-7.829-8.004-11.83-4.697-10.264-6.96-21.75-11.833-32.015-2.262-4.871-6.263-9.744-9.57-14.093-3.653-4.872-7.829-8.351-10.788-14.268-1.043-2.088-2.436-5.046-1.218-7.133.173-1.74 1.044-2.611 2.784-3.131 2.784-1.218 10.613 1.044 13.398 2.09 7.482 2.434 13.572 4.871 19.834 8.699 2.958 1.913 6.088 5.568 9.742 6.612h4.35c6.787 1.566 14.267.522 20.707 2.09 11.485 2.958 21.75 7.654 31.665 12.7 30.23 15.66 54.762 37.929 71.68 66.506 2.436 4.175 3.48 8.003 5.566 12.354 4.175 8.7 9.396 17.574 13.572 26.097 4.348 8.872 8.699 17.75 14.093 25.402 2.959 4.001 14.787 6.09 20.008 8.177 3.827 1.567 9.918 3.132 13.572 5.046 6.787 3.48 13.398 7.481 19.834 11.308 3.305 1.914 13.572 6.09 14.268 10.265z"/></svg>`,
+  dataset: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="2" stroke="#6B7280" stroke-width="1.5"/><path d="M3 8h18" stroke="#6B7280" stroke-width="1.5"/><path d="M3 13h18" stroke="#6B7280" stroke-width="1.5"/><path d="M3 18h18" stroke="#6B7280" stroke-width="1.5"/><path d="M8 3v18" stroke="#6B7280" stroke-width="1.5"/><path d="M13 3v18" stroke="#6B7280" stroke-width="1.5"/></svg>`,
+  facebook_ads: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M24 12c0-6.627-5.373-12-12-12S0 5.373 0 12c0 5.99 4.388 10.954 10.125 11.854V15.47H7.078V12h3.047V9.356c0-3.007 1.792-4.668 4.533-4.668 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.875V12h3.328l-.532 3.47h-2.796v8.385C19.612 22.954 24 17.99 24 12" fill="#1877F2"/></svg>`,
+  sqlite: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 3.79 5 6v12c0 2.21 3.13 4 7 4s7-1.79 7-4V6c0-2.21-3.13-4-7-4z" stroke="#0F80CC" stroke-width="1.5" fill="none"/><path d="M5 6c0 2.21 3.13 4 7 4s7-1.79 7-4" stroke="#0F80CC" stroke-width="1.5"/><path d="M5 12c0 2.21 3.13 4 7 4s7-1.79 7-4" stroke="#0F80CC" stroke-width="1.5"/></svg>`,
+  bigquery: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2C8.268 2 2 8.268 2 16s6.268 14 14 14 14-6.268 14-14S23.732 2 16 2zm6.5 20.5l-3-3a5.5 5.5 0 1 1 1.5-1.5l3 3-1.5 1.5zM16 20a4 4 0 1 1 0-8 4 4 0 0 1 0 8z" fill="#4285F4"/></svg>`,
+  notion: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.539 1.447-1.632z"/></svg>`,
 }
 
 // State
@@ -922,20 +780,32 @@ const deleting = ref(false)
 const refreshingId = ref<number | null>(null)
 const testing = ref(false)
 const testSuccess = ref(false)
-const testMessage = ref('')
-
-// List search & type picker selection
-const searchQuery = ref('')
-const selectedTypeId = ref<string | null>(null)
-const typeSearchQuery = ref('')
-const deleteConfirmInput = ref('')
-const refreshingAll = ref(false)
 
 // Schema state
 const schema = ref<DatabaseSchema | null>(null)
 const schemaLoading = ref(false)
 const schemaError = ref<string | null>(null)
-const csvPreviewColumns = ref<Array<{ name: string; type: string }>>([])
+
+// GA4 Unnesting state
+interface GA4DatasetConfig {
+  analytics_dataset_id: string
+  bingo_dataset_id: string
+  config_id?: number
+  tag_name: string
+  lookback_days: number
+  schedule_time: string
+  enabled: boolean
+  last_run_at?: string
+  last_run_status?: string
+  last_run_error?: string
+  params_count?: number
+  discovering_params?: boolean
+  triggering?: boolean
+}
+const ga4Enabled = ref(false)
+const ga4Expanded = ref(true)
+const ga4Loading = ref(false)
+const ga4Datasets = ref<GA4DatasetConfig[]>([])
 
 // Profiling state
 const reprofilingId = ref<number | null>(null)
@@ -959,6 +829,18 @@ const uploadingSqlite = ref(false)
 const sqliteForm = ref({ name: '' })
 const sqliteFormErrors = ref<{ name?: string; file?: string }>({})
 const sqliteUploadResult = ref<{ table_count: number; tables: Array<{ name: string; row_count: number; column_count: number }> } | null>(null)
+
+// BigQuery connection state
+const bigqueryJsonContent = ref('')
+const bigqueryJsonFile = ref<File | null>(null)
+const bigqueryJsonDragOver = ref(false)
+const bigqueryJsonFileInputRef = ref<HTMLInputElement | null>(null)
+const bigqueryFormErrors = ref<{ json?: string }>({})
+// Parsed SA info for permission checker
+const bigquerySaInfo = ref<{ project_id?: string; client_email?: string } | null>(null)
+const bigqueryPermissionCheck = ref<{ read: boolean | null; write: boolean | null }>({ read: null, write: null })
+const permissionCheckExpanded = ref(true)
+const bigqueryPermissionError = ref<{ read: string | null; write: string | null }>({ read: null, write: null })
 
 // Dataset grouping state
 const expandedGroups = ref<Record<string, boolean>>({})
@@ -1021,44 +903,6 @@ const ungroupedConnections = computed(() => {
   return connections.value.filter(c => !groupedIds.value.has(c.id))
 })
 
-const FILE_TYPES = new Set(['dataset', 'facebook_ads', 'sqlite'])
-
-const warehouseConnections = computed(() => {
-  const q = searchQuery.value.toLowerCase()
-  return ungroupedConnections.value.filter(c =>
-    !FILE_TYPES.has(c.db_type) &&
-    (!q || c.name.toLowerCase().includes(q) || (c.host ?? '').toLowerCase().includes(q))
-  )
-})
-
-const fileUngroupedConnections = computed(() => {
-  const q = searchQuery.value.toLowerCase()
-  return ungroupedConnections.value.filter(c =>
-    FILE_TYPES.has(c.db_type) &&
-    (!q || c.name.toLowerCase().includes(q) || (c.host ?? '').toLowerCase().includes(q))
-  )
-})
-
-const filteredDatasetGroups = computed(() => {
-  const q = searchQuery.value.toLowerCase()
-  if (!q) return datasetGroups.value
-  return datasetGroups.value
-    .map(g => ({ ...g, connections: g.connections.filter(c => c.name.toLowerCase().includes(q)) }))
-    .filter(g => g.connections.length > 0)
-})
-
-const filteredTypes = computed(() => {
-  const q = typeSearchQuery.value.toLowerCase()
-  if (!q) return connectorTypes.value
-  return connectorTypes.value.filter(t =>
-    t.display_name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
-  )
-})
-
-const selectedConnectorType = computed(() =>
-  connectorTypes.value.find(t => t.id === selectedTypeId.value) ?? null
-)
-
 function toggleGroup(fingerprint: string) {
   expandedGroups.value[fingerprint] = !expandedGroups.value[fingerprint]
 }
@@ -1074,6 +918,64 @@ function getAccentClass(connection: DatabaseConnection): string {
     return 'bg-yellow-400'
   }
   return connection.is_active ? 'bg-green-500' : 'bg-red-500'
+}
+
+// Profiling status helpers for bottom metadata
+function getProfilingLabel(connection: DatabaseConnection): string {
+  const status = connection.profiling_status
+  const progress = connection.profiling_progress
+  if ((status === 'in_progress' || status === 'pending') && progress) {
+    return progress
+  }
+  switch (status) {
+    case 'ready': return 'Profiled'
+    case 'in_progress': return 'Profiling...'
+    case 'pending': return 'Queued'
+    case 'failed': return 'Failed'
+    default: return 'Pending'
+  }
+}
+
+function getProfilingIconClass(connection: DatabaseConnection): string {
+  switch (connection.profiling_status) {
+    case 'ready': return 'text-green-600'
+    case 'in_progress': return 'text-yellow-500'
+    case 'pending': return 'text-yellow-500'
+    case 'failed': return 'text-red-500'
+    default: return 'text-gray-400'
+  }
+}
+
+function getProfilingTextClass(connection: DatabaseConnection): string {
+  switch (connection.profiling_status) {
+    case 'ready': return 'text-green-600'
+    case 'in_progress': return 'text-yellow-600'
+    case 'pending': return 'text-yellow-600'
+    case 'failed': return 'text-red-500'
+    default: return 'text-gray-500'
+  }
+}
+
+function getProfilingTitle(connection: DatabaseConnection): string {
+  const progress = connection.profiling_progress
+  switch (connection.profiling_status) {
+    case 'ready': return 'Profiling complete'
+    case 'in_progress': return progress || 'Profiling in progress'
+    case 'pending': return progress || 'Profiling queued'
+    case 'failed': return 'Profiling failed — click card to retry'
+    default: return 'Profiling status unknown'
+  }
+}
+
+// Parse lookback days from Facebook Ads source_filename JSON metadata
+function parseLookbackDays(connection: DatabaseConnection): string {
+  if (connection.source_filename) {
+    try {
+      const meta = JSON.parse(connection.source_filename)
+      if (meta.lookback_days) return String(meta.lookback_days)
+    } catch {}
+  }
+  return '7'
 }
 
 // Changelog
@@ -1103,6 +1005,10 @@ const isSqliteConnection = computed(() => {
 
 const isFacebookAdsConnection = computed(() => {
   return form.value.db_type === 'facebook_ads' || editingConnection.value?.db_type === 'facebook_ads'
+})
+
+const isBigQueryConnection = computed(() => {
+  return form.value.db_type === 'bigquery' || editingConnection.value?.db_type === 'bigquery'
 })
 
 const isNotionConnection = computed(() => {
@@ -1224,6 +1130,10 @@ function formatFbConnectedAt(sourceFilename: string): string {
 }
 
 // Computed
+const typePickerTitle = computed(() => {
+  return 'Choose a Database'
+})
+
 // Fetch data on mount
 onMounted(async () => {
   await Promise.all([fetchConnections(), fetchConnectorTypes()])
@@ -1292,35 +1202,32 @@ function startProfilingPolling(connectionId: number) {
   profilingPollers.value[connectionId] = setInterval(async () => {
     try {
       const status = await api.connections.getProfilingStatus(connectionId) as {
-        status: string
-        progress: string | null
-        error: string | null
+        profiling_status: string
+        profiling_progress: string | null
+        profiling_error: string | null
       }
 
       // Update the connection in local state
       const conn = connections.value.find(c => c.id === connectionId)
       if (conn) {
-        conn.profiling_status = status.status as DatabaseConnection['profiling_status']
-        conn.profiling_progress = status.progress
-        conn.profiling_error = status.error
+        conn.profiling_status = status.profiling_status as DatabaseConnection['profiling_status']
+        conn.profiling_progress = status.profiling_progress
+        conn.profiling_error = status.profiling_error
       }
 
       // Also update editingConnection if it matches
       if (editingConnection.value?.id === connectionId) {
-        editingConnection.value.profiling_status = status.status as DatabaseConnection['profiling_status']
-        editingConnection.value.profiling_progress = status.progress
-        editingConnection.value.profiling_error = status.error
+        editingConnection.value.profiling_status = status.profiling_status as DatabaseConnection['profiling_status']
+        editingConnection.value.profiling_progress = status.profiling_progress
+        editingConnection.value.profiling_error = status.profiling_error
       }
 
       // Stop polling when terminal state reached
-      if (status.status === 'ready' || status.status === 'failed') {
+      if (status.profiling_status === 'ready' || status.profiling_status === 'failed') {
         stopProfilingPolling(connectionId)
       }
-    } catch (e: any) {
-      // Connection gone or not visible to this user — terminal, stop polling.
-      if (e?.statusCode === 404 || e?.status === 404) {
-        stopProfilingPolling(connectionId)
-      }
+    } catch {
+      // Silently ignore polling errors
     }
   }, 3000)
 }
@@ -1397,6 +1304,13 @@ function selectConnectorType(typeId: string) {
   clearSqliteFile()
   sqliteForm.value = { name: '' }
   sqliteFormErrors.value = {}
+  bigqueryJsonContent.value = ''
+  bigqueryJsonFile.value = null
+  bigqueryJsonDragOver.value = false
+  bigqueryFormErrors.value = {}
+  bigquerySaInfo.value = null
+  bigqueryPermissionCheck.value = { read: null, write: null }
+  bigqueryPermissionError.value = { read: null, write: null }
   notionApiKey.value = ''
   notionFormErrors.value = {}
   // Close type picker first to avoid HeadlessUI focus trap conflict
@@ -1412,6 +1326,10 @@ function goBackToTypePicker() {
 function handleFormSheetClose(value: boolean) {
   if (value === false) {
     testSuccess.value = false
+    if (isBigQueryConnection.value) {
+      bigqueryPermissionCheck.value = { read: null, write: null }
+  bigqueryPermissionError.value = { read: null, write: null }
+    }
     // If creating, go back to type picker
     // If editing, close form sheet
     if (!editingConnection.value) {
@@ -1549,8 +1467,13 @@ function openCreateDialog() {
   clearSqliteFile()
   sqliteForm.value = { name: '' }
   sqliteFormErrors.value = {}
-  selectedTypeId.value = null
-  typeSearchQuery.value = ''
+  bigqueryJsonContent.value = ''
+  bigqueryJsonFile.value = null
+  bigqueryJsonDragOver.value = false
+  bigqueryFormErrors.value = {}
+  bigquerySaInfo.value = null
+  bigqueryPermissionCheck.value = { read: null, write: null }
+  bigqueryPermissionError.value = { read: null, write: null }
   showTypePicker.value = true
 }
 
@@ -1588,16 +1511,27 @@ function openEditDialog(connection: DatabaseConnection) {
   schema.value = null
   schemaError.value = null
   notionPages.value = []
+  // Reset BigQuery state
+  bigqueryJsonFile.value = null
+  bigqueryJsonContent.value = ''
+  bigqueryFormErrors.value = {}
+  bigquerySaInfo.value = null
+  bigqueryPermissionCheck.value = { read: null, write: null }
+  bigqueryPermissionError.value = { read: null, write: null }
+  // Reset GA4 state
+  ga4Enabled.value = false
+  ga4Datasets.value = []
+  ga4Expanded.value = true
   // Edit skips type picker, opens form sheet directly
   showFormSheet.value = true
+  // For BigQuery, auto-run permission check and load GA4 state
+  if (connection.db_type === 'bigquery') {
+    checkBigQueryPermissionsFromSaved(connection.id)
+    loadGa4State()
+  }
   // For Notion, fetch synced pages instead of schema tree
   if (connection.db_type === 'notion') {
     fetchNotionPages(connection.id)
-    return
-  }
-  // Skip schema fetch for connectors that don't expose a SQL schema
-  // (e.g. bigquery_ga4 — dataset discovery handled by plugin EditPanel).
-  if (getConnectorType(connection.db_type)?.skip_schema_refresh) {
     return
   }
   // Fetch schema in background
@@ -1618,8 +1552,12 @@ function validateForm(): boolean {
     return isValid
   }
 
-  // BigQuery (GA4): create form handled by plugin layer (GA4ConnectForm); skip generic validation.
-  if (form.value.db_type === 'bigquery_ga4') {
+  // BigQuery: only JSON is required; other fields auto-populated
+  if (form.value.db_type === 'bigquery') {
+    if (!editingConnection.value && !bigqueryJsonContent.value) {
+      bigqueryFormErrors.value.json = 'Service account JSON is required'
+      isValid = false
+    }
     return isValid
   }
 
@@ -1673,6 +1611,17 @@ async function handleFormSubmit() {
   }
 
   if (!validateForm()) return
+
+  // BigQuery: auto-populate fields from parsed JSON before building payload
+  if (isBigQueryConnection.value && bigqueryJsonContent.value) {
+    const parsed = JSON.parse(bigqueryJsonContent.value)
+    form.value.name = parsed.project_id || parsed.client_email?.split('@')[0] || 'BigQuery Connection'
+    form.value.host = parsed.project_id || ''
+    // database (dataset filter) is user-configurable — do not overwrite
+    form.value.username = 'service-account'
+    form.value.port = 443
+    form.value.password = bigqueryJsonContent.value
+  }
 
   try {
     saving.value = true
@@ -1735,6 +1684,17 @@ async function handleTestConnection() {
       // Use saved connection's stored credentials
       response = await api.connections.test(String(editingConnection.value.id)) as { success: boolean; message: string }
     } else {
+      // BigQuery: auto-populate fields from parsed JSON for unsaved test
+      if (isBigQueryConnection.value && bigqueryJsonContent.value) {
+        const parsed = JSON.parse(bigqueryJsonContent.value)
+        form.value.name = parsed.project_id || parsed.client_email?.split('@')[0] || 'BigQuery Connection'
+        form.value.host = parsed.project_id || ''
+        form.value.database = ''
+        form.value.username = 'service-account'
+        form.value.port = 443
+        form.value.password = bigqueryJsonContent.value
+      }
+
       const payload: any = {
         name: form.value.name,
         db_type: form.value.db_type,
@@ -1755,7 +1715,6 @@ async function handleTestConnection() {
 
     if (response.success) {
       testSuccess.value = true
-      testMessage.value = response.message || 'Connection test successful'
       connectionSuccessMessage.value = response.message || 'Connection test successful'
       setTimeout(() => { connectionSuccessMessage.value = '' }, 4000)
     } else {
@@ -1800,19 +1759,7 @@ async function refreshSchema(connection: DatabaseConnection) {
 
 function openDeleteDialog(connection: DatabaseConnection) {
   deletingConnection.value = connection
-  deleteConfirmInput.value = ''
   showDeleteDialog.value = true
-}
-
-async function refreshAllConnections() {
-  const targets = warehouseConnections.value.filter(c => !FILE_TYPES.has(c.db_type))
-  refreshingAll.value = true
-  try {
-    await Promise.all(targets.map(c => api.connections.refreshSchema(String(c.id)).catch(() => {})))
-    await fetchConnections()
-  } finally {
-    refreshingAll.value = false
-  }
 }
 
 async function confirmDelete() {
@@ -1826,11 +1773,7 @@ async function confirmDelete() {
     showFormSheet.value = false
     await fetchConnections()
   } catch (err: any) {
-    const detail = err?.data?.detail
-    const errorMessage =
-      (detail && typeof detail === 'object' ? detail.message : detail) ||
-      err?.message ||
-      'Failed to delete connection'
+    const errorMessage = err?.data?.detail || err?.message || 'Failed to delete connection'
     toast.error(errorMessage)
   } finally {
     deleting.value = false
@@ -1989,6 +1932,343 @@ async function handleSqliteUpload() {
   } finally {
     uploadingSqlite.value = false
   }
+}
+
+async function applyBigQueryJsonFile(file: File) {
+  bigqueryJsonFile.value = file
+  bigqueryPermissionCheck.value = { read: null, write: null }
+  bigqueryPermissionError.value = { read: null, write: null }
+  try {
+    bigqueryJsonContent.value = await file.text()
+    const parsed = JSON.parse(bigqueryJsonContent.value)
+    if (parsed.type !== 'service_account') {
+      bigqueryFormErrors.value.json = 'Not a service account key (expected "type": "service_account")'
+      bigquerySaInfo.value = null
+      return
+    }
+    bigquerySaInfo.value = { project_id: parsed.project_id, client_email: parsed.client_email }
+    bigqueryFormErrors.value.json = undefined
+
+    // Auto-populate form fields
+    form.value.name = parsed.project_id || parsed.client_email?.split('@')[0] || 'BigQuery Connection'
+    form.value.host = parsed.project_id || ''
+    form.value.database = ''
+    form.value.username = 'service-account'
+    form.value.port = 443
+
+    // Trigger permission check
+    await checkBigQueryPermissions()
+  } catch {
+    bigqueryFormErrors.value.json = 'File is not valid JSON'
+    bigqueryJsonContent.value = ''
+    bigquerySaInfo.value = null
+  }
+}
+
+async function runBigQueryCheck(ssl_enabled: boolean): Promise<{ success: boolean; message: string }> {
+  const payload = {
+    name: bigquerySaInfo.value!.project_id || 'BigQuery',
+    db_type: 'bigquery',
+    host: bigquerySaInfo.value!.project_id,
+    port: 443,
+    database: '',
+    username: 'service-account',
+    password: bigqueryJsonContent.value,
+    ssl_enabled
+  }
+  try {
+    return await api.connections.testUnsaved(payload) as { success: boolean; message: string }
+  } catch (e: any) {
+    return { success: false, message: e?.data?.detail || e?.message || 'Connection failed' }
+  }
+}
+
+async function checkBigQueryPermissions() {
+  if (!bigquerySaInfo.value) return
+  bigqueryPermissionCheck.value.read = null
+  bigqueryPermissionError.value.read = null
+  if (form.value.ssl_enabled) {
+    bigqueryPermissionCheck.value.write = null
+    bigqueryPermissionError.value.write = null
+  }
+
+  const readResult = await runBigQueryCheck(false)
+  bigqueryPermissionCheck.value.read = readResult.success
+  if (!readResult.success) bigqueryPermissionError.value.read = readResult.message
+
+  if (form.value.ssl_enabled) {
+    const payload = {
+      name: bigquerySaInfo.value!.project_id || 'BigQuery',
+      db_type: 'bigquery',
+      host: bigquerySaInfo.value!.project_id,
+      port: 443,
+      database: form.value.database || '',
+      username: 'service-account',
+      password: bigqueryJsonContent.value,
+      ssl_enabled: true
+    }
+    try {
+      const writeResult = await api.connections.testWriteUnsaved(payload) as { success: boolean; message: string }
+      bigqueryPermissionCheck.value.write = writeResult.success
+      if (!writeResult.success) bigqueryPermissionError.value.write = writeResult.message
+    } catch (e: any) {
+      bigqueryPermissionCheck.value.write = false
+      bigqueryPermissionError.value.write = e?.data?.detail || e?.message || 'Write check failed'
+    }
+  }
+}
+
+async function checkBigQueryPermissionsFromSaved(connectionId: number) {
+  bigqueryPermissionCheck.value = { read: null, write: null }
+  bigqueryPermissionError.value = { read: null, write: null }
+
+  // Read check
+  try {
+    const result = await api.connections.test(String(connectionId)) as { success: boolean; message: string }
+    bigqueryPermissionCheck.value.read = result.success
+    if (!result.success) bigqueryPermissionError.value.read = result.message
+  } catch (e: any) {
+    bigqueryPermissionCheck.value.read = false
+    bigqueryPermissionError.value.read = e?.data?.detail || e?.message || 'Connection failed'
+  }
+
+  // Write check (independent — tests roles/bigquery.dataEditor)
+  if (form.value.ssl_enabled) {
+    try {
+      const writeResult = await api.connections.testWrite(String(connectionId)) as { success: boolean; message: string }
+      bigqueryPermissionCheck.value.write = writeResult.success
+      if (!writeResult.success) bigqueryPermissionError.value.write = writeResult.message
+    } catch (e: any) {
+      bigqueryPermissionCheck.value.write = false
+      bigqueryPermissionError.value.write = e?.data?.detail || e?.message || 'Write check failed'
+    }
+  }
+}
+
+// ── GA4 Unnesting ─────────────────────────────────────────────────────────────
+
+function _cronToTime(cron: string): string {
+  const parts = (cron || '0 6 * * *').split(' ')
+  if (parts.length < 2) return '06:00'
+  return `${parts[1].padStart(2, '0')}:${parts[0].padStart(2, '0')}`
+}
+
+async function loadGa4State() {
+  if (!editingConnection.value || editingConnection.value.db_type !== 'bigquery') return
+  ga4Loading.value = true
+  try {
+    const [detected, existing] = await Promise.all([
+      api.ga4.detect(editingConnection.value.id) as Promise<{ datasets: any[] }>,
+      api.ga4.listConfigs(editingConnection.value.id) as Promise<{ configs: any[] }>,
+    ])
+    const configMap = new Map((existing.configs || []).map((c: any) => [c.analytics_dataset_id, c]))
+    ga4Datasets.value = (detected.datasets || []).map((ds: any) => {
+      const cfg: any = configMap.get(ds.analytics_dataset_id)
+      return {
+        analytics_dataset_id: ds.analytics_dataset_id,
+        bingo_dataset_id: ds.bingo_dataset_id,
+        config_id: cfg?.id,
+        tag_name: cfg?.tag_name || '',
+        lookback_days: cfg?.lookback_days ?? 2,
+        schedule_time: cfg ? _cronToTime(cfg.schedule_cron) : '06:00',
+        enabled: cfg?.enabled ?? true,
+        last_run_at: cfg?.last_run_at,
+        last_run_status: cfg?.last_run_status,
+        params_count: Array.isArray(cfg?.discovered_params) ? cfg.discovered_params.length : 0,
+      } as GA4DatasetConfig
+    })
+    if (ga4Datasets.value.some(d => d.config_id && d.enabled)) ga4Enabled.value = true
+  } catch (e) {
+    console.error('Failed to load GA4 state', e)
+  } finally {
+    ga4Loading.value = false
+  }
+}
+
+async function toggleGa4Unnesting() {
+  ga4Enabled.value = !ga4Enabled.value
+  if (ga4Enabled.value) {
+    if (ga4Datasets.value.length === 0) await loadGa4State()
+    // Save new configs or re-enable existing disabled ones
+    for (const ds of ga4Datasets.value) {
+      if (!ds.config_id) {
+        await saveGa4Config(ds)
+      } else if (!ds.enabled) {
+        try { await api.ga4.patchConfig(ds.config_id, { enabled: true }) } catch {}
+        ds.enabled = true
+      }
+    }
+  }
+  if (!ga4Enabled.value) {
+    // Disable all configs without deleting
+    for (const ds of ga4Datasets.value) {
+      if (ds.config_id) {
+        try { await api.ga4.patchConfig(ds.config_id, { enabled: false }) } catch {}
+        ds.enabled = false
+      }
+    }
+  }
+}
+
+async function saveGa4Config(ds: GA4DatasetConfig) {
+  if (!editingConnection.value) return
+  try {
+    const result = await api.ga4.upsertConfig({
+      connection_id: editingConnection.value.id,
+      analytics_dataset_id: ds.analytics_dataset_id,
+      tag_name: ds.tag_name,
+      lookback_days: ds.lookback_days,
+      schedule_time: ds.schedule_time,
+    }) as { config_id: number }
+    ds.config_id = result.config_id
+    ds.enabled = true
+  } catch (e: any) {
+    console.error('Failed to save GA4 config', e)
+  }
+}
+
+async function discoverGa4Params(ds: GA4DatasetConfig) {
+  if (!editingConnection.value) return
+  ds.discovering_params = true
+  try {
+    const result = await api.ga4.discoverParams({
+      connection_id: editingConnection.value.id,
+      analytics_dataset_id: ds.analytics_dataset_id,
+      lookback_days: 7,
+    }) as { count: number }
+    ds.params_count = result.count
+  } catch (e) {
+    console.error('GA4 param discovery failed', e)
+  } finally {
+    ds.discovering_params = false
+  }
+}
+
+async function triggerGa4Run(ds: GA4DatasetConfig) {
+  if (!ds.config_id) await saveGa4Config(ds)
+  if (!ds.config_id) return
+  ds.triggering = true
+  try {
+    await api.ga4.trigger(ds.config_id)
+    ds.last_run_status = 'running'
+    pollGa4Status(ds)
+  } catch (e) {
+    console.error('GA4 trigger failed', e)
+  } finally {
+    ds.triggering = false
+  }
+}
+
+function pollGa4Status(ds: GA4DatasetConfig) {
+  const MAX_POLLS = 60  // 5 minutes at 5s intervals
+  let count = 0
+  const interval = setInterval(async () => {
+    count++
+    if (count > MAX_POLLS || !editingConnection.value) {
+      clearInterval(interval)
+      return
+    }
+    try {
+      const res = await api.ga4.listConfigs(editingConnection.value.id) as { configs: any[] }
+      const updated = res.configs.find((c: any) => c.id === ds.config_id)
+      if (updated) {
+        ds.last_run_status = updated.last_run_status
+        ds.last_run_error = updated.last_run_error
+        if (updated.last_run_status !== 'running') clearInterval(interval)
+      }
+    } catch {
+      clearInterval(interval)
+    }
+  }, 5000)
+}
+
+watch(editingConnection, (conn) => {
+  ga4Enabled.value = false
+  ga4Datasets.value = []
+  if (conn?.db_type === 'bigquery') loadGa4State()
+})
+
+async function toggleWriteAccess() {
+  form.value.ssl_enabled = !form.value.ssl_enabled
+  if (form.value.ssl_enabled) {
+    bigqueryPermissionCheck.value.write = null
+    bigqueryPermissionError.value.write = null
+    if (bigquerySaInfo.value) {
+      // Create mode — use uploaded JSON
+      const payload = {
+        name: bigquerySaInfo.value.project_id || 'BigQuery',
+        db_type: 'bigquery',
+        host: bigquerySaInfo.value.project_id,
+        port: 443,
+        database: form.value.database || '',
+        username: 'service-account',
+        password: bigqueryJsonContent.value,
+        ssl_enabled: true
+      }
+      try {
+        const writeResult = await api.connections.testWriteUnsaved(payload) as { success: boolean; message: string }
+        bigqueryPermissionCheck.value.write = writeResult.success
+        if (!writeResult.success) bigqueryPermissionError.value.write = writeResult.message
+      } catch (e: any) {
+        bigqueryPermissionCheck.value.write = false
+        bigqueryPermissionError.value.write = e?.data?.detail || e?.message || 'Write check failed'
+      }
+    } else if (editingConnection.value) {
+      // Edit mode — use saved credentials
+      try {
+        const writeResult = await api.connections.testWrite(String(editingConnection.value.id)) as { success: boolean; message: string }
+        bigqueryPermissionCheck.value.write = writeResult.success
+        if (!writeResult.success) bigqueryPermissionError.value.write = writeResult.message
+      } catch (e: any) {
+        bigqueryPermissionCheck.value.write = false
+        bigqueryPermissionError.value.write = e?.data?.detail || e?.message || 'Write check failed'
+      }
+    }
+  } else {
+    bigqueryPermissionCheck.value.write = null
+    bigqueryPermissionError.value.write = null
+  }
+
+  // Auto-persist the toggle when editing an existing connection
+  if (editingConnection.value) {
+    try {
+      await api.connections.update(String(editingConnection.value.id), { ssl_enabled: form.value.ssl_enabled })
+      // Update local connection record so re-opening the dialog reflects the saved state
+      const idx = connections.value.findIndex(c => c.id === editingConnection.value!.id)
+      if (idx >= 0) connections.value[idx] = { ...connections.value[idx], ssl_enabled: form.value.ssl_enabled }
+    } catch {
+      // Non-fatal: the user can still save manually
+    }
+  }
+}
+
+function clearBigQueryJson() {
+  bigqueryJsonFile.value = null
+  bigqueryJsonContent.value = ''
+  bigqueryFormErrors.value.json = undefined
+  bigquerySaInfo.value = null
+  bigqueryPermissionCheck.value = { read: null, write: null }
+  bigqueryPermissionError.value = { read: null, write: null }
+  if (bigqueryJsonFileInputRef.value) {
+    bigqueryJsonFileInputRef.value.value = ''
+  }
+}
+
+function handleBigQueryJsonFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) applyBigQueryJsonFile(file)
+}
+
+function handleBigQueryJsonDrop(event: DragEvent) {
+  bigqueryJsonDragOver.value = false
+  const file = event.dataTransfer?.files?.[0]
+  if (!file) return
+  if (!file.name.endsWith('.json') && file.type !== 'application/json') {
+    toast.error('Only .json service account key files are accepted')
+    return
+  }
+  applyBigQueryJsonFile(file)
 }
 
 async function handleDatasetUpload() {

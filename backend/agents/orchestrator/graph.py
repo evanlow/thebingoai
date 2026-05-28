@@ -1,5 +1,5 @@
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.tools import tool
 from backend.agents.orchestrator.prompts import build_orchestrator_prompt, build_lean_orchestrator_prompt
 from backend.agents.orchestrator.skill_tools import build_skill_tools
@@ -303,14 +303,11 @@ def _create_orchestrator_agent(
     tools: list,
     prompt: str,
     llm_provider: Optional[BaseLLMProvider],
-    *,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
 ):
     """Build the LangGraph ReactAgent with the shared loop-detector config."""
     provider = llm_provider or get_provider(settings.default_llm_provider)
     return create_react_agent(
-        model=provider.get_langchain_llm(temperature=temperature, max_tokens=max_tokens),
+        model=provider.get_langchain_llm(),
         tools=tools,
         prompt=prompt,
         pre_model_hook=make_loop_detector(max_repeats=2, max_same_tool=5, max_total_calls=20),
@@ -358,91 +355,18 @@ def _apply_highlights(original: str, highlighted: Optional[str]) -> str:
     return "".join(out) if applied else original
 
 
-_BUILD_DUMP_DIRECTIVE_MARKER = "Do not include SQL or JSON in your reply"
-_BUILD_DUMP_FAILURE_MESSAGE = (
-    "I couldn't finish building that for you — a tool I needed to design the "
-    "artifact failed. Try again, or rephrase your request and I'll take another "
-    "pass."
-)
-
-_FENCED_DUMP_RE = _re.compile(r"```(?:sql|json)\b", _re.IGNORECASE)
-
-
-def _is_build_dump_reply(text: Optional[str]) -> bool:
-    """True when an assistant reply contains a fenced ``sql`` / ``json`` block.
-
-    Detection runs on the actual reply text, not on the judge's free-form
-    directive — the judge's wording drifts between turns and a substring
-    match silently misses the second leak.
-    """
-    return bool(text) and _FENCED_DUMP_RE.search(text) is not None
-
-
-def _extract_steps_from_messages(
-    messages: list,
-    start_index: int,
-    base_step_number: int,
-) -> List[Dict[str, Any]]:
-    """Walk `messages[start_index:]` and emit orchestrator tool_call/tool_result
-    step dicts in the same shape as the streaming path produces. Used to surface
-    tool calls made by the Layer-4 retry (which runs outside `astream_events`)
-    so frontend artefact detection (dashboard buttons, etc.) still works.
-    """
-    steps: List[Dict[str, Any]] = []
-    tool_call_index: Dict[str, str] = {}
-    n = base_step_number
-    for msg in messages[start_index:]:
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            for tc in msg.tool_calls:
-                tool_name = tc.get("name")
-                args = tc.get("args", {})
-                tool_call_id = tc.get("id", "")
-                tool_call_index[tool_call_id] = tool_name
-                n += 1
-                steps.append({
-                    "agent_type": "orchestrator",
-                    "step_type": "tool_call",
-                    "tool_name": tool_name,
-                    "content": {"tool": tool_name, "args": args},
-                    "step_number": n,
-                })
-        elif isinstance(msg, ToolMessage):
-            tool_call_id = getattr(msg, "tool_call_id", "")
-            tool_name = tool_call_index.get(tool_call_id, "unknown")
-            raw = msg.content
-            parsed = raw
-            if isinstance(raw, str):
-                try:
-                    parsed = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    parsed = raw
-            n += 1
-            steps.append({
-                "agent_type": "orchestrator",
-                "step_type": "tool_result",
-                "tool_name": tool_name,
-                "content": {"tool": tool_name, "result": parsed},
-                "step_number": n,
-            })
-    return steps
-
-
 async def _run_judge_retry(
     user_question: str,
     initial_answer: str,
     initial_verdict: JudgeVerdict,
     orchestrator,
     base_messages: list,
-    callbacks: Optional[list] = None,
-) -> Tuple[str, bool, Dict[str, Any], List[Dict[str, Any]]]:
+) -> Tuple[str, bool, Dict[str, Any]]:
     """Execute Layer-4 one-shot retry after the judge rejected the initial answer.
 
     Called only when `initial_verdict.resolved` is False. Returns
-    (final_answer, retry_succeeded, judge_metadata, retry_steps). On retry error
-    or empty retry output, returns the initial_answer as final with
-    retry_succeeded=False and retry_steps=[].
-    `retry_steps` are orchestrator step dicts extracted from any tool calls the
-    retry made (so downstream UI can detect dashboard creation, etc.).
+    (final_answer, retry_succeeded, judge_metadata). On retry error or empty
+    retry output, returns the initial_answer as final with retry_succeeded=False.
     Caller is responsible for emitting any UX status event before invoking.
     """
     retry_directive = (
@@ -459,31 +383,14 @@ async def _run_judge_retry(
         ]
         retry_result = await orchestrator.ainvoke(
             {"messages": retry_messages},
-            config={
-                "recursion_limit": settings.agent_recursion_limit,
-                "callbacks": callbacks or [],
-            },
+            config={"recursion_limit": settings.agent_recursion_limit},
         )
-        retry_messages_out = retry_result.get("messages", [])
-        # Extract any tool steps the retry produced so the frontend can detect
-        # artefacts (dashboards, etc.) created during the retry phase.
-        retry_steps = _extract_steps_from_messages(
-            retry_messages_out, start_index=len(retry_messages), base_step_number=0,
-        )
-        retry_answer = _extract_final_answer(retry_messages_out)
+        retry_answer = _extract_final_answer(retry_result.get("messages", []))
         if retry_answer:
             retry_answer = _sanitize_technical_errors(_redact_connection_ids(retry_answer))
             retry_verdict = await judge_response(user_question, retry_answer)
             if not retry_verdict.resolved:
                 logger.warning("Layer-4 retry still unresolved: %s", retry_verdict.reason)
-                if _is_build_dump_reply(retry_answer) or _is_build_dump_reply(initial_answer):
-                    logger.warning(
-                        "Suppressing build/create dump after retry exhausted. "
-                        "judge_reason_initial=%r judge_reason_retry=%r",
-                        initial_verdict.reason,
-                        retry_verdict.reason,
-                    )
-                    retry_answer = _BUILD_DUMP_FAILURE_MESSAGE
             return (
                 retry_answer,
                 retry_verdict.resolved,
@@ -496,7 +403,6 @@ async def _run_judge_retry(
                     "judge_model": settings.judge_llm_model,
                     "retry_highlighted_response": retry_verdict.highlighted_response,
                 },
-                retry_steps,
             )
         return (
             initial_answer,
@@ -509,7 +415,6 @@ async def _run_judge_retry(
                 "judge_directive": initial_verdict.suggested_directive,
                 "judge_model": settings.judge_llm_model,
             },
-            retry_steps,
         )
     except Exception as retry_exc:
         logger.warning("Layer-4 retry orchestrator call failed: %s", retry_exc)
@@ -524,7 +429,6 @@ async def _run_judge_retry(
                 "judge_directive": initial_verdict.suggested_directive,
                 "judge_model": settings.judge_llm_model,
             },
-            [],
         )
 
 
@@ -600,7 +504,7 @@ def build_orchestrator_tools(
         return json.dumps({"questions": parsed})
 
     if settings.orchestrator_lean_tools:
-        tools = _build_lean_tools(
+        return _build_lean_tools(
             context=context,
             db_session_factory=db_session_factory,
             custom_agents=custom_agents,
@@ -609,22 +513,12 @@ def build_orchestrator_tools(
             memory_tools=memory_tools,
             llm_provider=llm_provider,
         )
-    else:
-        shared_tools = skill_tools + profile_tools_list + dashboard_tools + memory_tools + [ask_user_question]
 
-        if custom_agents:
-            tools = _build_dynamic_tools(context, custom_agents, db_session_factory, llm_provider=llm_provider) + shared_tools
-        else:
-            tools = _build_legacy_tools(context, db_session_factory) + shared_tools
+    shared_tools = skill_tools + profile_tools_list + dashboard_tools + memory_tools + [ask_user_question]
 
-    if getattr(context, "briefing_id", None):
-        from backend.agents.orchestrator.orchestrator_briefing_tool import build_briefing_tools
-        tools.extend(build_briefing_tools(context, db_session_factory, context.briefing_id))
-
-    from backend.agents.orchestrator.schedule_briefing_tool import build_schedule_briefing_tool
-    tools.extend(build_schedule_briefing_tool(context, db_session_factory))
-
-    return tools
+    if custom_agents:
+        return _build_dynamic_tools(context, custom_agents, db_session_factory, llm_provider=llm_provider) + shared_tools
+    return _build_legacy_tools(context, db_session_factory) + shared_tools
 
 
 # Names that custom agents must not shadow when bound as top-level tools.
@@ -1053,8 +947,6 @@ async def run_orchestrator(
     profile: object = None,
     llm_provider: Optional[BaseLLMProvider] = None,
     mentions: Optional[list] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run orchestrator agent (non-streaming).
@@ -1084,26 +976,13 @@ async def run_orchestrator(
         db_session_factory, "run_orchestrator",
         mentions=mentions,
     )
-    orchestrator = _create_orchestrator_agent(
-        tools, prompt, llm_provider,
-        temperature=temperature, max_tokens=max_tokens,
-    )
+    orchestrator = _create_orchestrator_agent(tools, prompt, llm_provider)
 
     try:
-        from backend.agents.callbacks import get_callbacks
-
-        callbacks = get_callbacks(
-            agent_type="orchestrator",
-            session_id=context.thread_id,
-            user_id=context.user_id,
-        )
         messages = _build_messages(user_question, history, file_contents)
         result = await orchestrator.ainvoke(
             {"messages": messages},
-            config={
-                "recursion_limit": settings.agent_recursion_limit,
-                "callbacks": callbacks,
-            },
+            config={"recursion_limit": settings.agent_recursion_limit},
         )
         final_answer = _extract_final_answer(result.get("messages", []))
         if final_answer:
@@ -1116,9 +995,8 @@ async def run_orchestrator(
             verdict = await judge_response(user_question, final_answer)
             if not verdict.resolved:
                 logger.warning("Layer-4 judge says unresolved: %s", verdict.reason)
-                final_answer, retry_succeeded, judge_metadata, _retry_steps = await _run_judge_retry(
+                final_answer, retry_succeeded, judge_metadata = await _run_judge_retry(
                     user_question, final_answer, verdict, orchestrator, messages,
-                    callbacks=callbacks,
                 )
                 highlighted_text = (judge_metadata or {}).get("retry_highlighted_response")
             else:
@@ -1159,8 +1037,6 @@ async def stream_orchestrator(
     profile: object = None,
     llm_provider: Optional[BaseLLMProvider] = None,
     mentions: Optional[list] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
 ):
     """
     Stream orchestrator responses using SSE event format.
@@ -1194,19 +1070,8 @@ async def stream_orchestrator(
             db_session_factory, "stream_orchestrator",
             mentions=mentions,
         )
-        orchestrator = _create_orchestrator_agent(
-            tools, prompt, llm_provider,
-            temperature=temperature, max_tokens=max_tokens,
-        )
+        orchestrator = _create_orchestrator_agent(tools, prompt, llm_provider)
         messages = _build_messages(user_question, history, file_contents)
-
-        from backend.agents.callbacks import get_callbacks
-
-        callbacks = get_callbacks(
-            agent_type="orchestrator",
-            session_id=context.thread_id,
-            user_id=context.user_id,
-        )
 
         collected_steps = []
         step_number = 0
@@ -1216,10 +1081,7 @@ async def stream_orchestrator(
 
         async for event in orchestrator.astream_events(
             {"messages": messages},
-            config={
-                "recursion_limit": settings.agent_recursion_limit,
-                "callbacks": callbacks,
-            },
+            config={"recursion_limit": settings.agent_recursion_limit},
             version="v2"
         ):
             kind = event.get("event")
@@ -1350,34 +1212,9 @@ async def stream_orchestrator(
             verdict = await judge_response(user_question, final_answer_text)
             if not verdict.resolved:
                 logger.warning("Layer-4 judge says unresolved: %s", verdict.reason)
-                final_answer_text, retry_succeeded, judge_metadata, retry_steps = await _run_judge_retry(
+                final_answer_text, retry_succeeded, judge_metadata = await _run_judge_retry(
                     user_question, final_answer_text, verdict, orchestrator, messages,
-                    callbacks=callbacks,
                 )
-                # Re-number retry steps against current step_number and emit
-                # tool_call/tool_result events so the UI updates live, then
-                # append to collected_steps so persistence/artefact detection
-                # (e.g. dashboard buttons) sees the retry tool calls.
-                for s in retry_steps:
-                    step_number += 1
-                    s["step_number"] = step_number
-                    collected_steps.append(s)
-                    if s["step_type"] == "tool_call":
-                        yield {
-                            "type": "tool_call",
-                            "content": _scrub_sql_for_client({
-                                "tool": s["tool_name"], "status": "started",
-                                "args": s["content"].get("args", {}),
-                            }),
-                        }
-                    else:
-                        yield {
-                            "type": "tool_result",
-                            "content": _scrub_sql_for_client({
-                                "tool": s["tool_name"], "status": "completed",
-                                "result": s["content"].get("result"),
-                            }),
-                        }
                 highlighted_text = (judge_metadata or {}).get("retry_highlighted_response")
                 yield {"type": "judge_status", "content": {"state": "refined"}}
             else:

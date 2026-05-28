@@ -1,20 +1,10 @@
 import uuid as _uuid
-from enum import Enum
 
 from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, DateTime, Text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from backend.database.base import Base, TimestampMixin
 from backend.security.encryption import encrypt_password, decrypt_password
-
-
-class ProfilingStatus(str, Enum):
-    """Lifecycle of column/table profiling for a DatabaseConnection."""
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    READY = "ready"
-    FAILED = "failed"
 
 
 class DatabaseType:
@@ -59,20 +49,17 @@ class DatabaseConnection(Base, TimestampMixin):
     is_active = Column(Boolean, default=True, nullable=False)
 
     # Schema caching
-    # schema_json_path is legacy (DO Spaces key). Kept nullable for backward
-    # compat; set to "db:<id>" when schema lives in `schema_json` column below.
     schema_json_path = Column(String, nullable=True)
-    schema_json = Column(JSONB, nullable=True)
     schema_generated_at = Column(DateTime, nullable=True)
     table_count = Column(Integer, nullable=True)
 
     # Profiling & data context
-    profiling_status = Column(String, default=ProfilingStatus.PENDING.value, nullable=False)
+    profiling_status = Column(String, default="pending", nullable=False)  # pending|in_progress|ready|failed
     profiling_progress = Column(String, nullable=True)           # e.g. "3/12 tables"
     profiling_error = Column(Text, nullable=True)
     profiling_started_at = Column(DateTime, nullable=True)
     profiling_completed_at = Column(DateTime, nullable=True)
-    data_context = Column(JSONB, nullable=True)                  # built by profile_connection; consumed by dashboard_agent
+    data_context_path = Column(String, nullable=True)            # path to context JSON file
 
     # Plugin-specific fields (e.g., dataset connector sets these)
     source_filename = Column(String, nullable=True)
@@ -81,10 +68,6 @@ class DatabaseConnection(Base, TimestampMixin):
     # Ephemeral dataset tracking
     is_ephemeral = Column(Boolean, default=False, nullable=False)
     schema_fingerprint = Column(String(64), nullable=True)
-
-    # Phase 1: owner scope routing
-    owner_scope_kind = Column(String(8), nullable=True)   # user | team | org
-    owner_scope_id = Column(String, nullable=True)        # matching PK of respective table
 
     # Health monitoring (populated by dataset heartbeat)
     health_status = Column(String, nullable=True)        # healthy|unhealthy

@@ -1,6 +1,6 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 
 class UserBase(BaseModel):
@@ -14,13 +14,7 @@ class UserResponse(UserBase):
     auth_provider: str = "sso"
     created_at: datetime
     updated_at: datetime
-    role: Optional[str] = None  # "bingo_admin" | "user" | None (when plugin not loaded)
-    is_subscriber: bool = False
-    # Phase 6 of multi-user-org: per-org role assignment for the caller in
-    # their current org. "admin" > "member"; None when no assignment / no org.
-    # Frontend uses this to gate the Members + Org Credits settings tabs.
-    org_role: Optional[str] = None
-    org_feature_flags: dict[str, Any] = Field(default_factory=dict)
+    role: Optional[str] = None  # "admin" | "user" | None (when plugin not loaded)
 
     class Config:
         from_attributes = True

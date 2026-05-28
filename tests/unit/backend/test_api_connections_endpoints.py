@@ -230,7 +230,8 @@ class TestDeleteConnection:
         cid = conn.id
 
         with patch("backend.api.connections.get_connector_registration", return_value=None), \
-             patch("backend.api.connections.delete_schema_file"):
+             patch("backend.api.connections.delete_schema_file"), \
+             patch("backend.services.connection_context.delete_context_file"):
             await delete_connection(connection_id=cid, current_user=user_a, db=conn_db)
 
         assert conn_db.query(DatabaseConnection).filter(DatabaseConnection.id == cid).first() is None
@@ -242,7 +243,8 @@ class TestDeleteConnection:
 
         with pytest.raises(HTTPException) as exc_info:
             with patch("backend.api.connections.get_connector_registration", return_value=None), \
-                 patch("backend.api.connections.delete_schema_file"):
+                 patch("backend.api.connections.delete_schema_file"), \
+                 patch("backend.services.connection_context.delete_context_file"):
                 await delete_connection(connection_id=conn.id, current_user=user_a, db=conn_db)
 
         assert exc_info.value.status_code == 404
@@ -254,7 +256,8 @@ class TestDeleteConnection:
         """Non-existent ID -> 404."""
         with pytest.raises(HTTPException) as exc_info:
             with patch("backend.api.connections.get_connector_registration", return_value=None), \
-                 patch("backend.api.connections.delete_schema_file"):
+                 patch("backend.api.connections.delete_schema_file"), \
+                 patch("backend.services.connection_context.delete_context_file"):
                 await delete_connection(connection_id=99999, current_user=user_a, db=conn_db)
 
         assert exc_info.value.status_code == 404

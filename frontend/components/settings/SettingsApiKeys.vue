@@ -1,17 +1,11 @@
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-
-    <!-- Page header -->
-    <div class="px-7 pt-3 pb-2 border-b border-[var(--line)] flex-shrink-0">
-      <p class="eyebrow mb-0.5 text-gray-400 dark:text-neutral-500">Settings · API Keys</p>
-      <h1 class="settings-h1 text-3xl text-gray-900 dark:text-white mb-1">API Keys</h1>
-    </div>
-
-    <!-- Scrolling body -->
-    <div class="flex-1 overflow-y-auto px-7 py-6 space-y-6">
+  <div class="p-6 space-y-6">
+    <div class="space-y-2">
+      <h2 class="text-2xl font-medium text-gray-900 dark:text-white">API Keys</h2>
       <p class="text-sm text-gray-500 dark:text-neutral-400">
         Provider keys are read from the server's <code class="text-xs px-1 py-0.5 rounded bg-gray-100 dark:bg-neutral-800">.env</code> file. Contact your administrator to add or change keys.
       </p>
+    </div>
 
     <div class="rounded-xl border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-700">
       <div
@@ -34,7 +28,6 @@
           Not configured — set <code class="text-xs px-1 py-0.5 rounded bg-gray-100 dark:bg-neutral-800">{{ envVarName(name) }}</code> in .env
         </span>
       </div>
-    </div>
     </div>
   </div>
 </template>

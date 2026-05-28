@@ -1,21 +1,29 @@
-"""Dashboard cache service.
+"""Dashboard SQLite cache service.
 
-Materializes SQL-backed widgets from a dashboard into Parquet on the Org's
-DataPlane. The legacy SQLite-on-DO-Spaces path was removed; this module is
-DataPlane-only.
+Materializes all SQL-backed widgets from a dashboard into a single SQLite
+file, uploads it to DO Spaces, and serves reads from a local cache with
+1-hour TTL (same pattern as DatasetSQLiteConnector.from_connection()).
 """
 
 import logging
+import os
 import re
+import sqlite3
+import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+CACHE_DIR = "/tmp/gruda_dashboard_cache"
+CACHE_TTL_SECONDS = 3600  # 1 hour
+
 
 @dataclass
 class MaterializeResult:
     """Result of a dashboard materialization."""
+    do_key: str
     widgets_total: int
     widgets_succeeded: int
     widgets_failed: int
@@ -23,12 +31,38 @@ class MaterializeResult:
 
 
 def _sanitize_widget_id(widget_id: str) -> str:
-    """Convert a widget ID to a safe table name."""
+    """Convert a widget ID to a safe SQLite table name."""
     name = re.sub(r"[^a-z0-9_]", "_", widget_id.lower())
     name = re.sub(r"_+", "_", name).strip("_")
     if not name or name[0].isdigit():
         name = f"w_{name}"
     return name[:60]
+
+
+def _sqlite_type_for_value(value) -> str:
+    """Infer SQLite column type from a Python value."""
+    if isinstance(value, int):
+        return "INTEGER"
+    if isinstance(value, float):
+        return "REAL"
+    return "TEXT"
+
+
+def _infer_column_types(columns: list[str], rows: list[tuple]) -> list[str]:
+    """Infer SQLite types from the first non-null values in each column."""
+    types = ["TEXT"] * len(columns)
+    for row in rows:
+        all_resolved = True
+        for i, val in enumerate(row):
+            if types[i] != "TEXT":
+                continue
+            if val is not None:
+                types[i] = _sqlite_type_for_value(val)
+            else:
+                all_resolved = False
+        if all_resolved:
+            break
+    return types
 
 
 def _get_date_column(widget: dict, data_context: dict | None) -> str | None:
@@ -51,74 +85,43 @@ def _get_date_column(widget: dict, data_context: dict | None) -> str | None:
     return None
 
 
-def _is_pipeline_output_widget(sql: str, org_id: str, db) -> bool:
-    """Return True if *sql* is a simple SELECT from a Pipeline-output table in this Org."""
-    from backend.models.pipeline import Pipeline
-    m = re.search(r'\bFROM\s+["`]?(\w+)["`]?\b', sql, re.IGNORECASE)
-    if not m:
-        return False
-    table_name = m.group(1).lower()
-    exists = db.query(Pipeline).filter(
-        Pipeline.target_table == table_name,
-        Pipeline.owner_scope_id == org_id,
-    ).first()
-    return exists is not None
-
-
 def _apply_date_filter(sql: str, date_col: str, days: int) -> str:
     """Wrap SQL in a subquery with a date range filter."""
     cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
     return f'SELECT * FROM ({sql}) AS _date_scoped WHERE "{date_col}" >= \'{cutoff}\''
 
 
-def _get_org_for_user(user_id: str) -> str | None:
-    """Return the org_id for *user_id* (None if not in an org)."""
-    try:
-        from backend.database.session import SessionLocal
-        from backend.models.user import User
-        with SessionLocal() as db:
-            user = db.query(User).filter(User.id == user_id).first()
-            return getattr(user, "org_id", None) if user else None
-    except Exception:
-        return None
-
-
 def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
-    """Materialize all SQL-backed widgets for a dashboard to the Org's DataPlane."""
-    import pyarrow as pa
+    """Execute all widget SQLs against source DB, build SQLite, upload to DO Spaces.
 
+    Features:
+    - Connection sharing: widgets grouped by connectionId, one connector per group
+    - Date range scoping: appends date filter using trendDateColumn or data_context
+    - Error isolation: partial success -> 'ready', all fail -> 'failed'
+
+    Returns a MaterializeResult with the DO key and widget statistics.
+    """
+    from backend.config import settings
     from backend.connectors.factory import get_connector_for_connection, get_connector_registration
-    from backend.data_plane.scope import OwnerScope
     from backend.database.session import SessionLocal
     from backend.models.dashboard import Dashboard
     from backend.models.database_connection import DatabaseConnection
-    from backend.services.data_plane_service import get_default_plane
+    from backend.services import object_storage
 
     db = SessionLocal()
-    duck_reader = None
     try:
         dashboard = db.query(Dashboard).filter(Dashboard.id == dashboard_id).first()
         if not dashboard:
             raise ValueError(f"Dashboard {dashboard_id} not found")
 
+        dashboard.cache_status = "building"
+        db.commit()
+
         widgets = dashboard.widgets or []
         data_context = dashboard.data_context
         date_range_days = dashboard.cache_date_range_days or 90
 
-        org_id = _get_org_for_user(dashboard.user_id)
-        scope = OwnerScope("org", org_id) if org_id else OwnerScope("user", dashboard.user_id)
-        plane = get_default_plane(scope)
-
-        # Phase 2: when DuckDB-over-GCS serving is on for this Org, warm the
-        # cache by computing each widget via DuckDB-over-GCS (direct httpfs)
-        # instead of a per-widget BQ job. None (residency-locked / customer /
-        # no-HMAC / non-GCS plane) → keep the source-connector path. Per-widget
-        # fallback below handles not-yet-migrated BigQuery SQL.
-        from backend.config.feature_flags import enabled as _flag_enabled
-        from backend.services.data_plane_service import get_gcs_duckdb_reader
-        if org_id and _flag_enabled(org_id, "duckdb_widget_serving"):
-            duck_reader = get_gcs_duckdb_reader(scope, db)
-
+        # Group SQL-backed widgets by connectionId for connection sharing
         connection_groups: dict[int, list[dict]] = {}
         for widget in widgets:
             data_source = widget.get("dataSource")
@@ -136,179 +139,262 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
         widgets_failed = 0
         widget_errors: dict[str, str] = {}
 
-        for connection_id, group_widgets in connection_groups.items():
-            connection = db.query(DatabaseConnection).filter(
-                DatabaseConnection.id == connection_id,
-                DatabaseConnection.user_id == dashboard.user_id,
-            ).first()
+        # Create temp SQLite file
+        tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
+        tmp.close()
+        sqlite_path = tmp.name
 
-            if not connection:
-                for widget in group_widgets:
-                    w_id = widget["id"]
-                    error_msg = f"Connection {connection_id} not found"
-                    widget_errors[w_id] = error_msg
-                    widgets_failed += 1
-                continue
+        conn = sqlite3.connect(sqlite_path)
+        try:
+            # Create metadata table
+            conn.execute(
+                "CREATE TABLE _meta ("
+                "  widget_id TEXT PRIMARY KEY,"
+                "  table_name TEXT NOT NULL,"
+                "  original_sql TEXT,"
+                "  materialized_at TEXT NOT NULL,"
+                "  row_count INTEGER NOT NULL DEFAULT 0,"
+                "  error TEXT"
+                ")"
+            )
+            conn.commit()
 
-            reg = get_connector_registration(connection.db_type)
-            if reg and reg.skip_schema_refresh:
-                widgets_total -= len(group_widgets)
-                continue
+            # Process each connection group (one connector per connectionId)
+            for connection_id, group_widgets in connection_groups.items():
+                connection = db.query(DatabaseConnection).filter(
+                    DatabaseConnection.id == connection_id,
+                    DatabaseConnection.user_id == dashboard.user_id,
+                ).first()
 
-            connector = get_connector_for_connection(connection)
-            try:
-                for widget in group_widgets:
-                    w_id = widget["id"]
-                    data_source = widget["dataSource"]
-                    original_sql = data_source["sql"]
-                    table_name = f"_dash_{dashboard_id}__{_sanitize_widget_id(w_id)}"
-
-                    try:
-                        if _is_pipeline_output_widget(original_sql, org_id or dashboard.user_id, db):
-                            logger.debug("Skipping materialization for pipeline-backed widget %s", w_id)
-                            widgets_total -= 1
-                            continue
-
-                        query_sql = original_sql
-                        date_col = _get_date_column(widget, data_context)
-                        if date_col:
-                            query_sql = _apply_date_filter(original_sql, date_col, date_range_days)
-
-                        result = None
-                        if duck_reader is not None:
-                            try:
-                                result = duck_reader.query(scope, query_sql)
-                            except Exception as duck_err:
-                                logger.warning(
-                                    "DuckDB warm failed for widget %s, using source connector: %s",
-                                    w_id, duck_err,
-                                )
-                        if result is None:
-                            # Route `bigquery_ga4` widget SQL through the data
-                            # plane so bare table names resolve to the
-                            # materialised view. Source connector's BQ client
-                            # cannot see the data plane's project.
-                            if connection.db_type == "bigquery_ga4":
-                                from backend.data_plane.scope import OwnerScope as _OS
-                                from backend.models.pipeline import Pipeline as _Pipeline
-                                from backend.services.data_plane_service import (
-                                    get_default_plane as _get_default_plane,
-                                )
-                                _p = db.query(_Pipeline).filter(
-                                    _Pipeline.source_connection_id == connection.id,
-                                ).first()
-                                if _p is not None:
-                                    _s = _OS(kind=_p.owner_scope_kind, id=_p.owner_scope_id)
-                                    _plane = _get_default_plane(_s, db)
-                                    result = _plane.query(_s, query_sql)
-                                else:
-                                    result = connector.execute_query(query_sql)
-                            else:
-                                result = connector.execute_query(query_sql)
-
-                        arrow_table = pa.table(
-                            {col: [row[i] for row in result.rows] for i, col in enumerate(result.columns)}
+                if not connection:
+                    for widget in group_widgets:
+                        w_id = widget["id"]
+                        table_name = _sanitize_widget_id(w_id)
+                        materialized_at = datetime.utcnow().isoformat()
+                        error_msg = f"Connection {connection_id} not found"
+                        conn.execute(
+                            "INSERT INTO _meta (widget_id, table_name, original_sql, materialized_at, row_count, error) "
+                            "VALUES (?, ?, ?, ?, 0, ?)",
+                            (w_id, table_name, widget.get("dataSource", {}).get("sql"), materialized_at, error_msg),
                         )
-                        plane.write_parquet(scope, table_name, arrow_table)
-
-                        widgets_succeeded += 1
-                        logger.info("Materialized widget %s → DataPlane table %s (%d rows)", w_id, table_name, result.row_count)
-                    except Exception as widget_err:
-                        logger.error("Failed to materialize widget %s: %s", w_id, widget_err)
-                        widget_errors[w_id] = str(widget_err)
                         widgets_failed += 1
-            finally:
-                connector.close()
+                        widget_errors[w_id] = error_msg
+                    conn.commit()
+                    continue
 
-        logger.info("Dashboard %d materialized via DataPlane", dashboard_id)
+                # Skip connectors that don't support server-side queries (e.g. dataset/SQLite)
+                reg = get_connector_registration(connection.db_type)
+                if reg and reg.skip_schema_refresh:
+                    widgets_total -= len(group_widgets)
+                    continue
+
+                connector = get_connector_for_connection(connection)
+                try:
+                    for widget in group_widgets:
+                        w_id = widget["id"]
+                        data_source = widget["dataSource"]
+                        original_sql = data_source["sql"]
+                        table_name = _sanitize_widget_id(w_id)
+                        materialized_at = datetime.utcnow().isoformat()
+
+                        try:
+                            # Apply date range filter if applicable
+                            query_sql = original_sql
+                            date_col = _get_date_column(widget, data_context)
+                            if date_col:
+                                query_sql = _apply_date_filter(original_sql, date_col, date_range_days)
+
+                            result = connector.execute_query(query_sql)
+
+                            # Create table with inferred types
+                            col_types = _infer_column_types(result.columns, result.rows)
+                            col_defs = ", ".join(
+                                f'"{col}" {ctype}' for col, ctype in zip(result.columns, col_types)
+                            )
+                            conn.execute(f'CREATE TABLE "{table_name}" ({col_defs})')
+
+                            # Insert rows
+                            if result.rows:
+                                placeholders = ", ".join(["?"] * len(result.columns))
+                                conn.executemany(
+                                    f'INSERT INTO "{table_name}" VALUES ({placeholders})',
+                                    result.rows,
+                                )
+
+                            conn.execute(
+                                "INSERT INTO _meta (widget_id, table_name, original_sql, materialized_at, row_count, error) "
+                                "VALUES (?, ?, ?, ?, ?, NULL)",
+                                (w_id, table_name, original_sql, materialized_at, result.row_count),
+                            )
+                            conn.commit()
+
+                            widgets_succeeded += 1
+                            logger.info(
+                                "Materialized widget %s (%s) with %d rows",
+                                w_id, table_name, result.row_count,
+                            )
+
+                        except Exception as widget_err:
+                            logger.error("Failed to materialize widget %s: %s", w_id, widget_err)
+                            conn.execute(
+                                "INSERT OR REPLACE INTO _meta (widget_id, table_name, original_sql, materialized_at, row_count, error) "
+                                "VALUES (?, ?, ?, ?, 0, ?)",
+                                (w_id, table_name, original_sql, materialized_at, str(widget_err)),
+                            )
+                            conn.commit()
+                            widgets_failed += 1
+                            widget_errors[w_id] = str(widget_err)
+                finally:
+                    connector.close()
+
+        finally:
+            conn.close()
+
+        # Upload to DO Spaces
+        do_key = f"{settings.do_spaces_base_path}/{dashboard.user_id}/dashboards/{dashboard_id}.sqlite"
+        with open(sqlite_path, "rb") as f:
+            object_storage.upload_bytes(do_key, f.read(), content_type="application/x-sqlite3")
+
+        # Atomic write to local cache
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        cache_path = os.path.join(CACHE_DIR, f"{dashboard_id}.sqlite")
+        os.rename(sqlite_path, cache_path)
+
+        # Error isolation: 'ready' if any widget succeeded, 'failed' only if all failed
+        if widgets_total == 0:
+            status = "ready"
+        elif widgets_succeeded > 0:
+            status = "ready"
+        else:
+            status = "failed"
+
+        # Update dashboard record
+        dashboard.cache_key = do_key
+        dashboard.cache_built_at = datetime.utcnow()
+        dashboard.cache_status = status
+        db.commit()
+
+        logger.info("Dashboard %d cache materialized to %s", dashboard_id, do_key)
         return MaterializeResult(
+            do_key=do_key,
             widgets_total=widgets_total,
             widgets_succeeded=widgets_succeeded,
             widgets_failed=widgets_failed,
             widget_errors=widget_errors,
         )
+
+    except Exception:
+        # Mark as failed and re-raise
+        try:
+            dashboard = db.query(Dashboard).filter(Dashboard.id == dashboard_id).first()
+            if dashboard:
+                dashboard.cache_status = "failed"
+                db.commit()
+        except Exception:
+            db.rollback()
+        raise
     finally:
-        if duck_reader is not None:
-            duck_reader.close()
         db.close()
 
 
-def enqueue_dashboard_warm_for_table(scope, table_name: str) -> int:
-    """Enqueue a cache warm for each dashboard backed by *table_name* (GAP-2f).
+def get_cache_path(dashboard_id: int) -> str:
+    """Download/return local cached SQLite path.
 
-    Called after a pipeline/dbt write so dashboards reading that table refresh
-    promptly instead of waiting for the periodic dispatcher. Debounced via the
-    same `materialize_rate:{id}` Redis key `/materialize` uses (5 min) so a busy
-    writer can't trigger warm storms. Best-effort — never raises into the caller.
-    Returns the number of dashboards enqueued.
+    Uses local cache with 1-hour TTL. Downloads from DO Spaces if
+    missing or stale, using atomic write (temp file + rename).
+
+    Returns the local file path to the cached SQLite.
     """
+    from backend.database.session import SessionLocal
+    from backend.models.dashboard import Dashboard
+    from backend.services import object_storage
+
+    cache_path = os.path.join(CACHE_DIR, f"{dashboard_id}.sqlite")
+
+    cache_valid = (
+        os.path.exists(cache_path)
+        and os.path.getmtime(cache_path) > time.time() - CACHE_TTL_SECONDS
+    )
+
+    if cache_valid:
+        return cache_path
+
+    # Need to download from DO Spaces
+    db = SessionLocal()
     try:
-        import redis as _redis
+        dashboard = db.query(Dashboard).filter(Dashboard.id == dashboard_id).first()
+        if not dashboard or not dashboard.cache_key:
+            raise FileNotFoundError(f"No cache available for dashboard {dashboard_id}")
 
-        from backend.config import settings
-        from backend.database.session import SessionLocal
-        from backend.models.dashboard import Dashboard
-        from backend.models.user import User
-        from backend.tasks.dashboard_refresh_tasks import execute_dashboard_refresh
-        from backend.utils.sql_refs import extract_table_refs
+        data = object_storage.download_bytes(dashboard.cache_key)
+        if data is None:
+            raise FileNotFoundError(
+                f"SQLite file not found in DO Spaces: {dashboard.cache_key}"
+            )
 
-        tnorm = table_name.lower()
-        enqueued = 0
-        with SessionLocal() as db:
-            if scope.kind == "org":
-                user_ids = [u.id for u in db.query(User).filter(User.org_id == scope.id).all()]
-                dashboards = (
-                    db.query(Dashboard).filter(Dashboard.user_id.in_(user_ids)).all()
-                    if user_ids else []
-                )
-            else:
-                dashboards = db.query(Dashboard).filter(Dashboard.user_id == scope.id).all()
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        tmp_path = cache_path + ".tmp"
+        with open(tmp_path, "wb") as f:
+            f.write(data)
+        os.rename(tmp_path, cache_path)
 
-            r = _redis.from_url(settings.redis_url)
-            try:
-                for dash in dashboards:
-                    backed = any(
-                        tnorm in extract_table_refs((w.get("dataSource") or {}).get("sql") or "")
-                        for w in (dash.widgets or [])
-                    )
-                    if not backed:
-                        continue
-                    key = f"materialize_rate:{dash.id}"
-                    if r.exists(key):
-                        continue  # debounce — recently warmed / queued
-                    r.setex(key, 300, "1")
-                    execute_dashboard_refresh.delay(dash.id)
-                    enqueued += 1
-            finally:
-                r.close()
-        if enqueued:
-            logger.info("Enqueued warm for %d dashboard(s) backed by %s", enqueued, table_name)
-        return enqueued
-    except Exception:
-        logger.warning("enqueue_dashboard_warm_for_table failed for %s", table_name, exc_info=True)
-        return 0
+        return cache_path
+    finally:
+        db.close()
 
 
-def read_widget_data_plane(
-    dashboard_id: int,
-    widget_id: str,
-    org_id: str | None,
-    user_id: str,
-) -> dict | None:
-    """Read widget data from DataPlane. Returns None when no Parquet cache exists yet."""
-    from backend.data_plane.scope import OwnerScope
-    from backend.services.data_plane_service import get_default_plane
+def read_widget_data(cache_path: str, widget_id: str) -> dict:
+    """Read a single widget's data from the SQLite cache.
 
-    scope = OwnerScope("org", org_id) if org_id else OwnerScope("user", user_id)
-    plane = get_default_plane(scope)
-    table_name = f"_dash_{dashboard_id}__{_sanitize_widget_id(widget_id)}"
+    Returns a dict with keys: columns, rows, row_count.
+    """
+    table_name = _sanitize_widget_id(widget_id)
 
-    if not plane.table_exists(scope, table_name):
-        return None
+    uri = f"file:{cache_path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        # Check if table exists
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        if not cursor.fetchone():
+            raise ValueError(f"Widget table '{table_name}' not found in cache")
 
-    result = plane.query(scope, f'SELECT * FROM "{table_name}"')
-    return {
-        "columns": result.columns,
-        "rows": result.rows,
-        "row_count": result.row_count,
-    }
+        cursor = conn.execute(f'SELECT * FROM "{table_name}"')
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+
+        return {
+            "columns": columns,
+            "rows": rows,
+            "row_count": len(rows),
+        }
+    finally:
+        conn.close()
+
+
+def delete_cache(dashboard_id: int) -> None:
+    """Delete cache from DO Spaces and local filesystem."""
+    from backend.database.session import SessionLocal
+    from backend.models.dashboard import Dashboard
+    from backend.services import object_storage
+
+    db = SessionLocal()
+    try:
+        dashboard = db.query(Dashboard).filter(Dashboard.id == dashboard_id).first()
+        if dashboard and dashboard.cache_key:
+            object_storage.delete_object(dashboard.cache_key)
+            dashboard.cache_key = None
+            dashboard.cache_built_at = None
+            dashboard.cache_status = None
+            db.commit()
+    finally:
+        db.close()
+
+    # Remove local cache file
+    cache_path = os.path.join(CACHE_DIR, f"{dashboard_id}.sqlite")
+    try:
+        os.remove(cache_path)
+    except FileNotFoundError:
+        pass

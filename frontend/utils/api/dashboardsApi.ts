@@ -40,7 +40,7 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
         body: data,
       }) as Promise<{ suggested_sql: string; explanation: string }>
     },
-    async setSchedule(id: number, data: { schedule_type: string; schedule_value: string; timezone?: string }) {
+    async setSchedule(id: number, data: { schedule_type: string; schedule_value: string }) {
       return fetchWithRefresh(`/api/dashboards/${id}/schedule`, {
         method: 'PUT',
         body: data,
@@ -68,10 +68,10 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
     async getSqliteUrl(connectionId: number) {
       return fetchWithRefresh(`/api/connections/datasets/${connectionId}/sqlite-url`, {}) as Promise<{ url: string; expires_in: number }>
     },
-    async brief(id: number) {
-      return fetchWithRefresh(`/api/dashboards/${id}/brief`, {
+    async analyze(id: number) {
+      return fetchWithRefresh(`/api/dashboards/${id}/analyze`, {
         method: 'POST',
-      }) as Promise<{ briefing_id: number; status: string }>
+      }) as Promise<{ success: boolean; dashboard_id: number; message: string }>
     },
   }
 }

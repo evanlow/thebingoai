@@ -191,20 +191,13 @@ class AnthropicProvider(BaseLLMProvider):
                 f"Known models: {', '.join(self.AVAILABLE_MODELS)}"
             )
 
-    def get_langchain_llm(
-        self,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> "ChatAnthropic":
+    def get_langchain_llm(self, model: Optional[str] = None) -> "ChatAnthropic":
         """
         Get LangChain-compatible ChatAnthropic instance.
 
         Args:
             model: Optional per-call override (e.g. judge model). Falls back
                 to self.model, then settings.anthropic_default_model.
-            temperature: Optional sampling temperature. None → 0 (existing default).
-            max_tokens: Optional max output tokens. None → settings.anthropic_default_max_tokens.
 
         Returns:
             ChatAnthropic instance configured for this provider
@@ -228,6 +221,6 @@ class AnthropicProvider(BaseLLMProvider):
         return ChatAnthropic(
             model=resolved,
             api_key=self.api_key,
-            temperature=temperature if temperature is not None else 0,
-            max_tokens=max_tokens if max_tokens is not None else settings.anthropic_default_max_tokens,
+            temperature=0,
+            max_tokens=settings.anthropic_default_max_tokens
         )

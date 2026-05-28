@@ -1,10 +1,7 @@
 export function createFetchHelper(authStore: any, router: any) {
-  const getHeaders = (body?: any) => {
-    const headers: Record<string, string> = {}
-
-    // Let the browser set its own multipart/form-data boundary for FormData uploads
-    if (!(body instanceof FormData)) {
-      headers['Content-Type'] = 'application/json'
+  const getHeaders = () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
     }
 
     if (authStore.token) {
@@ -19,7 +16,7 @@ export function createFetchHelper(authStore: any, router: any) {
       return await $fetch<T>(url, {
         ...options,
         headers: {
-          ...getHeaders(options.body),
+          ...getHeaders(),
           ...(options.headers as Record<string, string> || {}),
         },
       })
@@ -31,7 +28,7 @@ export function createFetchHelper(authStore: any, router: any) {
           return await $fetch<T>(url, {
             ...options,
             headers: {
-              ...getHeaders(options.body),
+              ...getHeaders(),
               ...(options.headers as Record<string, string> || {}),
             },
           })

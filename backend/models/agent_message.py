@@ -1,16 +1,7 @@
-from enum import Enum
 from sqlalchemy import Column, String, DateTime, JSON, ForeignKey, Index
 from backend.database.base import Base
 from datetime import datetime
 import uuid
-
-
-class MessageStatus(str, Enum):
-    """Delivery lifecycle of an inter-agent message."""
-    PENDING = "pending"
-    DELIVERED = "delivered"
-    READ = "read"
-    FAILED = "failed"
 
 
 class AgentMessage(Base):
@@ -31,7 +22,7 @@ class AgentMessage(Base):
     )  # request/response/notification/broadcast
     content = Column(JSON, nullable=False)
     correlation_id = Column(String, nullable=True, index=True)
-    status = Column(String(20), nullable=False, default=MessageStatus.PENDING.value)
+    status = Column(String(20), nullable=False, default="pending")  # pending/delivered/read/failed
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (

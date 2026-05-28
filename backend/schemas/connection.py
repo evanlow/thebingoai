@@ -72,8 +72,6 @@ class ConnectionResponse(BaseModel):
     profiling_status: str = "pending"  # pending|in_progress|ready|failed
     profiling_progress: Optional[str] = None
     profiling_error: Optional[str] = None
-    profiling_started_at: Optional[datetime] = None
-    profiling_completed_at: Optional[datetime] = None
     source_filename: Optional[str] = None  # Plugin metadata: original uploaded filename
     dataset_table_name: Optional[str] = None  # Plugin metadata: storage key for dataset file
     is_ephemeral: bool = False
@@ -93,7 +91,6 @@ class ConnectorTypeResponse(BaseModel):
     badge_variant: str
     version: str | None = None
     card_meta_items: list[str]
-    skip_schema_refresh: bool = False
 
 
 class ConnectionTestResponse(BaseModel):

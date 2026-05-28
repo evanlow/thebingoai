@@ -30,9 +30,7 @@ export const useFeatureConfig = () => {
     }
   }
 
-  if (getCurrentInstance()) {
-    onMounted(fetch)
-  }
+  onMounted(fetch)
 
   return { config, loading }
 }

@@ -61,19 +61,15 @@ function periodRanges(periodLabel: string, ref: Date): [Date, Date, Date, Date] 
   return [today, today, today, today]
 }
 
-function aggregateValues(values: any[], aggregation: string): number | null {
+function aggregateValues(values: number[], aggregation: string): number | null {
   if (!values.length) return null
+  if (aggregation === 'sum') return values.reduce((a, b) => a + b, 0)
+  if (aggregation === 'avg') return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100
   if (aggregation === 'count') return values.length
-  if (aggregation === 'countDistinct') return new Set(values).size
-  if (aggregation === 'first') return values[0]
+  if (aggregation === 'min') return Math.min(...values)
+  if (aggregation === 'max') return Math.max(...values)
   if (aggregation === 'last') return values[values.length - 1]
-  const nums = values.filter((v): v is number => typeof v === 'number')
-  if (!nums.length) return null
-  if (aggregation === 'sum') return nums.reduce((a, b) => a + b, 0)
-  if (aggregation === 'avg') return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100
-  if (aggregation === 'min') return Math.min(...nums)
-  if (aggregation === 'max') return Math.max(...nums)
-  return nums[0]
+  return values[0] // 'first'
 }
 
 function dateInRange(d: Date, start: Date, end: Date): boolean {
@@ -119,15 +115,13 @@ function transformKpi(result: SqliteQueryResult, mapping: Record<string, any>): 
   if (!result.rows.length) throw new Error('Query returned no rows — cannot build KPI widget')
 
   const firstRow = result.rows[0]
-  const aggregation = (mapping.aggregation as string) ?? 'first'
-  const allColValues = result.rows.map(row => toJsonSafe(row[valueIdx])).filter(v => v != null)
-  const value = aggregation === 'first'
-    ? toJsonSafe(firstRow[valueIdx])
-    : aggregateValues(allColValues, aggregation)
+  const value = toJsonSafe(firstRow[valueIdx])
   const config: Record<string, any> = { value }
 
   const autoTrend = mapping.autoTrend as boolean | undefined
   const periodLabel = (mapping.periodLabel as string) ?? ''
+
+  const aggregation = (mapping.aggregation as string) ?? 'first'
 
   // Auto-trend: derive trend + sparkline from multi-row time-series results
   if (autoTrend) {

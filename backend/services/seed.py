@@ -7,7 +7,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from backend.models.database_connection import DatabaseConnection, ProfilingStatus
+from backend.models.database_connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +43,6 @@ def seed_sample_connections(user_id: str, db: Session) -> None:
         username="sqlite",
         dataset_table_name=SAMPLE_DB_PATH,
         source_filename=SAMPLE_SOURCE_MARKER,
-        owner_scope_kind="user",
-        owner_scope_id=user_id,
     )
     connection.password = "sqlite"
     connection.ssl_ca_cert = None
@@ -82,7 +80,7 @@ def seed_sample_connections(user_id: str, db: Session) -> None:
         try:
             from backend.tasks.profiling_tasks import profile_connection
 
-            connection.profiling_status = ProfilingStatus.PENDING.value
+            connection.profiling_status = "pending"
             db.commit()
             profile_connection.delay(connection.id)
         except Exception:

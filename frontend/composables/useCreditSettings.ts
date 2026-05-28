@@ -32,7 +32,6 @@ export const useCreditSettings = () => {
   const dailyLimit = ref<number>(180)
   const usedToday = ref<number>(0)
   const remaining = ref<number>(180)
-  const resetsAt = ref<string | null>(null)
   const balanceLoading = ref(false)
 
   const usedPercent = computed(() =>
@@ -46,7 +45,6 @@ export const useCreditSettings = () => {
       dailyLimit.value = data.daily_limit
       usedToday.value = data.used_today
       remaining.value = data.remaining
-      resetsAt.value = data.resets_at ?? null
     } finally {
       balanceLoading.value = false
     }
@@ -134,35 +132,14 @@ export const useCreditSettings = () => {
     await fetchApiKeys()
   }
 
-  // ----- Export CSV -----
-  async function exportHistoryCsv() {
-    const blob = await $fetch<Blob>('/api/credits/history.csv', { responseType: 'blob' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'usage-history.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
   // ----- Init -----
   onMounted(async () => {
-    const today = new Date()
-    const start = new Date(today)
-    start.setDate(today.getDate() - 13)
-    const startDateIso = start.toISOString().slice(0, 10)
-    const endDateIso = today.toISOString().slice(0, 10)
-    await Promise.all([
-      fetchBalance(),
-      fetchHistory(),
-      fetchDailyTotals(startDateIso, endDateIso),
-      fetchApiKeys(),
-    ])
+    await Promise.all([fetchBalance(), fetchHistory(), fetchDailyTotals(), fetchApiKeys()])
   })
 
   return {
     // Balance
-    dailyLimit, usedToday, remaining, usedPercent, resetsAt, balanceLoading, fetchBalance,
+    dailyLimit, usedToday, remaining, usedPercent, balanceLoading, fetchBalance,
     // History
     historyItems, historyTotal, historyPage, historyPerPage, historyTotalPages,
     historyLoading, fetchHistory, nextPage, prevPage,
@@ -170,7 +147,5 @@ export const useCreditSettings = () => {
     dailyTotals, dailyTotalsLoading, fetchDailyTotals,
     // API keys
     apiKeys, keysLoading, saveApiKey, deleteApiKey, fetchApiKeys,
-    // Export
-    exportHistoryCsv,
   }
 }

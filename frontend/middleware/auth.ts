@@ -2,12 +2,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const authStore = useAuthStore()
 
   const publicRoutes = ['/login', '/register', '/auth/verify', '/auth/success', '/auth/error', '/auth/forgot-password', '/auth/reset-password', '/verify-account', '/reset-password']
-  // Token-exchange routes must not redirect authenticated users — a token is being
-  // consumed to switch identity. This includes OAuth callbacks AND the email-verify
-  // pages: clicking a verification link in a browser with a stale session must let the
-  // verify page mount and swap to the new account instead of bouncing to /chat as the
-  // old user.
-  const oauthCallbackRoutes = ['/auth/success', '/auth/error', '/auth/verify', '/verify-account']
+  // OAuth callback routes must not redirect authenticated users — tokens are being exchanged
+  const oauthCallbackRoutes = ['/auth/success', '/auth/error']
 
   // Load token from localStorage if not already loaded
   if (process.client) {
@@ -18,9 +14,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
       }
     }
 
-    // If token exists but user is not yet loaded, await fetchUser() before
-    // performing any redirect. This prevents a flash where the user sees /connect
-    // briefly before auth middleware redirects to /login (or vice versa).
+    // Load user if we have a token but no user
     if (authStore.token && !authStore.user) {
       await authStore.fetchUser()
     }

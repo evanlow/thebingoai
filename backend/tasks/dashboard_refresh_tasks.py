@@ -7,8 +7,7 @@ from datetime import datetime
 from celery import shared_task
 from backend.database.session import SessionLocal
 from backend.models.dashboard import Dashboard
-from backend.models.dashboard_refresh_run import DashboardRefreshRun, DashboardRefreshStatus
-from backend.tasks._helpers import record_run_failure
+from backend.models.dashboard_refresh_run import DashboardRefreshRun
 
 logger = logging.getLogger(__name__)
 
@@ -24,33 +23,43 @@ def dispatch_dashboard_refreshes():
     Queries all active dashboard schedules whose next_run_at is due and
     dispatches execute_dashboard_refresh for each, then advances next_run_at.
     """
-    from backend.tasks.cron_dispatcher import dispatch_due_rows
+    from croniter import croniter
 
     db = SessionLocal()
     now = datetime.utcnow()
 
-    def _dispatch_dashboard(dashboard):
-        countdown = random.uniform(0, STAGGER_MAX_SECONDS)
-        execute_dashboard_refresh.apply_async(
-            args=[dashboard.id], countdown=countdown,
-        )
-        dashboard.last_run_at = now
-
     try:
-        count = dispatch_due_rows(
-            db,
-            model_cls=Dashboard,
-            enabled_field="schedule_active",
-            cron_field="cron_expression",
-            next_run_field="next_run_at",
-            dispatch_fn=_dispatch_dashboard,
-            now=now,
+        due_dashboards = (
+            db.query(Dashboard)
+            .filter(
+                Dashboard.schedule_active == True,
+                Dashboard.next_run_at <= now,
+            )
+            .all()
         )
-        if count:
-            logger.info("Dispatched refresh for %d due dashboard(s)", count)
+
+        if not due_dashboards:
+            return
+
+        logger.info(f"Dispatching refresh for {len(due_dashboards)} due dashboard(s)")
+
+        for idx, dashboard in enumerate(due_dashboards):
+            try:
+                # Stagger tasks to avoid thundering herd
+                countdown = random.uniform(0, STAGGER_MAX_SECONDS) + idx * 2
+                execute_dashboard_refresh.apply_async(
+                    args=[dashboard.id], countdown=countdown,
+                )
+                # Advance next_run_at using croniter
+                dashboard.next_run_at = croniter(dashboard.cron_expression, now).get_next(datetime)
+                dashboard.last_run_at = now
+            except Exception as dispatch_err:
+                logger.error(f"Failed to dispatch refresh for dashboard {dashboard.id}: {dispatch_err}")
+
         db.commit()
+
     except Exception as e:
-        logger.error("dispatch_dashboard_refreshes failed: %s", e)
+        logger.error(f"dispatch_dashboard_refreshes failed: {e}")
         db.rollback()
     finally:
         db.close()
@@ -79,7 +88,7 @@ def execute_dashboard_refresh(dashboard_id: int):
         # Create a run record
         run = DashboardRefreshRun(
             dashboard_id=dashboard_id,
-            status=DashboardRefreshStatus.RUNNING.value,
+            status="running",
             started_at=started_at,
         )
         db.add(run)
@@ -88,33 +97,38 @@ def execute_dashboard_refresh(dashboard_id: int):
 
         logger.info(f"Executing dashboard refresh {dashboard_id} (run {run.id})")
 
-        with record_run_failure(
-            db,
-            run,
-            DashboardRefreshStatus.FAILED.value,
-            started_at,
-            logger=logger,
-            task_label=f"Dashboard {dashboard_id} refresh",
-        ):
-            # Delegate to SQLite cache materialization
-            result = materialize_dashboard(dashboard_id)
+        # Delegate to SQLite cache materialization
+        result = materialize_dashboard(dashboard_id)
 
-            completed_at = datetime.utcnow()
-            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+        completed_at = datetime.utcnow()
+        duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-            run.status = DashboardRefreshStatus.COMPLETED.value
-            run.completed_at = completed_at
-            run.duration_ms = duration_ms
-            run.widgets_total = result.widgets_total
-            run.widgets_succeeded = result.widgets_succeeded
-            run.widgets_failed = result.widgets_failed
-            run.widget_errors = result.widget_errors if result.widget_errors else None
+        run.status = "completed"
+        run.completed_at = completed_at
+        run.duration_ms = duration_ms
+        run.widgets_total = result.widgets_total
+        run.widgets_succeeded = result.widgets_succeeded
+        run.widgets_failed = result.widgets_failed
+        run.widget_errors = result.widget_errors if result.widget_errors else None
 
-            db.commit()
+        db.commit()
 
-            logger.info(
-                f"Dashboard {dashboard_id} refresh complete in {duration_ms}ms: "
-                f"{result.widgets_succeeded}/{result.widgets_total} widgets succeeded"
-            )
+        logger.info(
+            f"Dashboard {dashboard_id} refresh complete in {duration_ms}ms: "
+            f"{result.widgets_succeeded}/{result.widgets_total} widgets succeeded"
+        )
+
+    except Exception as e:
+        logger.error(f"Dashboard {dashboard_id} refresh failed: {e}")
+        if run is not None:
+            try:
+                completed_at = datetime.utcnow()
+                run.status = "failed"
+                run.error = str(e)
+                run.completed_at = completed_at
+                run.duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+                db.commit()
+            except Exception:
+                db.rollback()
     finally:
         db.close()

@@ -16,11 +16,15 @@ from typing import List, Optional
 
 import redis
 
-from backend.services._agent_mesh import assert_session_owned, get_redis
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 120  # seconds
+
+
+def _get_redis() -> redis.Redis:
+    return redis.from_url(settings.agent_mesh_redis_url, decode_responses=True)
 
 
 class AgentMessageBus:
@@ -32,7 +36,7 @@ class AgentMessageBus:
         redis_client: Optional[redis.Redis] = None,
     ):
         self.db = db_session
-        self.redis = redis_client or get_redis()
+        self.redis = redis_client or _get_redis()
 
     def send(
         self,
@@ -69,7 +73,7 @@ class AgentMessageBus:
 
         # 1. Write to PostgreSQL (durable history)
         if self.db:
-            from backend.models.agent_message import AgentMessage, MessageStatus
+            from backend.models.agent_message import AgentMessage
 
             db_msg = AgentMessage(
                 id=msg_id,
@@ -79,7 +83,7 @@ class AgentMessageBus:
                 message_type=message_type,
                 content=content,
                 correlation_id=correlation_id,
-                status=MessageStatus.PENDING.value,
+                status="pending",
                 created_at=now,
             )
             self.db.add(db_msg)
@@ -208,7 +212,11 @@ class AgentMessageBus:
         Raises:
             PermissionError: If session doesn't belong to user
         """
-        assert_session_owned(self.redis, user_id, session_id)
+        # Validate ownership
+        if not self.redis.sismember(f"agent:user_sessions:{user_id}", session_id):
+            raise PermissionError(
+                f"Session {session_id} is not owned by user {user_id}"
+            )
 
         messages = []
         inbox_key = f"agent:inbox:{session_id}"
@@ -220,14 +228,14 @@ class AgentMessageBus:
 
         # Update status in Postgres if we have a DB session
         if self.db and messages:
-            from backend.models.agent_message import AgentMessage, MessageStatus
+            from backend.models.agent_message import AgentMessage
 
             msg_ids = [m["id"] for m in messages if "id" in m]
             if msg_ids:
                 self.db.query(AgentMessage).filter(
                     AgentMessage.id.in_(msg_ids),
                     AgentMessage.user_id == user_id,
-                ).update({"status": MessageStatus.DELIVERED.value}, synchronize_session=False)
+                ).update({"status": "delivered"}, synchronize_session=False)
                 self.db.commit()
 
         return messages
@@ -329,5 +337,9 @@ class AgentMessageBus:
         self, user_id: str, *session_ids: str
     ) -> None:
         """Raise PermissionError if any session is not owned by user."""
+        user_sessions_key = f"agent:user_sessions:{user_id}"
         for sid in session_ids:
-            assert_session_owned(self.redis, user_id, sid)
+            if not self.redis.sismember(user_sessions_key, sid):
+                raise PermissionError(
+                    f"Session {sid} is not owned by user {user_id}"
+                )

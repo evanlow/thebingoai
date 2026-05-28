@@ -6,7 +6,6 @@ export interface ConnectorType {
   badge_variant: string
   version: string | null
   card_meta_items: string[]
-  skip_schema_refresh?: boolean
 }
 
 export interface DatabaseConnection {
@@ -30,8 +29,6 @@ export interface DatabaseConnection {
   profiling_status: 'pending' | 'in_progress' | 'ready' | 'failed'
   profiling_progress: string | null
   profiling_error: string | null
-  profiling_started_at: string | null
-  profiling_completed_at: string | null
   is_ephemeral: boolean
   schema_fingerprint: string | null
 }

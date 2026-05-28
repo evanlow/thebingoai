@@ -162,14 +162,6 @@ export const useDashboardStore = defineStore('dashboard', {
           widgets: dashboard.widgets,
         })
         this.dirty = false
-      } catch (err: any) {
-        const detail = err?.data?.detail ?? err?.message ?? 'Save failed'
-        // eslint-disable-next-line no-console
-        console.error('[saveDashboard] failed:', err)
-        if (typeof window !== 'undefined') {
-          window.alert(`Save failed: ${detail}`)
-        }
-        throw err
       } finally {
         this.saving = false
       }
@@ -380,20 +372,15 @@ export const useDashboardStore = defineStore('dashboard', {
       }
     },
 
-    async setSchedule(dashboardId: number, scheduleType: string, scheduleValue: string, timezone?: string) {
+    async setSchedule(dashboardId: number, scheduleType: string, scheduleValue: string) {
       const api = useApi()
-      const data = await api.dashboards.setSchedule(dashboardId, {
-        schedule_type: scheduleType,
-        schedule_value: scheduleValue,
-        timezone,
-      }) as any
+      const data = await api.dashboards.setSchedule(dashboardId, { schedule_type: scheduleType, schedule_value: scheduleValue }) as any
       const dashboard = this.dashboards.find(d => d.id === dashboardId)
       if (dashboard) {
         dashboard.schedule_type = data.schedule_type
         dashboard.schedule_value = data.schedule_value
         dashboard.cron_expression = data.cron_expression
         dashboard.schedule_active = data.schedule_active
-        dashboard.timezone = data.timezone
         dashboard.next_run_at = data.next_run_at
         dashboard.last_run_at = data.last_run_at
       }

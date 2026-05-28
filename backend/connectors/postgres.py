@@ -1,18 +1,19 @@
-from typing import ClassVar
-
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from backend.connectors.base import BaseConnector
 
 
 class PostgresConnector(BaseConnector):
-    """PostgreSQL database connector."""
+    """
+    PostgreSQL database connector.
 
-    _db_type_name: ClassVar[str] = "PostgreSQL"
-    _quote_char: ClassVar[str] = '"'
-    _system_schemas: ClassVar[frozenset[str]] = frozenset(
-        {"information_schema", "pg_catalog", "pg_toast"}
-    )
+    Implements ~45 lines by leveraging BaseConnector template methods.
+    Only provides database-specific primitives and hooks.
+    """
+
+    # ============================================================
+    # Abstract Primitives (required by BaseConnector)
+    # ============================================================
 
     def _create_connection(self, **kwargs):
         """Create psycopg2 connection."""
@@ -46,6 +47,41 @@ class PostgresConnector(BaseConnector):
                 kwargs['sslmode'] = 'require'
         return kwargs
 
+    def _quote_identifier(self, name: str) -> str:
+        """Quote identifier with double quotes for PostgreSQL."""
+        # Escape embedded double quotes by doubling them
+        escaped = name.replace('"', '""')
+        return f'"{escaped}"'
+
+    @classmethod
+    def _db_type_name(cls) -> str:
+        """Return database type name."""
+        return "PostgreSQL"
+
+    @classmethod
+    def _default_port(cls) -> int:
+        return 5432
+
+    @classmethod
+    def _description(cls) -> str:
+        return "Open-source relational database"
+
+    @classmethod
+    def _badge_variant(cls) -> str:
+        return "info"
+
+    # ============================================================
+    # Overridable Hooks (customize for PostgreSQL)
+    # ============================================================
+
+    def _default_schema(self) -> str:
+        """PostgreSQL default schema."""
+        return "public"
+
+    def _system_schemas(self) -> set:
+        """PostgreSQL system schemas to exclude."""
+        return {"information_schema", "pg_catalog", "pg_toast"}
+
     def _foreign_key_query(self, schema: str, table: str) -> tuple:
         """
         PostgreSQL FK query using constraint_column_usage.
@@ -70,45 +106,3 @@ class PostgresConnector(BaseConnector):
                   WHERE constraint_type = 'FOREIGN KEY'
               )
         """, (schema, table))
-
-
-def dlt_source_for(connection, extraction_config: dict | None = None):
-    from backend.connectors.sql_dlt import sql_dlt_source
-    return sql_dlt_source("postgresql+psycopg2", connection, extraction_config)
-
-
-def fingerprint(connection) -> str:
-    return f"postgres:{connection.host}:{connection.port}/{connection.database}"
-
-
-def detect_partition_key(connector: "PostgresConnector", schema: str, table: str) -> str | None:
-    """Return the first declarative partition-key column for *schema.table* or None.
-
-    Targets PG 10+ declarative partitioning (`pg_partitioned_table`). Inheritance
-    partitioning and partitioned children are ignored — only parent tables match.
-    Any failure (insufficient permissions, query error) returns None silently.
-    """
-    if not schema:
-        schema = "public"
-    sql = """
-        SELECT a.attname
-        FROM pg_partitioned_table pt
-        JOIN pg_class c ON c.oid = pt.partrelid
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = pt.partrelid AND a.attnum = ANY(pt.partattrs::int[])
-        WHERE n.nspname = %s AND c.relname = %s
-        ORDER BY a.attnum
-        LIMIT 1
-    """
-    conn = None
-    try:
-        conn = connector._get_connection()
-        cur = connector._get_cursor(conn, dict_mode=False)
-        cur.execute(sql, (schema, table))
-        row = cur.fetchone()
-        cur.close()
-        if row:
-            return row[0]
-    except Exception:
-        return None
-    return None

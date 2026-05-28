@@ -42,6 +42,7 @@
             v-if="openMultiKey === control.key"
             :ref="el => { teleportedDropdownRef = el as HTMLElement }"
             class="fixed z-[9999] w-48 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:bg-neutral-800 dark:border-neutral-700"
+            :style="dropdownStyle"
           >
             <label
               v-for="opt in getOptions(control)"
@@ -56,10 +57,7 @@
               />
               {{ opt }}
             </label>
-            <div v-if="loadingOptions.has(control.key)" class="px-3 py-2 text-xs text-gray-400 dark:text-neutral-500">
-              Loading...
-            </div>
-            <div v-else-if="getOptions(control).length === 0" class="px-3 py-2 text-xs text-gray-400 dark:text-neutral-500">
+            <div v-if="getOptions(control).length === 0" class="px-3 py-2 text-xs text-gray-400 dark:text-neutral-500">
               No options available
             </div>
           </div>
@@ -136,9 +134,6 @@ function autoResize() {
 
 // Map from control.key → dynamically loaded option values
 const dynamicOptions = ref<Map<string, string[]>>(new Map())
-
-// Controls currently fetching their options
-const loadingOptions = ref<Set<string>>(new Set())
 
 // Search debounce timers
 const searchTimers = ref<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -224,7 +219,6 @@ function onScroll(e: Event) {
 async function loadDynamicOptions() {
   for (const control of props.config.controls) {
     if (control.type !== 'dropdown' || !control.optionsSource) continue
-    loadingOptions.value = new Set(loadingOptions.value).add(control.key)
     try {
       const { connectionId, sql } = control.optionsSource
       const response = await api.dashboards.refreshWidget({
@@ -239,10 +233,6 @@ async function loadDynamicOptions() {
       dynamicOptions.value = new Map(dynamicOptions.value).set(control.key, options)
     } catch (err) {
       // Fall back to static options on error
-    } finally {
-      const next = new Set(loadingOptions.value)
-      next.delete(control.key)
-      loadingOptions.value = next
     }
   }
 }
@@ -269,37 +259,24 @@ async function initDateRangeDefaults() {
 
         if (maxDate) {
           const max = new Date(maxDate)
-          const preset = control.dateRangeDefault ?? 'full'
-          let from: Date
+          const from = new Date(max)
+          from.setDate(from.getDate() - 7)
 
-          if (preset === 'full') {
-            from = minDate ? new Date(minDate) : new Date(Date.UTC(max.getUTCFullYear(), 0, 1))
-          } else if (preset === 'ytd') {
-            from = new Date(Date.UTC(max.getUTCFullYear(), 0, 1))
-          } else {
-            const days = preset === '90d' ? 90 : preset === '30d' ? 30 : 7
-            from = new Date(max)
-            from.setUTCDate(from.getUTCDate() - days)
-            if (minDate) {
-              const min = new Date(minDate)
-              if (from < min) from = min
-            }
+          // Clamp "from" to min_date if data range is less than 7 days
+          if (minDate) {
+            const min = new Date(minDate)
+            if (from < min) from.setTime(min.getTime())
           }
 
           store.setFilterValue(control.key, { from: fmt(from), to: fmt(max) })
           continue
         }
-        console.warn(`[date_range] dateRangeSource returned no max_date for "${control.key}"; leaving filter blank.`)
-      } catch (err) {
-        console.warn(`[date_range] dateRangeSource query failed for "${control.key}"; leaving filter blank.`, err)
+      } catch {
+        // Fall back to today-based range on error
       }
-      // dateRangeSource was configured but failed/returned empty —
-      // leave the filter unset so the widget sees the full data range.
-      // Do NOT fall through to today-based range (wrong for historical data).
-      continue
     }
 
-    // Fallback (no dateRangeSource configured): today-based range
+    // Fallback: today-based range
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     const sevenDaysAgo = new Date()

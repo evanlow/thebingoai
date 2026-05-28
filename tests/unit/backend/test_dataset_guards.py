@@ -102,9 +102,9 @@ class TestDashboardAgentPluginTools:
 # Phase 4: Dataset connection guards
 # ===========================================================================
 
-def _make_widgets(connection_id=1):
-    """Create a minimal valid widgets list for create_dashboard."""
-    return [{
+def _make_widgets_json(connection_id=1):
+    """Create a minimal valid widgets_json string for create_dashboard."""
+    widgets = [{
         "id": "kpi_1",
         "position": {"x": 0, "y": 0, "w": 3, "h": 2},
         "widget": {"type": "kpi", "config": {"label": "Total"}},
@@ -114,6 +114,7 @@ def _make_widgets(connection_id=1):
             "mapping": {"type": "kpi", "valueColumn": "value"},
         },
     }]
+    return json.dumps(widgets)
 
 
 class TestDashboardCreateGuard:
@@ -136,7 +137,7 @@ class TestDashboardCreateGuard:
             result_str = await create_tool.ainvoke({
                 "title": "Test",
                 "description": "Test",
-                "widgets": _make_widgets(),
+                "widgets_json": _make_widgets_json(),
             })
             result = json.loads(result_str)
             assert result["success"] is False
@@ -172,7 +173,7 @@ class TestDashboardCreateGuard:
             result_str = await create_tool.ainvoke({
                 "title": "Test",
                 "description": "Test",
-                "widgets": _make_widgets(),
+                "widgets_json": _make_widgets_json(),
             })
             result = json.loads(result_str)
             # Should not be rejected by the guard
@@ -204,7 +205,7 @@ class TestDashboardCreateGuard:
             result_str = await create_tool.ainvoke({
                 "title": "Test",
                 "description": "Test",
-                "widgets": _make_widgets(),
+                "widgets_json": _make_widgets_json(),
             })
             result = json.loads(result_str)
             # Guard should not trigger for postgres
@@ -250,7 +251,7 @@ class TestDashboardContextGuard:
         db_factory = MagicMock(return_value=mock_db)
 
         with patch("backend.agents.tool_registry.get_plugin_tool_builders", return_value={}), \
-             patch("backend.services.connection_context.load_connection_context", return_value={
+             patch("backend.services.connection_context.load_context_file", return_value={
                  "tables": {
                      "users": {"schema": "public", "columns": {"id": {"role": "dimension", "type": "integer"}}},
                  },

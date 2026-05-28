@@ -40,39 +40,8 @@ class DashboardResponse(BaseModel):
     schedule_active: bool = False
     next_run_at: Optional[str] = None
     last_run_at: Optional[str] = None
-
-
-def _dashboard_visible_to(query, current_user: User):
-    """Phase 3 collaborative-workspace scope filter for dashboards.
-
-    Same-org rows are visible; row whose owner currently lives in the caller's
-    org are also visible (covers pre-Phase-0 rows that never got `org_id`
-    backfilled). Falls back to owner-only when the caller has no org.
-    """
-    from sqlalchemy import or_
-
-    if current_user.org_id is None:
-        return query.filter(Dashboard.user_id == current_user.id)
-    return query.outerjoin(User, Dashboard.user_id == User.id).filter(
-        or_(
-            Dashboard.org_id == current_user.org_id,
-            User.org_id == current_user.org_id,
-        )
-    )
-
-
-def _governance_require_mutate_dashboard(current_user: User, dashboard: Dashboard) -> None:
-    """Phase 3 inline guard for PUT/DELETE on a dashboard."""
-    from backend.governance.contract import require as governance_require
-    governance_require(
-        user=current_user,
-        action="update",
-        resource={
-            "type": "dashboard",
-            "org_id": str(dashboard.org_id) if dashboard.org_id else None,
-            "owner_user_id": str(dashboard.user_id) if dashboard.user_id else None,
-        },
-    )
+    cache_built_at: Optional[str] = None
+    cache_status: Optional[str] = None
 
 
 def _dashboard_to_response(dashboard: Dashboard) -> DashboardResponse:
@@ -90,6 +59,8 @@ def _dashboard_to_response(dashboard: Dashboard) -> DashboardResponse:
         schedule_active=dashboard.schedule_active or False,
         next_run_at=str(dashboard.next_run_at) if dashboard.next_run_at else None,
         last_run_at=str(dashboard.last_run_at) if dashboard.last_run_at else None,
+        cache_built_at=str(dashboard.cache_built_at) if dashboard.cache_built_at else None,
+        cache_status=dashboard.cache_status,
     )
 
 
@@ -98,13 +69,10 @@ async def list_dashboards(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List dashboards visible to the current user.
-
-    Phase 3 collaborative workspace: every member of the caller's org sees
-    every dashboard in the org. Legacy callers without an org_id keep the
-    owner-only view.
-    """
-    dashboards = _dashboard_visible_to(db.query(Dashboard), current_user).all()
+    """List all dashboards for the current user."""
+    dashboards = db.query(Dashboard).filter(
+        Dashboard.user_id == current_user.id,
+    ).all()
     return [_dashboard_to_response(d) for d in dashboards]
 
 
@@ -115,11 +83,10 @@ async def get_dashboard(
     current_user: User = Depends(get_current_user),
 ):
     """Get a specific dashboard."""
-    dashboard = (
-        _dashboard_visible_to(db.query(Dashboard), current_user)
-        .filter(Dashboard.id == dashboard_id)
-        .first()
-    )
+    dashboard = db.query(Dashboard).filter(
+        Dashboard.id == dashboard_id,
+        Dashboard.user_id == current_user.id,
+    ).first()
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
     return _dashboard_to_response(dashboard)
@@ -134,7 +101,6 @@ async def create_dashboard(
     """Create a new dashboard."""
     dashboard = Dashboard(
         user_id=current_user.id,
-        org_id=current_user.org_id,
         title=payload.title,
         description=payload.description,
         widgets=payload.widgets,
@@ -142,19 +108,6 @@ async def create_dashboard(
     db.add(dashboard)
     db.commit()
     db.refresh(dashboard)
-
-    # If the Org is cut over to DuckDB serving, the agent emits DuckDB SQL, so
-    # mark this dashboard born-DuckDB: it's never re-transpiled and serving may
-    # use the DuckDB path immediately (Phase 3 cutover gate).
-    if current_user.org_id:
-        try:
-            from backend.config.feature_flags import enabled
-            if enabled(str(current_user.org_id), "duckdb_widget_serving"):
-                from backend.migration.dialect_migration import mark_born_duckdb
-                mark_born_duckdb(dashboard.id, db)
-        except Exception:
-            logger.warning("mark_born_duckdb failed for dashboard %s", dashboard.id, exc_info=True)
-
     return _dashboard_to_response(dashboard)
 
 
@@ -166,15 +119,12 @@ async def update_dashboard(
     current_user: User = Depends(get_current_user),
 ):
     """Update a dashboard (partial update)."""
-    dashboard = (
-        _dashboard_visible_to(db.query(Dashboard), current_user)
-        .filter(Dashboard.id == dashboard_id)
-        .first()
-    )
+    dashboard = db.query(Dashboard).filter(
+        Dashboard.id == dashboard_id,
+        Dashboard.user_id == current_user.id,
+    ).first()
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
-
-    _governance_require_mutate_dashboard(current_user, dashboard)
 
     if payload.title is not None:
         dashboard.title = payload.title
@@ -194,16 +144,21 @@ async def delete_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Hard delete a dashboard."""
-    dashboard = (
-        _dashboard_visible_to(db.query(Dashboard), current_user)
-        .filter(Dashboard.id == dashboard_id)
-        .first()
-    )
+    """Hard delete a dashboard and its SQLite cache."""
+    dashboard = db.query(Dashboard).filter(
+        Dashboard.id == dashboard_id,
+        Dashboard.user_id == current_user.id,
+    ).first()
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
 
-    _governance_require_mutate_dashboard(current_user, dashboard)
+    # Clean up SQLite cache from DO Spaces and local filesystem
+    if dashboard.cache_key:
+        try:
+            from backend.services.dashboard_cache import delete_cache
+            delete_cache(dashboard_id)
+        except Exception as e:
+            logger.warning("Cache cleanup failed for dashboard %s: %s", dashboard_id, e)
 
     db.delete(dashboard)
     db.commit()

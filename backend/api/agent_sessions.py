@@ -11,7 +11,6 @@ from typing import Optional
 
 from backend.database.session import get_db
 from backend.api.auth import get_current_user
-from backend.models.agent_session import SessionStatus
 from backend.models.user import User
 from backend.config import settings
 
@@ -155,4 +154,4 @@ async def terminate_session(
     except PermissionError:
         raise HTTPException(status_code=403, detail="Not your session")
 
-    return {"status": SessionStatus.TERMINATED.value}
+    return {"status": "terminated"}

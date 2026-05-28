@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import type { Ref } from 'vue'
 import type { DashboardWidget } from '~/types/dashboard'
 import { useApi } from '~/composables/useApi'
@@ -38,18 +38,6 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
       }) as { config: Record<string, any>; refreshed_at: string }
 
       if (seq !== refreshSeq) return
-      // For table widgets, preserve editor-only column fields (aggregation,
-      // align, displayType, comparisonCalc, runningCalc, etc.) that the
-      // backend transform doesn't know about. Merge by column key.
-      if (widget.value.widget.type === 'table' && Array.isArray(response.config?.columns)) {
-        const existingByKey = new Map<string, any>(
-          ((widget.value.widget.config as any)?.columns ?? []).map((c: any) => [c.key, c]),
-        )
-        response.config.columns = response.config.columns.map((rc: any) => {
-          const existing = existingByKey.get(rc.key)
-          return existing ? { ...rc, ...existing, key: rc.key, label: rc.label ?? existing.label } : rc
-        })
-      }
       Object.assign(widget.value.widget.config, response.config)
       ds.lastRefreshedAt = response.refreshed_at
     } catch (err: any) {
@@ -65,6 +53,14 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
   // not when the getter recomputes due to unrelated widget array mutations.
   watch(() => JSON.stringify(store.activeFilters), (newVal, oldVal) => {
     if (hasDataSource.value && newVal !== oldVal) {
+      refresh()
+    }
+  })
+
+  // If filters were restored from localStorage before this widget mounted,
+  // the watch above won't fire (no change detected). Apply them immediately.
+  onMounted(() => {
+    if (hasDataSource.value && store.activeFilters.length > 0) {
       refresh()
     }
   })

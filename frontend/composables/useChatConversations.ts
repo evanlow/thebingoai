@@ -1,6 +1,5 @@
 import { useChatStore } from '~/stores/chat'
 import type { Message, AgentStep } from '~/stores/chat'
-import { IMAGE_MIME_TYPES, STREAMING_SAFETY_TIMEOUT_MS } from './_chatConstants'
 
 /** Extract the best query result from persisted agent steps. */
 function _extractQueryData(steps: AgentStep[]): { sql?: string; results: Record<string, any>[] } | null {
@@ -84,11 +83,11 @@ export const useChatConversations = () => {
           }
         })
 
-        // Safety timeout — matches Redis TTL for streaming state.
+        // Safety timeout — matches Redis TTL (5 min)
         const safetyTimeout = setTimeout(() => {
           unsubComplete()
           chatStore.isStreaming = false
-        }, STREAMING_SAFETY_TIMEOUT_MS)
+        }, 5 * 60 * 1000)
       })
 
       ws.send({ type: 'stream.check', thread_id: threadId })
@@ -122,12 +121,6 @@ export const useChatConversations = () => {
   }
 
   const loadMessages = async (threadId: string) => {
-    // Set thread + URL immediately so the view-switch transition fires on click,
-    // not after the API round-trip (which would cause a delayed or missing animation)
-    chatStore.setCurrentThread(threadId)
-    if (route.path === '/chat' && route.query.id !== threadId) {
-      router.replace({ path: '/chat', query: { id: threadId } })
-    }
     try {
       const conversation = await api.chat.getMessages(threadId) as any
       const messages: Message[] = (conversation.messages || []).map((msg: any, index: number) => ({
@@ -135,7 +128,6 @@ export const useChatConversations = () => {
         role: msg.role,
         content: msg.content,
         source: msg.source || 'chat',
-        briefing_id: msg.briefing_id ?? null,
         created_at: msg.timestamp,
         attachments: msg.attachments?.map((a: any) => ({
           file_id: a.file_id,
@@ -151,13 +143,18 @@ export const useChatConversations = () => {
       }))
       messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
       chatStore.setMessages(messages)
+      chatStore.setCurrentThread(threadId)
+      if (route.path === '/chat' && route.query.id !== threadId) {
+        router.replace({ path: '/chat', query: { id: threadId } })
+      }
 
       // Resolve presigned URLs for image attachments
+      const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
       const imageRequests: Array<{ msgId: string; idx: number; fileId: string; storageKey?: string }> = []
       for (const msg of messages) {
         if (!msg.attachments) continue
         msg.attachments.forEach((att, idx) => {
-          if (IMAGE_MIME_TYPES.has(att.type) && att.file_id && att.storage_key) {
+          if (IMAGE_TYPES.has(att.type) && att.file_id && att.storage_key) {
             imageRequests.push({ msgId: msg.id, idx, fileId: att.file_id, storageKey: att.storage_key })
           }
         })
@@ -247,10 +244,9 @@ export const useChatConversations = () => {
         }
       }
 
-      // Auto-select permanent conversation if no active thread and no new task in flight
+      // Auto-select permanent conversation if no active thread
       const permanent = conversations.find((c: any) => c.type === 'permanent')
-      if (permanent && !chatStore.currentThreadId && !chatStore.pendingNewConversationId) {
-        chatStore.setCurrentThread(permanent.id)
+      if (permanent && !chatStore.currentThreadId) {
         await loadMessages(permanent.id)
       }
     } catch (error) {

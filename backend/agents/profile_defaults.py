@@ -26,13 +26,7 @@ When generating SQL for DATASET connections (CSV/Excel files), the table is alwa
 - **Date functions**: use `strftime('%Y-%m', date_col)` instead of `to_char()`
 - **Date truncation**: use `strftime('%Y-%m-01', date_col)` instead of `date_trunc()`
 - **No schema prefix**: write `FROM data` not `FROM datasets.ds_42_myfile`
-- **String concat**: use `||` operator instead of `CONCAT()`
-- **Window functions**: SQLite supports `OVER (ORDER BY col ROWS BETWEEN N PRECEDING AND CURRENT ROW)` — use these for rolling calculations instead of correlated subqueries
-  - Rolling average: `AVG(col) OVER (ORDER BY rn ROWS BETWEEN 29 PRECEDING AND CURRENT ROW)`
-  - Rolling sum: `SUM(col) OVER (ORDER BY rn ROWS BETWEEN 29 PRECEDING AND CURRENT ROW)`
-  - Rolling count: `COUNT(*) OVER (ORDER BY rn ROWS BETWEEN 29 PRECEDING AND CURRENT ROW)`
-  - Rolling variance (sample): compute as `(SUM(col*col) OVER w - COUNT(*) OVER w * AVG(col) OVER w * AVG(col) OVER w) / (COUNT(*) OVER w - 1)`
-  - **Never use `(expr)(expr)` to multiply** — always write `(expr) * (expr)`"""
+- **String concat**: use `||` operator instead of `CONCAT()`"""
 
 
 def _csv_plugin_loaded() -> bool:
@@ -42,43 +36,13 @@ def _csv_plugin_loaded() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# BigQuery dialect hints — always appended to the dashboard agent because
-# every connector materializes via the DataPlane = BigQuery in enterprise
-# lockdown. Generator MUST emit BigQuery; Postgres idioms (`::cast`,
-# `AT TIME ZONE`, `INTERVAL 'N day'`, `DATE_TRUNC('day', col)`) all fail at
-# BigQuery execution.
+# BigQuery dialect hints — appended only when the BigQuery connector plugin is loaded
 # ---------------------------------------------------------------------------
 BIGQUERY_DIALECT_HINTS = """
 
-## BigQuery SQL Dialect — REQUIRED for all generated SQL
+## BigQuery SQL Dialect (for BigQuery connections)
 
-All widget queries execute against BigQuery. Postgres idioms FAIL. Apply these rules without exception:
-
-**Syntax rules:**
-- Identifiers in backticks: `` `col` `` or `` `dataset.table` ``. Double quotes are STRING LITERALS, never identifiers.
-- `CAST(x AS TYPE)` — NEVER `x::TYPE`.
-- `DATE_TRUNC(x, DAY)` — arg order is `(col, unit)`, unit is an unquoted keyword. NEVER `DATE_TRUNC('day', x)`.
-- `INTERVAL N UNIT` — unquoted `N`, unquoted `UNIT` keyword. NEVER `INTERVAL 'N day'`. Example: `INTERVAL 1 DAY`.
-- `CURRENT_TIMESTAMP()` already returns UTC. Do NOT use `AT TIME ZONE 'UTC'`. For day-precision today use `CURRENT_DATE()`; for day-truncated timestamp use `TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY)`.
-- `LIKE` only (no `ILIKE`). Case-insensitive: `LOWER(col) LIKE LOWER(pattern)`.
-- `DATE_SUB(d, INTERVAL N DAY)` for date subtraction; `DATE_ADD` for addition. NEVER `d - INTERVAL '1 day'`.
-- `SAFE_DIVIDE(a, b)` and `SAFE_CAST(x AS TYPE)` for null/error-safe math + casts.
-
-**Date arithmetic skeleton (copy/adapt — do NOT reinvent in Postgres):**
-```sql
-WITH bounds AS (
-  SELECT
-    CURRENT_DATE() AS today,
-    DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS yesterday,
-    DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY) AS sixty_days_ago
-)
-SELECT
-  CAST(date_start AS DATE) AS date_start,
-  SUM(spend) AS spend
-FROM insights_daily, bounds
-WHERE CAST(date_start AS DATE) = bounds.yesterday
-GROUP BY 1
-```
+When generating SQL for a BigQuery connection, apply these rules:
 
 **Partitioned tables** — a column whose `type` is `PARTITION_KEY(col)` or `RANGE_PARTITION_KEY(col)` is the partition field. Always filter on it to avoid full-table scans.
 - Example: `WHERE event_date >= '2024-01-01' AND event_date < '2024-02-01'`
@@ -90,75 +54,10 @@ GROUP BY 1
 - Example: `` SELECT * FROM `dataset.events_*` WHERE _TABLE_SUFFIX BETWEEN '20240101' AND '20240131' ``
 - Do NOT query individual shard tables directly.
 
-**General:**
+**General BigQuery rules:**
 - Prefer `dataset.table` over fully-qualified names unless cross-project queries are needed
-- `LIMIT` goes at the end of the query"""
-
-
-# ---------------------------------------------------------------------------
-# DuckDB dialect hints — used once an Org is cut over to DuckDB-over-Parquet
-# serving (`duckdb_widget_serving` on). Post-cutover the agent emits native
-# DuckDB so newly-created widgets need no transpile.
-# ---------------------------------------------------------------------------
-DUCKDB_DIALECT_HINTS = """
-
-## DuckDB SQL Dialect — REQUIRED for all generated SQL
-
-All widget queries execute against DuckDB (over the DataPlane Parquet lake). Apply these rules without exception:
-
-**Syntax rules:**
-- Identifiers in double quotes: `"col"` or `"table"`. Backticks are NOT valid.
-- `CAST(x AS TYPE)`; use `TRY_CAST(x AS TYPE)` for null-safe casts (NEVER `SAFE_CAST`).
-- `DATE_TRUNC('day', col)` — arg order is `('unit', col)`, unit is a QUOTED string. (This is the opposite of BigQuery.)
-- `INTERVAL N UNIT` — e.g. `INTERVAL 1 DAY`. Date subtraction: `col - INTERVAL 1 DAY`; `DATE_SUB`/`DATE_ADD` also work.
-- `now()` returns UTC; `current_date` for day precision. Day-truncated timestamp: `DATE_TRUNC('day', now())`.
-- `ILIKE` for case-insensitive match (or `LOWER(col) LIKE LOWER(pattern)`).
-- No `SAFE_DIVIDE` — use `a / NULLIF(b, 0)` for divide-by-zero-safe division.
-
-**Date arithmetic skeleton (copy/adapt):**
-```sql
-WITH bounds AS (
-  SELECT current_date AS today,
-         current_date - INTERVAL 1 DAY AS yesterday,
-         current_date - INTERVAL 60 DAY AS sixty_days_ago
-)
-SELECT CAST(date_start AS DATE) AS date_start, SUM(spend) AS spend
-FROM insights_daily, bounds
-WHERE CAST(date_start AS DATE) = bounds.yesterday
-GROUP BY 1
-```
-
-**Partitioned tables** — the lake is Hive-partitioned by `dt=`. Filter on `dt` to prune partitions and avoid full scans.
-
-**General:**
-- `LIMIT` goes at the end of the query"""
-
-
-_DUCKDB_REQUIRED_TOKENS = (
-    "double quotes",
-    "TRY_CAST",
-    "DATE_TRUNC('day', col)",
-    "INTERVAL N UNIT",
-    "NULLIF",
-    "ILIKE",
-)
-
-
-def _dialect_hints_for_org(org_id: Optional[str]) -> str:
-    """Return the dashboard-agent SQL dialect hints for *org_id*.
-
-    DuckDB once the Org has `duckdb_widget_serving` on (post-cutover the agent
-    emits native DuckDB); BigQuery otherwise (default / legacy / no org).
-    """
-    if org_id:
-        try:
-            from backend.config.feature_flags import enabled
-            if enabled(str(org_id), "duckdb_widget_serving"):
-                return DUCKDB_DIALECT_HINTS
-        except Exception:
-            # Flag store unavailable → fail safe to the established BigQuery hints.
-            pass
-    return BIGQUERY_DIALECT_HINTS
+- `LIMIT` goes at the end of the query
+- Use `SAFE_DIVIDE`, `SAFE_CAST` for null-safe math/casting"""
 
 
 def _bigquery_plugin_loaded() -> bool:
@@ -777,15 +676,14 @@ DEFAULTS: Dict[str, Dict[str, Optional[str]]] = {
 }
 
 
-def get_default_section(agent_type: str, section: str, org_id: Optional[str] = None) -> Optional[str]:
-    """Get the default content for a specific agent type and section.
-
-    For the dashboard agent's tools section, append the SQL dialect hints —
-    DuckDB once the Org is cut over (`org_id` with `duckdb_widget_serving` on),
-    BigQuery otherwise.
-    """
+def get_default_section(agent_type: str, section: str) -> Optional[str]:
+    """Get the default content for a specific agent type and section."""
     agent_defaults = DEFAULTS.get(agent_type, {})
     content = agent_defaults.get(section)
+    # Conditionally append dialect hints for dashboard agent tools
     if content and agent_type == "dashboard_agent" and section == "tools":
-        content += _dialect_hints_for_org(org_id)
+        if _csv_plugin_loaded():
+            content += SQLITE_DIALECT_HINTS
+        if _bigquery_plugin_loaded():
+            content += BIGQUERY_DIALECT_HINTS
     return content

@@ -4,12 +4,10 @@ from sqlalchemy.orm import sessionmaker, Session
 from backend.config import settings
 
 
-# Detect connection-pooler URLs (PgBouncer transaction mode).
-# Supabase uses :6543/; DigitalOcean Managed PG uses :25061/.
-# Transaction-mode pooling is incompatible with SQLAlchemy's client-side
-# pool, so we use NullPool to avoid double-pooling.
-_POOLER_PORTS = (":6543/", ":25061/")
-if any(p in settings.database_url for p in _POOLER_PORTS):
+# Detect if using Supabase connection pooler (port 6543).
+# Supabase's PgBouncer handles pooling, so we use NullPool to avoid
+# double-pooling which causes connection issues.
+if ":6543/" in settings.database_url:
     engine = create_engine(
         settings.database_url,
         pool_pre_ping=True,
