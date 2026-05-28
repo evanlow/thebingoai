@@ -218,6 +218,34 @@ async def create_connection(
             db.rollback()
             new_p, new_t = [], []
 
+        # Bootstrap on-create: auto-enable the `new_pipelines` org gate (so
+        # `dispatch_pipelines` will actually fire the freshly-created cron
+        # rows) and queue a one-shot first-ingest run. Both are no-ops when
+        # the flag is already on / the org has no pipelines.
+        if new_p:
+            if current_user.org_id:
+                try:
+                    from backend.config.feature_flags import enabled as _ff_enabled, set_flag as _ff_set
+                    if not _ff_enabled(current_user.org_id, "new_pipelines"):
+                        _ff_set(current_user.org_id, "new_pipelines", True)
+                        logger.info(
+                            "Auto-enabled new_pipelines flag for org %s after connection %s create",
+                            current_user.org_id, connection.id,
+                        )
+                except Exception:
+                    logger.warning(
+                        "Failed to auto-enable new_pipelines flag for org %s",
+                        current_user.org_id, exc_info=True,
+                    )
+            try:
+                from backend.pipelines.tasks import first_ingest_task
+                first_ingest_task.delay(connection.id, current_user.id)
+            except Exception:
+                logger.warning(
+                    "Failed to enqueue first_ingest_task for connection %s",
+                    connection.id, exc_info=True,
+                )
+
         # If any pipelines or stg_ dbt models were materialised, refresh the
         # per-Org dbt project synth so the new sources.yml + stg files are on
         # disk before the user's first dbt run. Failures are non-fatal — the
