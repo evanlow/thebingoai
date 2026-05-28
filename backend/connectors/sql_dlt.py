@@ -16,6 +16,11 @@ class SqlExtractionConfig(BaseModel):
 
     tables: Optional[list[str]] = None  # None → all tables in schema
     schema: Optional[str] = None         # None → connector default
+    # T-1 snapshot: when set, each run reads only rows with
+    # `snapshot_date_column` < (today_utc - (snapshot_lag_days - 1)d), i.e. data
+    # up to end of T-1. None → no date filter (plain full read).
+    snapshot_date_column: Optional[str] = None
+    snapshot_lag_days: int = 1
 
 
 def build_sqlalchemy_url(drivername: str, connection) -> str:
@@ -44,5 +49,20 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
         kwargs["schema"] = cfg.schema
     if cfg.tables:
         kwargs["table_names"] = cfg.tables
+    if cfg.snapshot_date_column:
+        from datetime import datetime, timedelta, timezone
+
+        col = cfg.snapshot_date_column
+        cutoff = datetime.now(timezone.utc).date() - timedelta(days=cfg.snapshot_lag_days - 1)
+
+        def _t1_filter(query, table):
+            # Cap the read at end of T-1 on the snapshot date column. Skip
+            # silently if the column isn't present on the reflected table.
+            cols = table.columns
+            if col in cols.keys():
+                return query.where(cols[col] < cutoff)
+            return query
+
+        kwargs["query_adapter_callback"] = _t1_filter
 
     return sql_database(**kwargs)

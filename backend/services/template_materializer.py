@@ -402,6 +402,91 @@ def _build_sql_transform_templates(
     return transforms
 
 
+def _detect_snapshot_date_column(columns: list[dict]) -> Optional[str]:
+    """Pick a DATE/DATETIME/TIMESTAMP column to cap the T-1 snapshot on.
+
+    Prefer a conventionally-named date column (`created_at`, `updated_at`, …);
+    otherwise the first date-typed column. None when the table has no date
+    column (caller then leaves the pipeline as a plain full snapshot).
+    """
+    date_typed = [
+        c for c in columns
+        if any(tok in (c.get("type") or "").lower() for tok in _DATE_LIKE_TYPE_TOKENS)
+    ]
+    if not date_typed:
+        return None
+    for c in date_typed:
+        if (c.get("name") or "").lower() in _DATE_LIKE_COL_NAMES:
+            return c["name"]
+    return date_typed[0]["name"]
+
+
+def _apply_mysql_t1_schedule(new_pipelines: list[Pipeline], connection, db: Session) -> None:
+    """Make freshly-created MySQL pipelines self-running daily T-1 snapshots.
+
+    For each new pipeline: set a daily `cron` + seed `next_run_at` (so the beat
+    dispatcher picks it up), force `mode='full'`, and add a `snapshot_date_column`
+    to `extraction_config` (detected from the live schema) so each run reads only
+    rows up to end of yesterday. No date column → plain full snapshot.
+
+    Applied at the materialization layer — the per-table `PipelineTemplate` is
+    left untouched. No-op for non-MySQL connections.
+    """
+    if not new_pipelines or (getattr(connection, "db_type", "") or "").lower() != "mysql":
+        return
+
+    from backend.config import settings
+    from backend.connectors.factory import get_connector_for_connection
+    from backend.utils.cron import compute_next_run
+
+    cron = getattr(settings, "default_sql_pipeline_cron", "0 2 * * *")
+    try:
+        connector = get_connector_for_connection(connection)
+    except Exception:
+        logger.warning(
+            "MySQL T-1 schedule: cannot open connector for connection %s; skipping",
+            connection.id, exc_info=True,
+        )
+        return
+
+    try:
+        for p in new_pipelines:
+            tables = (p.extraction_config or {}).get("tables") or []
+            date_col = None
+            if len(tables) == 1:
+                try:
+                    schema_obj = connector.get_table_schema(tables[0], schema=None)
+                    date_col = _detect_snapshot_date_column(
+                        list(getattr(schema_obj, "columns", []) or [])
+                    )
+                except Exception:
+                    logger.debug(
+                        "snapshot date-column detection failed for %s", tables[0], exc_info=True
+                    )
+            p.extraction_config = {
+                **(p.extraction_config or {}),
+                "snapshot_date_column": date_col,
+                "snapshot_lag_days": 1,
+            }
+            p.mode = "full"
+            p.cron = cron
+            try:
+                p.next_run_at = compute_next_run(cron, getattr(p, "timezone", None) or "UTC")
+            except Exception:
+                logger.warning(
+                    "compute_next_run failed for cron %r; pipeline %s left unscheduled",
+                    cron, p.id, exc_info=True,
+                )
+        db.flush()
+    finally:
+        close = getattr(connector, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+
 def materialize_templates_for_connection(
     connection,
     registration: ConnectorRegistration,
@@ -434,6 +519,15 @@ def materialize_templates_for_connection(
                 "Failed to materialize pipeline template '%s' for connection %s",
                 tmpl.name, connection.id,
             )
+
+    # MySQL: make the new pipelines self-running daily T-1 snapshots (cron +
+    # next_run_at + date-capped full snapshot). Schema-driven, template intact.
+    try:
+        _apply_mysql_t1_schedule(new_pipelines, connection, db)
+    except Exception:
+        logger.warning(
+            "MySQL T-1 schedule application failed for connection %s", connection.id, exc_info=True
+        )
 
     # Dynamic SQL transforms = one stg_<table> view per dynamic pipeline.
     dynamic_transforms: list[TransformTemplate] = (

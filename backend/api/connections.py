@@ -233,6 +233,20 @@ async def create_connection(
                     "next dbt run will retry", connection.id, exc_info=True,
                 )
 
+        # MySQL: kick off an immediate first sync so data exists right after
+        # connect (don't wait for the daily cron). Recurring runs are scheduled
+        # via the pipeline's cron + next_run_at set at materialization.
+        if new_p and (connection.db_type or "").lower() == "mysql":
+            try:
+                from backend.pipelines.tasks import run_pipeline_task
+                for p in new_p:
+                    run_pipeline_task.delay(p.id, "api", connection.user_id)
+            except Exception:
+                logger.warning(
+                    "Failed to enqueue initial MySQL pipeline run(s) for connection %s",
+                    connection.id, exc_info=True,
+                )
+
     # Auto-discover schema for all connector types except BigQuery (legacy —
     # opted out because projects often have hundreds of datasets). BigQuery GA4
     # is single-project and runs discovery so the dashboard agent gets context.

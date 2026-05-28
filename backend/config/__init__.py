@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     celery_max_retries: int = 3
     celery_retry_base_countdown: int = 60
 
+    # Pipelines — default cron applied to auto-created MySQL pipelines at connect
+    default_sql_pipeline_cron: str = "0 2 * * *"  # daily 02:00 (pipeline timezone)
+
     # Async processing thresholds
     async_file_size_threshold: int = 100_000  # 100KB
     async_chunk_count_threshold: int = 20
