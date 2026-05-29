@@ -440,8 +440,15 @@ def _serve_widget_via_dataplane(
             try:
                 result = reader.query(scope, f'SELECT * FROM "{cache_table}"')
                 return _build_widget_response(result, request.mapping)
-            except Exception:
-                pass  # cold/missing cache → live read below
+            except Exception as e:
+                # Cold/missing warm cache is the common, expected case → fall
+                # through to the live read below. Logged at debug (not warning)
+                # so a genuine error (bad SQL, permissions) is still observable
+                # when troubleshooting without spamming the common cold path.
+                logger.debug(
+                    "Warm _dash_ cache miss for widget %s (table %s): %s — serving live",
+                    request.widget_id, cache_table, e,
+                )
         return _build_widget_response(reader.query(scope, base_sql), request.mapping)
     except Exception as e:
         logger.warning(
