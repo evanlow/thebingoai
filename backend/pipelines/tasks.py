@@ -197,21 +197,31 @@ def pipeline_health_check():
                 scope = OwnerScope(pipeline.owner_scope_kind, pipeline.owner_scope_id)
                 plane = get_default_plane(scope, db)
 
-                # Check if target table exists
-                table_exists = plane.table_exists(scope, pipeline.target_table)
+                # Check if target table exists — but only meaningful after the
+                # bootstrap has actually landed a row. A pre-bootstrap pipeline
+                # (or one whose only successful runs returned zero rows) has no
+                # BQ table yet by design; flagging it stale would be a false
+                # positive and noisy.
+                if pipeline.first_ingest_done:
+                    table_missing = not plane.table_exists(scope, pipeline.target_table)
+                else:
+                    table_missing = False
 
                 # Check staleness: last_run_at > 2× cron_interval?
                 is_stale = False
                 if pipeline.cron and pipeline.last_run_at:
                     try:
-                        # Get next run time from current cron expression
+                        # `pipeline.last_run_at` is naive (Column(DateTime) stores
+                        # UTC without tzinfo). `now` and croniter outputs derived
+                        # from it are aware. Coerce before subtracting to avoid
+                        # TypeError: can't subtract offset-naive and offset-aware.
+                        last_run = pipeline.last_run_at
+                        if last_run.tzinfo is None:
+                            last_run = last_run.replace(tzinfo=timezone.utc)
                         cron = croniter(pipeline.cron, now)
-                        last_expected_run = cron.get_prev(datetime)
-                        # If last_run_at is before last_expected_run - 1× interval, it's stale
-                        # Simple heuristic: if last_run_at is > 2× the interval old, mark stale
                         next_run = cron.get_next(datetime)
                         interval = (next_run - now).total_seconds()
-                        time_since_last_run = (now - pipeline.last_run_at).total_seconds()
+                        time_since_last_run = (now - last_run).total_seconds()
                         is_stale = time_since_last_run > (2 * interval)
                     except Exception as e:
                         logger.warning(
@@ -221,7 +231,7 @@ def pipeline_health_check():
                         is_stale = False
 
                 # Determine health
-                is_unhealthy = (not table_exists) or is_stale
+                is_unhealthy = table_missing or is_stale
 
                 if is_unhealthy:
                     # Update pipeline status

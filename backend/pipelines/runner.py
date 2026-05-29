@@ -231,7 +231,14 @@ def run_pipeline(
         # widget / chat plane-redirect paths read this to decide whether to
         # allow a live source-DB fallback ("not-ready policy" — one live query
         # per missing partition until the first ingest lands, then plane-only).
-        if status == "success" and not pipeline.first_ingest_done:
+        # Gate on rows_written > 0: a zero-row "success" never calls
+        # write_parquet → no BQ external table → latching would permanently
+        # 503 the widget read (plane_table_missing).
+        if (
+            status == "success"
+            and not pipeline.first_ingest_done
+            and (rows_written or 0) > 0
+        ):
             pipeline.first_ingest_done = True
 
         # Advance next_run_at for cron pipelines
