@@ -62,14 +62,18 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
     }
   }
 
-  // Re-run refresh when active filters change (only for SQL-backed widgets).
-  // Serialize to string so the watcher only fires when values actually change,
-  // not when the getter recomputes due to unrelated widget array mutations.
-  watch(() => JSON.stringify(store.activeFilters), (newVal, oldVal) => {
-    if (hasDataSource.value && newVal !== oldVal) {
-      refresh()
-    }
-  })
+  // Refresh on mount and whenever active filters change (SQL-backed widgets).
+  // immediate: true triggers the initial fetch so widgets always render filtered,
+  // fresh data instead of the unfiltered snapshot baked into widget.config at
+  // generation time. refreshSeq inside refresh() discards stale responses if
+  // activeFilters changes before the in-flight request returns.
+  watch(
+    () => JSON.stringify(store.activeFilters),
+    () => {
+      if (hasDataSource.value) refresh()
+    },
+    { immediate: true },
+  )
 
   return { loading, error, lastRefreshedAt, servedFrom, hasDataSource, refresh }
 }

@@ -269,7 +269,7 @@ async function initDateRangeDefaults() {
 
         if (maxDate) {
           const max = new Date(maxDate)
-          const preset = control.dateRangeDefault ?? 'full'
+          const preset = control.dateRangeDefault ?? '30d'
           let from: Date
 
           if (preset === 'full') {
@@ -299,12 +299,12 @@ async function initDateRangeDefaults() {
       continue
     }
 
-    // Fallback (no dateRangeSource configured): today-based range
+    // Fallback (no dateRangeSource configured): last 30 days from yesterday
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    store.setFilterValue(control.key, { from: fmt(sevenDaysAgo), to: fmt(yesterday) })
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    store.setFilterValue(control.key, { from: fmt(thirtyDaysAgo), to: fmt(yesterday) })
   }
 }
 
