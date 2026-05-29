@@ -86,6 +86,10 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
         if cfg.initial_value:
             try:
                 initial = datetime.fromisoformat(cfg.initial_value)
+                # Coerce naive → aware UTC: `end_value` is aware, and dlt's
+                # cursor raises TypeError when comparing aware vs naive.
+                if initial.tzinfo is None:
+                    initial = initial.replace(tzinfo=timezone.utc)
             except ValueError:
                 initial = unbounded_lower_sentinel
         else:

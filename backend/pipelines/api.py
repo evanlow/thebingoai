@@ -395,12 +395,18 @@ async def override_pipeline(
 # ---------------------------------------------------------------------------
 
 @router.post("/{pipeline_id}/redetect", response_model=WatermarkRedetectResponse)
-async def redetect_watermark(
+def redetect_watermark(
     pipeline_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Re-run the watermark classifier against the live source schema.
+
+    Defined sync (not ``async``) on purpose: ``classify_connection`` runs
+    ``asyncio.run()`` internally when the LLM classifier is configured, which
+    raises ``RuntimeError`` inside a running event loop. FastAPI executes sync
+    endpoints in a threadpool, so ``asyncio.run`` gets a fresh loop. The body
+    is fully synchronous (blocking connector + DB calls).
 
     Returns the *suggested* cursor without auto-applying — the UI surfaces it
     so the user can accept (via `/override`) or ignore. Honors the
@@ -497,14 +503,20 @@ async def backfill_pipeline(
     """
     pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
 
-    # Validate `backfill_since` is a parseable ISO datetime
+    # Validate + normalize `backfill_since` to an aware UTC datetime. A
+    # timezone-naive value would reach the dlt incremental cursor in
+    # `sql_dlt_source`, where it's compared against an aware UTC `end_value` —
+    # mixing aware/naive raises TypeError. Naive input is interpreted as UTC.
     try:
-        datetime.fromisoformat(body.backfill_since)
+        parsed = datetime.fromisoformat(body.backfill_since)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"backfill_since must be an ISO datetime string, got {body.backfill_since!r}",
         )
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    backfill_since = parsed.astimezone(timezone.utc).isoformat()
 
     if pipeline.mode != "incremental":
         raise HTTPException(
@@ -514,10 +526,10 @@ async def backfill_pipeline(
 
     from backend.pipelines.tasks import run_pipeline_task
     task = run_pipeline_task.delay(
-        pipeline.id, "manual", current_user.id, body.backfill_since,
+        pipeline.id, "manual", current_user.id, backfill_since,
     )
     logger.info(
         "Backfill triggered for pipeline %s by user %s since=%s → task %s",
-        pipeline.id, current_user.id, body.backfill_since, task.id,
+        pipeline.id, current_user.id, backfill_since, task.id,
     )
-    return {"run_id": task.id, "status": "queued", "backfill_since": body.backfill_since}
+    return {"run_id": task.id, "status": "queued", "backfill_since": backfill_since}

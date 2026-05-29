@@ -8,9 +8,15 @@ from backend.services.data_plane_service import plane_table_map
 
 
 def _db(pipelines):
-    """Fake Session whose Pipeline query `.all()` returns *pipelines*."""
+    """Fake Session whose Pipeline query `.all()` returns *pipelines*.
+
+    The query is `query(...).filter(...).order_by(...).all()`; the mock returns
+    *pipelines* in the order given (order_by is a no-op on the mock, so callers
+    that need to assert collision precedence should pass the winning pipeline
+    first).
+    """
     db = MagicMock()
-    db.query.return_value.filter.return_value.all.return_value = pipelines
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = pipelines
     return db
 
 
@@ -52,3 +58,24 @@ def test_multiple_single_table_pipelines_merge():
         "orders": "acme__orders",
         "customers": "acme__customers",
     }
+
+
+def test_collision_keeps_first_and_does_not_overwrite():
+    # Two pipelines materialize the same source table to different targets.
+    # The query orders enabled-first; the mock preserves list order, so the
+    # first (enabled) pipeline's target must win — no silent overwrite.
+    enabled = SimpleNamespace(
+        extraction_config={"tables": ["orders"]}, target_table="acme__orders", enabled=True,
+    )
+    disabled = SimpleNamespace(
+        extraction_config={"tables": ["orders"]}, target_table="stale__orders", enabled=False,
+    )
+    assert plane_table_map(_conn(), _db([enabled, disabled])) == {"orders": "acme__orders"}
+
+
+def test_collision_same_target_is_idempotent():
+    # Same source table → same target on two pipelines: not a real conflict,
+    # mapping is stable and no collision warning logic trips.
+    p1 = SimpleNamespace(extraction_config={"tables": ["orders"]}, target_table="acme__orders", enabled=True)
+    p2 = SimpleNamespace(extraction_config={"tables": ["orders"]}, target_table="acme__orders", enabled=True)
+    assert plane_table_map(_conn(), _db([p1, p2])) == {"orders": "acme__orders"}

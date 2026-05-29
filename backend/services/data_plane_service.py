@@ -216,13 +216,26 @@ def plane_table_map(connection, db) -> dict[str, str]:
     """
     from backend.models.pipeline import Pipeline
 
+    # Enabled pipelines first so that on a source-table collision (two pipelines
+    # materializing the same table to different target_tables) the enabled one
+    # wins — `first write wins` below. Collisions are logged, not silent.
     mapping: dict[str, str] = {}
     for p in db.query(Pipeline).filter(
         Pipeline.source_connection_id == connection.id,
-    ).all():
+    ).order_by(Pipeline.enabled.desc()).all():
         tables = (p.extraction_config or {}).get("tables") or []
         if len(tables) == 1 and p.target_table:
-            mapping[str(tables[0]).lower()] = p.target_table
+            key = str(tables[0]).lower()
+            existing = mapping.get(key)
+            if existing is not None and existing != p.target_table:
+                logger.warning(
+                    "plane_table_map: source table %r on connection %s maps to "
+                    "multiple targets (%r kept, %r ignored) — keeping the "
+                    "enabled/first pipeline's target",
+                    key, getattr(connection, "id", "?"), existing, p.target_table,
+                )
+                continue
+            mapping[key] = p.target_table
     return mapping
 
 

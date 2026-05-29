@@ -258,6 +258,7 @@
 import { AlertTriangle, Clock, Pencil, Play, RefreshCw, Sparkles } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import type { PipelineRow, RedetectResponse } from '~/utils/api/pipelinesApi'
+import { localInputToUtcIso, toLocalInputValue } from '~/utils/backfillTime'
 
 const props = defineProps<{ connectionId: number }>()
 
@@ -403,10 +404,9 @@ async function acceptRedetect() {
 
 function openBackfill(p: PipelineRow) {
   backfillTarget.value = p
-  // default to 30 days ago, ISO local for <input type=datetime-local>
+  // default to 30 days ago, rendered in the user's local timezone
   const d = new Date(Date.now() - 30 * 86400_000)
-  const iso = d.toISOString().slice(0, 16)  // YYYY-MM-DDTHH:mm
-  backfillForm.value = { since: iso }
+  backfillForm.value = { since: toLocalInputValue(d) }
   backfillOpen.value = true
 }
 
@@ -414,8 +414,9 @@ async function runBackfill() {
   if (!backfillTarget.value || !backfillForm.value.since) return
   backfillSaving.value = true
   try {
-    // datetime-local has no timezone — assume UTC.
-    const since = `${backfillForm.value.since}:00+00:00`
+    // datetime-local is local wall-clock → convert to the UTC instant the
+    // backend expects (avoids the prior bug of tagging local time as +00:00).
+    const since = localInputToUtcIso(backfillForm.value.since)
     await api.pipelines.backfill(backfillTarget.value.id, since)
     backfillOpen.value = false
     toast.success('Backfill queued', { description: backfillTarget.value.name })

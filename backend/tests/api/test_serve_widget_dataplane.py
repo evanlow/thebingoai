@@ -256,6 +256,7 @@ def test_serve_rewrites_source_table_to_plane(monkeypatch, plane, scope, current
 
     db = MagicMock()
     chain = db.query.return_value.filter.return_value
+    chain.order_by.return_value = chain  # plane_table_map orders enabled-first
     chain.first.return_value = SimpleNamespace(id=1, user_id="u1", org_id=None)
     chain.all.return_value = [
         SimpleNamespace(extraction_config={"tables": ["csv_1"]}, target_table="acme__csv_1"),
