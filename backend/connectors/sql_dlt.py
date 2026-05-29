@@ -15,7 +15,7 @@ to enforce the T-1 rule (today's rows excluded until they age past 24h).
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel
@@ -78,6 +78,14 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
         # which `_build_sql_pipeline_templates` derives from the source table —
         # so the keys here should match the dlt resource names emitted by
         # `sql_database`).
+        # dlt's `sources.incremental` rejects `end_value` without `initial_value`.
+        # For cron / "Sync now" runs no `backfill_since` is supplied; fall back to
+        # an epoch sentinel so dlt's persisted `last_value` (loaded from state on
+        # every subsequent run) is the one that actually drives the cursor.
+        initial_value = cfg.backfill_since
+        if initial_value is None and cfg.end_value is not None:
+            initial_value = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
         for table, cursor_col in cfg.incremental_keys.items():
             try:
                 resource = source.resources.get(table)
@@ -86,7 +94,7 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
                 resource.apply_hints(
                     incremental=dlt.sources.incremental(
                         cursor_col,
-                        initial_value=cfg.backfill_since,
+                        initial_value=initial_value,
                         end_value=cfg.end_value,
                     ),
                 )
