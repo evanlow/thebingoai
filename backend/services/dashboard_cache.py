@@ -115,7 +115,8 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
         # no-HMAC / non-GCS plane) → keep the source-connector path. Per-widget
         # fallback below handles not-yet-migrated BigQuery SQL.
         from backend.config.feature_flags import enabled as _flag_enabled
-        from backend.services.data_plane_service import get_gcs_duckdb_reader
+        from backend.services.data_plane_service import get_gcs_duckdb_reader, plane_table_map
+        from backend.utils.sql_refs import rewrite_table_refs
         if org_id and _flag_enabled(org_id, "duckdb_widget_serving"):
             duck_reader = get_gcs_duckdb_reader(scope, db)
 
@@ -169,10 +170,15 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
                             widgets_total -= 1
                             continue
 
-                        query_sql = original_sql
+                        # Rewrite source table names (e.g. `orders`) → the
+                        # Pipeline's materialized plane table (e.g. `acme__orders`)
+                        # so the DuckDB-over-GCS warm below resolves the Parquet.
+                        query_sql, _ = rewrite_table_refs(
+                            original_sql, plane_table_map(connection, db)
+                        )
                         date_col = _get_date_column(widget, data_context)
                         if date_col:
-                            query_sql = _apply_date_filter(original_sql, date_col, date_range_days)
+                            query_sql = _apply_date_filter(query_sql, date_col, date_range_days)
 
                         result = None
                         if duck_reader is not None:

@@ -23,6 +23,7 @@ def run_pipeline(
     pipeline_id: str,
     triggered_by: Literal["cron", "manual", "api"],
     triggered_by_user_id: str | None = None,
+    backfill_since: str | None = None,
 ) -> str:
     """Execute a Pipeline; return the new pipeline_run_id.
 
@@ -38,6 +39,12 @@ def run_pipeline(
     9. Publish pipeline.run.failed event if failed.
     10. Chain profile_pipeline_output Celery task on success.
     11. Release lock.
+
+    `backfill_since` (ISO datetime string) is the "Load history" entry point:
+    overrides `extraction_config["initial_value"]` for this run only, and uses
+    an ephemeral dlt `pipeline_name` so the persisted incremental cursor is
+    bypassed (fresh state → `initial_value` is honored). The canonical pipeline
+    state row is left untouched; merge dedup via `unique_key` handles overlap.
     """
     import uuid
     import redis as syncredis
@@ -122,8 +129,13 @@ def run_pipeline(
                 if hasattr(connector_cls, "pre_run"):
                     connector_cls.pre_run(connection)
 
-                # Build dlt source
-                extraction_config = pipeline.extraction_config or {}
+                # Build dlt source. For a backfill ("Load history") run,
+                # override `initial_value` so the dlt incremental cursor pulls
+                # from `backfill_since` forward instead of the last persisted
+                # watermark. A no-op for full-snapshot pipelines.
+                extraction_config = dict(pipeline.extraction_config or {})
+                if backfill_since:
+                    extraction_config["initial_value"] = backfill_since
                 source = source_fn(connection, extraction_config)
 
                 # Build dlt destination wrapping DataPlane
@@ -133,18 +145,38 @@ def run_pipeline(
                     unique_key=tuple(pipeline.unique_key) if pipeline.unique_key else None,
                 )
 
-                # Run dlt
+                # Run dlt. Use an ephemeral `pipeline_name` for backfills so
+                # the saved watermark cursor doesn't shadow our `initial_value`
+                # override (dlt only respects `initial_value` when no prior
+                # state exists for that pipeline_name).
                 import dlt as _dlt
+                dlt_pipeline_name = (
+                    f"bingo_{pipeline_id[:8]}_bf_{int(started_at.timestamp())}"
+                    if backfill_since
+                    else f"bingo_{pipeline_id[:8]}"
+                )
                 dlt_pipeline = _dlt.pipeline(
-                    pipeline_name=f"bingo_{pipeline_id[:8]}",
+                    pipeline_name=dlt_pipeline_name,
                     destination=destination,
                 )
-                write_disposition = "replace" if pipeline.mode == "full" else "merge"
+                # write_disposition + primary_key:
+                #   full        → replace (snapshot)
+                #   incremental → merge on `unique_key` when present (dedup),
+                #                 else append (no PK to dedup on — UI surfaces
+                #                 this table as a dedup risk).
+                # `incremental_key` is the cursor (watermark) column, applied
+                # in `sql_dlt_source`; it is NOT a merge primary key.
+                if pipeline.mode == "full":
+                    write_disposition = "replace"
+                elif pipeline.unique_key:
+                    write_disposition = "merge"
+                else:
+                    write_disposition = "append"
                 load_info = dlt_pipeline.run(
                     source,
                     table_name=pipeline.target_table,
                     write_disposition=write_disposition,
-                    primary_key=pipeline.incremental_key or None,
+                    primary_key=tuple(pipeline.unique_key) if pipeline.unique_key else None,
                 )
 
                 # Rows: closure counter from the custom destination is the
@@ -161,22 +193,27 @@ def run_pipeline(
                 # try/except + rollback so a serialization gap (e.g. an
                 # unexpected non-JSON type in dlt's state dict) cannot strand
                 # the session and prevent the terminal run-status commit below.
-                from backend.pipelines.dlt_state import set_state as _set_state
-                raw_state = dlt_pipeline.state or {}
-                try:
-                    _set_state(
-                        pipeline_id,
-                        raw_state,
-                        db,
-                        owner_scope_kind=pipeline.owner_scope_kind,
-                        owner_scope_id=pipeline.owner_scope_id,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Pipeline %s run %s: failed to persist dlt state; continuing with run-status update",
-                        pipeline_id, run_id,
-                    )
-                    db.rollback()
+                # Backfill runs are ephemeral and intentionally do NOT
+                # overwrite the canonical pipeline's saved cursor — otherwise
+                # the next scheduled run would skip forward to the backfill's
+                # watermark and miss recent rows.
+                if not backfill_since:
+                    from backend.pipelines.dlt_state import set_state as _set_state
+                    raw_state = dlt_pipeline.state or {}
+                    try:
+                        _set_state(
+                            pipeline_id,
+                            raw_state,
+                            db,
+                            owner_scope_kind=pipeline.owner_scope_kind,
+                            owner_scope_id=pipeline.owner_scope_id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Pipeline %s run %s: failed to persist dlt state; continuing with run-status update",
+                            pipeline_id, run_id,
+                        )
+                        db.rollback()
 
         except Exception as exc:
             error_message = str(exc)[:2000]
@@ -195,8 +232,10 @@ def run_pipeline(
         pipeline.last_run_status = status
         pipeline.last_run_at = finished_at
 
-        # Advance next_run_at for cron pipelines
-        if pipeline.cron:
+        # Advance next_run_at for cron pipelines. Skip for backfill runs —
+        # they're off-schedule "Load history" actions and must not push out
+        # the next scheduled run.
+        if pipeline.cron and not backfill_since:
             from croniter import croniter
             pipeline.next_run_at = croniter(pipeline.cron, finished_at).get_next(datetime)
 

@@ -648,6 +648,13 @@
             />
           </template>
           <template v-else-if="editingConnection">
+            <!-- Pipelines tab — only for SQL-source connectors that auto-materialise. -->
+            <SettingsConnectionPipelines
+              v-if="showPipelinesTab"
+              :connection-id="editingConnection.id"
+              class="mb-4 pb-4 border-b border-gray-200 dark:border-neutral-700"
+            />
+
             <div class="flex items-center justify-between mb-3 shrink-0">
               <span class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
                 Schema<template v-if="schema"> · {{ schema.table_names?.length ?? 0 }} tables · {{ Object.keys(schema.schemas ?? {}).length }} schemas</template>
@@ -1178,6 +1185,15 @@ const hasPluginForm = computed(() =>
 const showRightColumn = computed(() => {
   if (editingConnection.value) return true
   return !hasPluginForm.value
+})
+
+// Pipelines panel visible only when editing a SQL-source connection that
+// auto-materialises tables to the data plane (postgres / mysql today). File
+// uploads, BigQuery (its own pipeline UI), and plugin connectors are excluded.
+const showPipelinesTab = computed(() => {
+  if (!editingConnection.value) return false
+  const t = (editingConnection.value.db_type || '').toLowerCase()
+  return t === 'postgres' || t === 'mysql'
 })
 
 // Capability lookups for edit-mode header buttons. Default behavior preserved:
