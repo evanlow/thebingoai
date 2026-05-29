@@ -1,5 +1,5 @@
 from langchain_core.tools import tool
-from typing import List, Dict, Any, Callable
+from typing import List, Dict, Any, Callable, Optional
 from decimal import Decimal
 from datetime import date, datetime
 from uuid import UUID
@@ -26,6 +26,90 @@ def _coerce(value: Any) -> Any:
     if isinstance(value, (bytes, bytearray)):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _serve_query_via_dataplane(connection, sql: str, db) -> Optional[Any]:
+    """Route an ad-hoc chat SQL query through the DataPlane when ready.
+
+    Mirrors the dashboard widget plane-serve path (`api/widget_data.py`):
+    rewrite source table refs → plane targets, then run via DuckDB over the
+    plane (local Parquet in dev, GCS httpfs in prod). Returns a QueryResult on
+    success, or None to fall back to live source (bootstrap policy: cold/missing
+    Parquet, residency-locked plane, or any error → source-DB).
+    """
+    org_id = getattr(connection, "org_id", None)
+    if not org_id:
+        return None
+
+    from backend.config.feature_flags import enabled
+    if not enabled(str(org_id), "duckdb_widget_serving"):
+        return None
+
+    from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
+    from backend.services.data_plane_service import (
+        get_gcs_duckdb_reader,
+        get_plane_for_connection,
+        plane_table_map,
+    )
+    from backend.utils.sql_refs import extract_table_refs, rewrite_table_refs
+
+    table_map = plane_table_map(connection, db)
+    if not table_map:
+        return None  # no pipelines → bootstrap → live source
+
+    # Agent generates SQL in the source dialect (its prompts use the source-DB
+    # schema). Plane storage is Parquet served by DuckDB, so transpile first.
+    # No-op when db_type == "duckdb" or absent. Failure → fall back to source.
+    from backend.utils.sql_refs import (
+        UntranspilableSQLError,
+        transpile_to_engine,
+    )
+
+    db_type = (getattr(connection, "db_type", "") or "").lower()
+    transpiled = sql
+    if db_type and db_type != "duckdb":
+        try:
+            transpiled = transpile_to_engine(sql, source=db_type, target="duckdb")
+        except UntranspilableSQLError:
+            return None
+        except Exception:
+            return None
+
+    try:
+        base_sql, _ = rewrite_table_refs(transpiled, table_map)
+    except Exception:
+        return None  # unparseable post-transpile SQL → live source
+
+    plane, scope = get_plane_for_connection(connection)
+
+    if isinstance(plane, LocalFilesystemDataPlane):
+        try:
+            tables = extract_table_refs(base_sql)
+        except Exception:
+            return None
+        if not tables or not all(plane.table_exists(scope, t) for t in tables):
+            return None  # cold/missing plane data → live source
+        try:
+            return plane.query(scope, base_sql)
+        except Exception as e:
+            logger.warning("Local plane chat serve failed (%s) — falling back", e)
+            return None
+
+    reader = None
+    try:
+        reader = get_gcs_duckdb_reader(scope, db)
+        if reader is None:
+            return None  # residency-locked / customer / no-HMAC → live source
+        return reader.query(scope, base_sql)
+    except Exception as e:
+        logger.warning("DuckDB-over-GCS chat serve failed (%s) — falling back", e)
+        return None
+    finally:
+        if reader is not None:
+            try:
+                reader.close()
+            except Exception:
+                pass
 
 
 def build_data_agent_tools(context: AgentContext) -> List[Callable]:
@@ -172,35 +256,41 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
             if not connection:
                 return {"error": "Connection not found"}
 
-            with get_connector_for_connection(connection) as connector:
-                result = connector.execute_query(sql)
+            # Plane redirect (flag-gated, per-Org). When the connection's
+            # tables are materialized to the plane and `duckdb_widget_serving`
+            # is on, run the query via DuckDB-over-DataPlane (Parquet) instead
+            # of hammering the source DB. Cold/missing data → fall through.
+            result = _serve_query_via_dataplane(connection, sql, db)
+            if result is None:
+                with get_connector_for_connection(connection) as connector:
+                    result = connector.execute_query(sql)
 
-                # Build full result payload for frontend delivery
-                full_result = {
-                    "columns": result.columns,
-                    "rows": [[_coerce(v) for v in row] for row in result.rows],
-                    "row_count": result.row_count,
-                    "execution_time_ms": result.execution_time_ms,
-                    "truncated": result.truncated,
-                    "sql": sql,
-                    "connection_id": connection_id,
-                }
+            # Build full result payload for frontend delivery
+            full_result = {
+                "columns": result.columns,
+                "rows": [[_coerce(v) for v in row] for row in result.rows],
+                "row_count": result.row_count,
+                "execution_time_ms": result.execution_time_ms,
+                "truncated": result.truncated,
+                "sql": sql,
+                "connection_id": connection_id,
+            }
 
-                # Store and publish full data to frontend via side-channel
-                result_ref = str(uuid.uuid4())
-                store_query_result(result_ref, context.user_id, full_result)
-                publish_query_result(context.user_id, result_ref, full_result)
+            # Store and publish full data to frontend via side-channel
+            result_ref = str(uuid.uuid4())
+            store_query_result(result_ref, context.user_id, full_result)
+            publish_query_result(context.user_id, result_ref, full_result)
 
-                # Return metadata + first rows so the LLM can format tables
-                preview_rows = [[_coerce(v) for v in row] for row in result.rows[:20]]
-                return {
-                    "columns": result.columns,
-                    "rows": preview_rows,
-                    "row_count": result.row_count,
-                    "execution_time_ms": result.execution_time_ms,
-                    "result_ref": result_ref,
-                    "truncated": result.truncated,
-                }
+            # Return metadata + first rows so the LLM can format tables
+            preview_rows = [[_coerce(v) for v in row] for row in result.rows[:20]]
+            return {
+                "columns": result.columns,
+                "rows": preview_rows,
+                "row_count": result.row_count,
+                "execution_time_ms": result.execution_time_ms,
+                "result_ref": result_ref,
+                "truncated": result.truncated,
+            }
 
         except Exception as e:
             logger.error(f"Query execution failed: {str(e)}")

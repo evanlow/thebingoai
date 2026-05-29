@@ -86,10 +86,21 @@ def dispatch_pipelines():
 
 
 @shared_task(name="run_pipeline_task", time_limit=3600)
-def run_pipeline_task(pipeline_id: str, triggered_by: str, triggered_by_user_id: str | None):
-    """Execute a single pipeline run. Delegates to runner.run_pipeline()."""
+def run_pipeline_task(
+    pipeline_id: str,
+    triggered_by: str,
+    triggered_by_user_id: str | None,
+    backfill_since: str | None = None,
+):
+    """Execute a single pipeline run. Delegates to runner.run_pipeline().
+
+    `backfill_since` (ISO datetime) → "Load history" run: overrides the dlt
+    incremental cursor for this run only, does not advance the schedule.
+    """
     from backend.pipelines.runner import run_pipeline
-    run_id = run_pipeline(pipeline_id, triggered_by, triggered_by_user_id)
+    run_id = run_pipeline(
+        pipeline_id, triggered_by, triggered_by_user_id, backfill_since=backfill_since,
+    )
     if run_id:
         logger.info("Pipeline %s run completed: run_id=%s", pipeline_id, run_id)
     return run_id
