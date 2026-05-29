@@ -419,11 +419,13 @@ def _apply_mysql_t1_schedule(new_pipelines: list[Pipeline], connection, db: Sess
 
     Per the materialize-to-plane design:
       - **Date-column detected** (live-schema introspection) → `mode='incremental'`
-        with a dlt watermark cursor on that column. First run uses an
-        `initial_value` of `today − first_ingest_lookback_days` (start of day,
-        UTC); subsequent runs advance the watermark, pulling only newer rows.
+        with a dlt watermark cursor on that column. **No `initial_value`** is
+        seeded, so the first run pulls all historical data up to and including
+        T-1 (yesterday end). `end_value` is computed at run time in
+        `sql_dlt_source` as the start of today UTC (exclusive) — same-day rows
+        are never ingested when an incremental cursor is configured.
       - **No date column** → `mode='full'` snapshot each run (loads the whole
-        table; no date cap).
+        table; no T-1 cap).
 
     Always sets `cron` + seeds `next_run_at` so the beat dispatcher picks it up.
 
@@ -440,10 +442,21 @@ def _apply_mysql_t1_schedule(new_pipelines: list[Pipeline], connection, db: Sess
     from backend.utils.cron import compute_next_run
 
     cron = getattr(settings, "default_sql_pipeline_cron", "0 2 * * *")
-    lookback_days = getattr(settings, "first_ingest_lookback_days", 1)
-    initial_dt = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+
+    # Lower-bound for first run: T-n, where n = `first_ingest_lookback_days`.
+    #   - N > 0  → first run pulls `[today − N days 00:00 UTC, today 00:00 UTC)`
+    #             (e.g. N=1 → yesterday only; N=7 → last 7 days).
+    #   - N ≤ 0 → no lower bound; first run pulls all history up to T-1.
+    # The upper bound (`end_value = today 00:00 UTC`, exclusive) is always
+    # applied at run time inside `sql_dlt_source` so same-day rows are never
+    # ingested when an incremental cursor is configured.
+    lookback_days = int(getattr(settings, "first_ingest_lookback_days", 0) or 0)
+    if lookback_days > 0:
+        initial_dt = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+    else:
+        initial_dt = None
 
     try:
         connector = get_connector_for_connection(connection)
@@ -493,7 +506,14 @@ def _apply_mysql_t1_schedule(new_pipelines: list[Pipeline], connection, db: Sess
                 p.mode = "incremental"
                 p.incremental_key = date_col
                 new_cfg["incremental_key"] = date_col
-                new_cfg["initial_value"] = initial_dt.isoformat()
+                if initial_dt is not None:
+                    # Seed the first-run lower bound (T-n). dlt persists the
+                    # cursor after run 1, so this value is only consulted once.
+                    new_cfg["initial_value"] = initial_dt.isoformat()
+                else:
+                    # Lookback disabled → first run pulls all history up to
+                    # T-1 (yesterday end), bounded only by `end_value`.
+                    new_cfg.pop("initial_value", None)
             else:
                 p.mode = "full"
                 # Drop any stale incremental hints — full snapshot loads fully.

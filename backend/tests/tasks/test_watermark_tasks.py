@@ -148,12 +148,16 @@ def test_promotes_full_to_incremental_when_llm_finds_cursor(monkeypatch):
         lambda schemas, **kw: {"orders": "event_timestamp"},
     )
 
+    # Force lookback=0 for this test → no `initial_value` should be seeded.
+    from backend.config import settings
+    monkeypatch.setattr(settings, "first_ingest_lookback_days", 0, raising=False)
+
     out = wt.refine_watermarks_task.run(connection_id=42, pipeline_ids=["p1"])
     assert out["updated"] == 1
     assert p.mode == "incremental"
     assert p.incremental_key == "event_timestamp"
     assert p.extraction_config["incremental_key"] == "event_timestamp"
-    assert "initial_value" in p.extraction_config
+    assert "initial_value" not in p.extraction_config
     db.commit.assert_called_once()
 
 

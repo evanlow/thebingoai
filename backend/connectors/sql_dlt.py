@@ -64,24 +64,43 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
 
     if cfg.incremental_key and cfg.tables:
         import dlt
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        initial = None
+        # `end_value` is an EXCLUSIVE upper bound (`cursor < end_value`). Cap
+        # at the start of today UTC so same-day rows are never pulled while
+        # an incremental cursor is configured.
+        #   - First run with `initial_value`: pulls `[initial_value, end_value)`.
+        #   - First run without `initial_value`: pulls `[epoch, end_value)` →
+        #     all history up to and including T-1.
+        #   - Subsequent runs: dlt advances the watermark; pulls
+        #     `(last_max, end_value)` → newly visible rows from prior days only.
+        # dlt requires `initial_value` to be set whenever `end_value` is set,
+        # so when callers didn't supply one we default to an "unbounded lower"
+        # sentinel that's safely before any real source data.
+        end_value = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        unbounded_lower_sentinel = datetime(1900, 1, 1, tzinfo=timezone.utc)
+
+        initial: datetime
         if cfg.initial_value:
             try:
                 initial = datetime.fromisoformat(cfg.initial_value)
             except ValueError:
-                initial = None
+                initial = unbounded_lower_sentinel
+        else:
+            initial = unbounded_lower_sentinel
 
         for table_name in cfg.tables:
             resource = src.resources.get(table_name)
             if resource is None:
                 continue
-            inc_kwargs = {}
-            if initial is not None:
-                inc_kwargs["initial_value"] = initial
             resource.apply_hints(
-                incremental=dlt.sources.incremental(cfg.incremental_key, **inc_kwargs)
+                incremental=dlt.sources.incremental(
+                    cfg.incremental_key,
+                    initial_value=initial,
+                    end_value=end_value,
+                )
             )
 
     return src

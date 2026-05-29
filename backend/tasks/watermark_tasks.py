@@ -108,10 +108,15 @@ def refine_watermarks_task(connection_id: int, pipeline_ids: list[str]) -> dict:
             )
             return {"status": "skipped", "reason": "classifier_failed"}
 
-        lookback_days = getattr(settings, "first_ingest_lookback_days", 1)
-        initial_dt = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).replace(
-            hour=0, minute=0, second=0, microsecond=0,
-        )
+        # Mirror the sync path's T-n lower-bound logic so promotion behaves
+        # consistently regardless of whether the LLM ran sync or async.
+        lookback_days = int(getattr(settings, "first_ingest_lookback_days", 0) or 0)
+        if lookback_days > 0:
+            initial_dt = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            )
+        else:
+            initial_dt = None
 
         updated = 0
         for table, suggested in llm_map.items():
@@ -127,10 +132,12 @@ def refine_watermarks_task(connection_id: int, pipeline_ids: list[str]) -> dict:
                 p.mode = "incremental"
                 p.incremental_key = suggested
                 new_cfg["incremental_key"] = suggested
-                # Only seed initial_value if this pipeline never had one. If
-                # the sync path already set one (deterministic picked a col),
-                # preserve it — otherwise reset to today−N.
-                new_cfg.setdefault("initial_value", initial_dt.isoformat())
+                if initial_dt is not None:
+                    # Seed only if the sync path didn't already (preserve
+                    # whatever lower bound it computed).
+                    new_cfg.setdefault("initial_value", initial_dt.isoformat())
+                else:
+                    new_cfg.pop("initial_value", None)
             else:
                 p.mode = "full"
                 p.incremental_key = None
