@@ -218,11 +218,13 @@ def plane_table_map(connection, db) -> dict[str, str]:
 
     # Enabled pipelines first so that on a source-table collision (two pipelines
     # materializing the same table to different target_tables) the enabled one
-    # wins — `first write wins` below. Collisions are logged, not silent.
+    # wins — `first write wins` below. `Pipeline.id` is a deterministic
+    # tiebreaker so two *enabled* conflicting pipelines resolve to a stable
+    # winner run-to-run (rather than DB row order). Collisions are logged.
     mapping: dict[str, str] = {}
     for p in db.query(Pipeline).filter(
         Pipeline.source_connection_id == connection.id,
-    ).order_by(Pipeline.enabled.desc()).all():
+    ).order_by(Pipeline.enabled.desc(), Pipeline.id).all():
         tables = (p.extraction_config or {}).get("tables") or []
         if len(tables) == 1 and p.target_table:
             key = str(tables[0]).lower()
