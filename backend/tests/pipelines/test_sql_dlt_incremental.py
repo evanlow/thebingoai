@@ -109,3 +109,30 @@ def test_unknown_table_in_incremental_keys_is_skipped(_stub_dlt):
         {"tables": ["events"], "incremental_keys": {"ghost_table": "updated_at"}},
     )
     assert _stub_dlt == {}
+
+
+def test_end_value_threaded_to_incremental(_stub_dlt):
+    """`end_value` from extraction_config flows to dlt.sources.incremental."""
+    from backend.connectors.sql_dlt import sql_dlt_source
+    cutoff = datetime(2026, 5, 28, 14, 32, tzinfo=timezone.utc)
+    sql_dlt_source(
+        "postgresql", _conn(),
+        {
+            "tables": ["events"],
+            "incremental_keys": {"events": "updated_at"},
+            "end_value": cutoff,
+        },
+    )
+    inc = _stub_dlt["events"]["incremental"]
+    assert inc.kwargs.get("end_value") == cutoff
+
+
+def test_end_value_optional_defaults_to_none(_stub_dlt):
+    """Omitting `end_value` passes None to dlt (no upper bound)."""
+    from backend.connectors.sql_dlt import sql_dlt_source
+    sql_dlt_source(
+        "postgresql", _conn(),
+        {"tables": ["events"], "incremental_keys": {"events": "updated_at"}},
+    )
+    inc = _stub_dlt["events"]["incremental"]
+    assert inc.kwargs.get("end_value") is None

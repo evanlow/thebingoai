@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 logger = logging.getLogger(__name__)
@@ -139,6 +139,14 @@ def run_pipeline(
                     if src_tables:
                         extraction_config.setdefault("incremental_keys", {})[src_tables[0]] = (
                             pipeline.incremental_key
+                        )
+                    # T-1 rule: Postgres incremental pipelines cap the cursor
+                    # at `utcnow() - 1 day` (exclusive). Today's rows are
+                    # excluded until they age past 24h; next run picks them
+                    # up. MySQL unchanged.
+                    if (connection.db_type or "").lower() == "postgres":
+                        extraction_config["end_value"] = (
+                            datetime.now(timezone.utc) - timedelta(days=1)
                         )
                 if backfill_since is not None:
                     extraction_config["backfill_since"] = backfill_since

@@ -8,7 +8,10 @@ Incremental extracts: when `extraction_config.incremental_keys` is set, the
 matching table resource gets a `dlt.sources.incremental` cursor applied via
 `apply_hints`, so dlt extracts only rows where `cursor_col > last_seen_value`
 (persisted in `dlt_pipeline_states`). An optional `backfill_since` floors the
-initial cursor value for first-ingest / "Load history" runs.
+initial cursor value for first-ingest / "Load history" runs. An optional
+`end_value` caps the cursor with an exclusive upper bound (`cursor < end_value`);
+the runner sets this to `utcnow() - 1 day` for Postgres incremental pipelines
+to enforce the T-1 rule (today's rows excluded until they age past 24h).
 """
 from __future__ import annotations
 
@@ -32,6 +35,11 @@ class SqlExtractionConfig(BaseModel):
     # to every resource with an `incremental_keys` entry. Subsequent cron runs
     # ignore this — dlt's persisted state takes precedence.
     backfill_since: Optional[datetime] = None
+    # Exclusive upper bound on the cursor (`cursor < end_value`). Set by the
+    # runner for Postgres incremental pipelines as `utcnow() - 1 day` to
+    # enforce the T-1 rule. Applies to every resource with an
+    # `incremental_keys` entry on every run (cron + manual backfill).
+    end_value: Optional[datetime] = None
 
 
 def build_sqlalchemy_url(drivername: str, connection) -> str:
@@ -79,6 +87,7 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
                     incremental=dlt.sources.incremental(
                         cursor_col,
                         initial_value=cfg.backfill_since,
+                        end_value=cfg.end_value,
                     ),
                 )
             except Exception:
