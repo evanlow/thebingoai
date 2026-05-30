@@ -4,12 +4,13 @@ Three public entry points, sharing one deterministic ranker and one batched
 LLM call. Use the one that matches the context you have:
 
   * **`classify_table(columns)`** — deterministic ranked matcher. No I/O, no
-    LLM, never raises. Scores candidates by (a) type tier (timestamptz >
-    timestamp > datetime > date > integer) and (b) name-token rank
-    (`updated_*` > `created_*` > event/business dates > `*_at`/`*_ts` …),
-    rejecting columns that are neither temporal nor named like a watermark.
-    Returns None when no candidate qualifies → caller falls back to a full
-    snapshot. Used by the materializer's sync (connect-time) path.
+    LLM, never raises. Temporal-typed columns always outrank name-only
+    candidates; within the temporal group it prefers conventional names
+    (`updated_*` > `created_*` > event/business dates > `*_at`/`*_ts` …), then
+    the finer type tier (timestamptz > timestamp > date). Rejects columns that
+    are neither temporal nor named like a watermark; returns None when no
+    candidate qualifies → caller falls back to a full snapshot. Used by the
+    materializer's sync (connect-time) path.
 
   * **`classify_connection(tables, *, provider, model)`** — LLM-first batched.
     One structured-output call per connection across all tables, env-driven
@@ -91,7 +92,8 @@ def _deterministic_pick(columns: list[dict]) -> Optional[str]:
     name tier. This filters out unrelated string / numeric columns that
     happen to be named `*_id`, etc.
     """
-    best: Optional[tuple[int, int, int, str]] = None  # (type_tier, name_tier, source_order, name)
+    # key = (temporal_group, name_tier, type_tier, source_order, name)
+    best: Optional[tuple[int, int, int, int, str]] = None
     for idx, col in enumerate(columns or []):
         name = col.get("name") or ""
         if not name:
@@ -102,10 +104,16 @@ def _deterministic_pick(columns: list[dict]) -> Optional[str]:
         # Reject columns that are neither temporal nor named like a watermark.
         if t_tier >= len(_TYPE_TIERS) - 1 and n_tier >= len(_NAME_TIERS) + len(_NAME_SUFFIX_TIERS):
             continue
-        key = (t_tier, n_tier, idx, name)
+        # Temporal-typed columns always outrank name-only candidates (a varchar
+        # named `*_at` must never beat a real timestamp). Within the temporal
+        # group, prefer conventional names (updated_at > created_at > event
+        # dates), then the finer type tier (timestamptz > timestamp > date),
+        # then source order.
+        is_temporal = t_tier < len(_TYPE_TIERS) - 1
+        key = (0 if is_temporal else 1, n_tier, t_tier, idx, name)
         if best is None or key < best:
             best = key
-    return best[3] if best else None
+    return best[4] if best else None
 
 
 def classify_table(columns: list[dict]) -> Optional[str]:
