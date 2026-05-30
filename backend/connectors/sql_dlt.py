@@ -4,18 +4,13 @@ Builds a `dlt.sources.sql_database` source from a `DatabaseConnection`.
 Per-connector modules expose `dlt_source_for(connection, extraction_config)`
 that delegates here with the right SQLAlchemy URL drivername.
 
-Incremental extracts: when `extraction_config.incremental_keys` is set, the
-matching table resource gets a `dlt.sources.incremental` cursor applied via
-`apply_hints`, so dlt extracts only rows where `cursor_col > last_seen_value`
-(persisted in `dlt_pipeline_states`). An optional `backfill_since` floors the
-initial cursor value for first-ingest / "Load history" runs. An optional
-`end_value` caps the cursor with an exclusive upper bound (`cursor < end_value`);
-the runner sets this to `utcnow() - 1 day` for Postgres incremental pipelines
-to enforce the T-1 rule (today's rows excluded until they age past 24h).
+When `incremental_key` is set in the extraction config, the source advances a
+dlt watermark cursor on that column. The first run uses `initial_value` as the
+lower bound; subsequent runs persist + advance the cursor through dlt state,
+so each run only reads rows newer than the last seen watermark.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel
@@ -24,22 +19,16 @@ from pydantic import BaseModel
 class SqlExtractionConfig(BaseModel):
     """Optional pipeline-level filters for SQL ingestion."""
 
-    tables: Optional[list[str]] = None  # None → all tables in schema
-    schema: Optional[str] = None         # None → connector default
-    # `target_table` -> cursor column. Populated by `runner.run_pipeline` from
-    # `Pipeline.incremental_key` when mode='incremental'. Keyed by target table
-    # (the dlt resource name) so a single source can drive multiple tables with
-    # distinct cursors.
-    incremental_keys: Optional[dict[str, str]] = None
-    # Initial cursor value for the first-ingest / manual-backfill run. Applies
-    # to every resource with an `incremental_keys` entry. Subsequent cron runs
-    # ignore this — dlt's persisted state takes precedence.
-    backfill_since: Optional[datetime] = None
-    # Exclusive upper bound on the cursor (`cursor < end_value`). Set by the
-    # runner for Postgres incremental pipelines as `utcnow() - 1 day` to
-    # enforce the T-1 rule. Applies to every resource with an
-    # `incremental_keys` entry on every run (cron + manual backfill).
-    end_value: Optional[datetime] = None
+    tables: Optional[list[str]] = None   # None → all tables in schema
+    schema: Optional[str] = None          # None → connector default
+    # dlt incremental cursor configuration. When `incremental_key` is set, the
+    # resource for the matching table(s) gets `apply_hints(incremental=...)` so
+    # dlt tracks a watermark and only pulls newer rows on subsequent runs.
+    incremental_key: Optional[str] = None
+    initial_value: Optional[str] = None   # ISO datetime/date string (first-run lower bound)
+    # Exclusive upper-bound cutoff, in whole days back from the start of today
+    # UTC. 1 = T-1 (exclude same-day partials), 2 = T-2, 0 = include today.
+    cutoff_days: int = 1
 
 
 def build_sqlalchemy_url(drivername: str, connection) -> str:
@@ -57,8 +46,12 @@ def build_sqlalchemy_url(drivername: str, connection) -> str:
 
 
 def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict] = None):
-    """Return a dlt source pulling from the given SQL `connection`."""
-    import dlt
+    """Return a dlt source pulling from the given SQL `connection`.
+
+    Applies a dlt incremental cursor on `incremental_key` (with optional
+    `initial_value` first-run lower bound) when configured; otherwise returns
+    a plain full-table source.
+    """
     from dlt.sources.sql_database import sql_database
 
     cfg = SqlExtractionConfig(**(extraction_config or {}))
@@ -70,37 +63,52 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
     if cfg.tables:
         kwargs["table_names"] = cfg.tables
 
-    source = sql_database(**kwargs)
+    src = sql_database(**kwargs)
 
-    if cfg.incremental_keys:
-        # Apply a per-resource incremental cursor. dlt names the resource after
-        # the source table name (the dict key matches `Pipeline.target_table`,
-        # which `_build_sql_pipeline_templates` derives from the source table —
-        # so the keys here should match the dlt resource names emitted by
-        # `sql_database`).
-        # dlt's `sources.incremental` rejects `end_value` without `initial_value`.
-        # For cron / "Sync now" runs no `backfill_since` is supplied; fall back to
-        # an epoch sentinel so dlt's persisted `last_value` (loaded from state on
-        # every subsequent run) is the one that actually drives the cursor.
-        initial_value = cfg.backfill_since
-        if initial_value is None and cfg.end_value is not None:
-            initial_value = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    if cfg.incremental_key and cfg.tables:
+        import dlt
+        from datetime import datetime, timedelta, timezone
 
-        for table, cursor_col in cfg.incremental_keys.items():
+        # `end_value` is an EXCLUSIVE upper bound (`cursor < end_value`). Cap
+        # at the start of today UTC, shifted back `cutoff_days - 1` whole days,
+        # so same-day (and optionally older) rows are never pulled while an
+        # incremental cursor is configured. `cutoff_days` defaults to 1 (T-1).
+        #   - First run with `initial_value`: pulls `[initial_value, end_value)`.
+        #   - First run without `initial_value`: pulls `[epoch, end_value)` →
+        #     all history up to the cutoff.
+        #   - Subsequent runs: dlt advances the watermark; pulls
+        #     `(last_max, end_value)` → newly visible rows from prior days only.
+        # dlt requires `initial_value` to be set whenever `end_value` is set,
+        # so when callers didn't supply one we default to an "unbounded lower"
+        # sentinel that's safely before any real source data.
+        end_value = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        ) - timedelta(days=max(0, cfg.cutoff_days) - 1)
+        unbounded_lower_sentinel = datetime(1900, 1, 1, tzinfo=timezone.utc)
+
+        initial: datetime
+        if cfg.initial_value:
             try:
-                resource = source.resources.get(table)
-                if resource is None:
-                    continue
-                resource.apply_hints(
-                    incremental=dlt.sources.incremental(
-                        cursor_col,
-                        initial_value=initial_value,
-                        end_value=cfg.end_value,
-                    ),
-                )
-            except Exception:
-                # apply_hints failures shouldn't break the run — dlt will fall
-                # back to a full extract for this resource.
-                continue
+                initial = datetime.fromisoformat(cfg.initial_value)
+                # Coerce naive → aware UTC: `end_value` is aware, and dlt's
+                # cursor raises TypeError when comparing aware vs naive.
+                if initial.tzinfo is None:
+                    initial = initial.replace(tzinfo=timezone.utc)
+            except ValueError:
+                initial = unbounded_lower_sentinel
+        else:
+            initial = unbounded_lower_sentinel
 
-    return source
+        for table_name in cfg.tables:
+            resource = src.resources.get(table_name)
+            if resource is None:
+                continue
+            resource.apply_hints(
+                incremental=dlt.sources.incremental(
+                    cfg.incremental_key,
+                    initial_value=initial,
+                    end_value=end_value,
+                )
+            )
+
+    return src

@@ -1,5 +1,5 @@
 from langchain_core.tools import tool
-from typing import List, Dict, Any, Callable
+from typing import List, Dict, Any, Callable, Optional
 from decimal import Decimal
 from datetime import date, datetime
 from uuid import UUID
@@ -16,42 +16,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _maybe_serve_chat_from_plane(connection, sql: str, db):
-    """Try to serve a chat data-agent query from the connection's DataPlane.
-
-    Returns a `QueryResult`-shaped object on success, or `None` to fall back
-    to the live connector. The shape matches what `connector.execute_query`
-    returns so the caller can use the result uniformly.
-
-    Plane redirect applies only to postgres / mysql today — other connectors
-    either have their own materialization (notion, GA4) or run live against
-    object storage already (CSV).
-
-    Bootstrap policy: when no pipeline has completed its first ingest, return
-    None so the caller falls back to source. Once a pipeline reports
-    `first_ingest_done=True`, future cold-plane reads should still fall back
-    (chat is best-effort) — but consistently routing to the plane when data
-    exists shifts read load off the source DB.
-    """
-    db_type = (getattr(connection, "db_type", "") or "").lower()
-    if db_type not in ("postgres", "postgresql", "mysql"):
-        return None
-    try:
-        from backend.utils.sql_refs import extract_table_refs, transpile_to_engine
-        from backend.services.data_plane_service import get_plane_for_connection
-        tables = extract_table_refs(sql)
-        if not tables:
-            return None
-        plane, scope = get_plane_for_connection(connection)
-        if not all(plane.table_exists(scope, t) for t in tables):
-            return None
-        duck_sql = transpile_to_engine(sql, src=db_type, dst="duckdb")
-        return plane.query(scope, duck_sql)
-    except Exception:
-        logger.debug("chat plane redirect failed; falling back to source", exc_info=True)
-        return None
-
-
 def _coerce(value: Any) -> Any:
     if isinstance(value, Decimal):
         return float(value)
@@ -62,6 +26,90 @@ def _coerce(value: Any) -> Any:
     if isinstance(value, (bytes, bytearray)):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _serve_query_via_dataplane(connection, sql: str, db) -> Optional[Any]:
+    """Route an ad-hoc chat SQL query through the DataPlane when ready.
+
+    Mirrors the dashboard widget plane-serve path (`api/widget_data.py`):
+    rewrite source table refs → plane targets, then run via DuckDB over the
+    plane (local Parquet in dev, GCS httpfs in prod). Returns a QueryResult on
+    success, or None to fall back to live source (bootstrap policy: cold/missing
+    Parquet, residency-locked plane, or any error → source-DB).
+    """
+    org_id = getattr(connection, "org_id", None)
+    if not org_id:
+        return None
+
+    from backend.config.feature_flags import enabled
+    if not enabled(str(org_id), "duckdb_widget_serving"):
+        return None
+
+    from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
+    from backend.services.data_plane_service import (
+        get_gcs_duckdb_reader,
+        get_plane_for_connection,
+        plane_table_map,
+    )
+    from backend.utils.sql_refs import extract_table_refs, rewrite_table_refs
+
+    table_map = plane_table_map(connection, db)
+    if not table_map:
+        return None  # no pipelines → bootstrap → live source
+
+    # Agent generates SQL in the source dialect (its prompts use the source-DB
+    # schema). Plane storage is Parquet served by DuckDB, so transpile first.
+    # No-op when db_type == "duckdb" or absent. Failure → fall back to source.
+    from backend.utils.sql_refs import (
+        UntranspilableSQLError,
+        transpile_to_engine,
+    )
+
+    db_type = (getattr(connection, "db_type", "") or "").lower()
+    transpiled = sql
+    if db_type and db_type != "duckdb":
+        try:
+            transpiled = transpile_to_engine(sql, source=db_type, target="duckdb")
+        except UntranspilableSQLError:
+            return None
+        except Exception:
+            return None
+
+    try:
+        base_sql, _ = rewrite_table_refs(transpiled, table_map)
+    except Exception:
+        return None  # unparseable post-transpile SQL → live source
+
+    plane, scope = get_plane_for_connection(connection)
+
+    if isinstance(plane, LocalFilesystemDataPlane):
+        try:
+            tables = extract_table_refs(base_sql)
+        except Exception:
+            return None
+        if not tables or not all(plane.table_exists(scope, t) for t in tables):
+            return None  # cold/missing plane data → live source
+        try:
+            return plane.query(scope, base_sql)
+        except Exception as e:
+            logger.warning("Local plane chat serve failed (%s) — falling back", e)
+            return None
+
+    reader = None
+    try:
+        reader = get_gcs_duckdb_reader(scope, db)
+        if reader is None:
+            return None  # residency-locked / customer / no-HMAC → live source
+        return reader.query(scope, base_sql)
+    except Exception as e:
+        logger.warning("DuckDB-over-GCS chat serve failed (%s) — falling back", e)
+        return None
+    finally:
+        if reader is not None:
+            try:
+                reader.close()
+            except Exception:
+                pass
 
 
 def build_data_agent_tools(context: AgentContext) -> List[Callable]:
@@ -208,15 +256,12 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
             if not connection:
                 return {"error": "Connection not found"}
 
-            # Pg/mysql plane redirect: if every referenced table has Parquet
-            # on the connection's DataPlane, transpile to DuckDB and serve
-            # from the plane. Falls back to the live connector when the
-            # plane has no rows yet (bootstrap window) or the lookup fails.
-            served_from_plane = False
-            result = _maybe_serve_chat_from_plane(connection, sql, db)
-            if result is not None:
-                served_from_plane = True
-            else:
+            # Plane redirect (flag-gated, per-Org). When the connection's
+            # tables are materialized to the plane and `duckdb_widget_serving`
+            # is on, run the query via DuckDB-over-DataPlane (Parquet) instead
+            # of hammering the source DB. Cold/missing data → fall through.
+            result = _serve_query_via_dataplane(connection, sql, db)
+            if result is None:
                 with get_connector_for_connection(connection) as connector:
                     result = connector.execute_query(sql)
 
@@ -229,7 +274,6 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                 "truncated": result.truncated,
                 "sql": sql,
                 "connection_id": connection_id,
-                "served_from": "data_plane" if served_from_plane else "source",
             }
 
             # Store and publish full data to frontend via side-channel
@@ -246,7 +290,6 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                 "execution_time_ms": result.execution_time_ms,
                 "result_ref": result_ref,
                 "truncated": result.truncated,
-                "served_from": "data_plane" if served_from_plane else "source",
             }
 
         except Exception as e:

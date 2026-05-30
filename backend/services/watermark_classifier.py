@@ -1,39 +1,45 @@
-"""Resolve the best incremental-cursor column for each table on a connection.
+"""Watermark column classifier — picks an incremental cursor column per table.
 
-Used by `services.template_materializer._build_sql_pipeline_templates` (and
-the override / re-detect endpoints in Phase 3) to decide which column drives
-dlt's `sources.incremental` for postgres / mysql tables.
+Three public entry points, sharing one deterministic ranker and one batched
+LLM call. Use the one that matches the context you have:
 
-Two layers:
+  * **`classify_table(columns)`** — deterministic ranked matcher. No I/O, no
+    LLM, never raises. Scores candidates by (a) type tier (timestamptz >
+    timestamp > datetime > date > integer) and (b) name-token rank
+    (`updated_*` > `created_*` > event/business dates > `*_at`/`*_ts` …),
+    rejecting columns that are neither temporal nor named like a watermark.
+    Returns None when no candidate qualifies → caller falls back to a full
+    snapshot. Used by the materializer's sync (connect-time) path.
 
-1. **Deterministic ranked matcher** — always runs. Scores every candidate
-   column by (a) type tier (timestamptz > timestamp > date > integer) and
-   (b) name-token rank (`updated_*` > `modified_*` > `created_*` >
-   `inserted_*` > `*_at` > `*_ts`). Falls back to None when no candidate
-   clears the minimum bar.
+  * **`classify_connection(tables, *, provider, model)`** — LLM-first batched.
+    One structured-output call per connection across all tables, env-driven
+    (``WATERMARK_CLASSIFIER_PROVIDER`` + ``WATERMARK_CLASSIFIER_MODEL``); empty
+    defaults → deterministic-only (no LLM call). Per-table fallback to
+    `classify_table` on error / unparseable response / low confidence. Never
+    raises. Used by the async refinement task (`tasks/watermark_tasks.py`).
 
-2. **LLM batched classifier** — opt-in via `settings.watermark_classifier_model`.
-   One structured-output call per connection with `{table: [columns]}` →
-   `{table: {column, confidence}}`. On HTTP error / low confidence we return
-   the deterministic pick for that table.
+  * **`resolve_watermark(reg, connector, tables, columns_by_table)`** —
+    connector-aware. Per table: (1) source-side native partition key
+    (postgres / mysql), (2) the batched LLM-or-deterministic pick from
+    `classify_connection`. Used by the materializer's main path and the
+    `/redetect-watermark` endpoint, which have an open connector.
 
-Public API:
-
-    resolve_watermark(reg, connector, tables, columns_by_table)
-        -> dict[str, str | None]
-
-`reg` is the connector's `ConnectorRegistration` (used for type-specific
-helpers — postgres `detect_partition_key`, mysql ditto); `connector` is an
-open connector instance; `tables` is the list of source tables;
+`reg` is the connector's `ConnectorRegistration` (used for the type-specific
+partition-key helper); `connector` is an open connector instance;
 `columns_by_table` is `{table: [{name, type, primary_key?}, ...]}`.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import re
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
+# ── Deterministic ranked matcher ─────────────────────────────────────────────
 
 # Type / name tiers. Earlier in the tuple = higher rank.
 _TYPE_TIERS: tuple[tuple[str, ...], ...] = (
@@ -48,8 +54,10 @@ _TYPE_TIERS: tuple[tuple[str, ...], ...] = (
 
 _NAME_TIERS: tuple[tuple[str, ...], ...] = (
     ("updated_at", "updated_on", "modified_at", "modified_on", "last_modified"),
-    ("created_at", "created_on", "inserted_at", "ingested_at", "event_time"),
-    ("event_date", "event_ts", "occurred_at", "happened_at"),
+    ("created_at", "created_on", "inserted_at", "ingested_at", "event_time", "event_timestamp"),
+    ("event_date", "event_ts", "occurred_at", "happened_at", "transaction_time", "order_date"),
+    # Bare conventional names (low priority — generic).
+    ("ts", "timestamp", "dt", "datetime"),
     # Suffix matches handled separately below.
 )
 
@@ -80,8 +88,8 @@ def _deterministic_pick(columns: list[dict]) -> Optional[str]:
 
     A candidate must score within the temporal type tiers (index <
     len(_TYPE_TIERS) - 1, i.e. NOT the integer-only fallback) OR match a
-    high-priority name tier. This filters out unrelated string / numeric
-    columns that happen to be named `*_id`, etc.
+    name tier. This filters out unrelated string / numeric columns that
+    happen to be named `*_id`, etc.
     """
     best: Optional[tuple[int, int, int, str]] = None  # (type_tier, name_tier, source_order, name)
     for idx, col in enumerate(columns or []):
@@ -100,7 +108,14 @@ def _deterministic_pick(columns: list[dict]) -> Optional[str]:
     return best[3] if best else None
 
 
-def _connector_partition_key(reg, connector, table: str) -> Optional[str]:
+def classify_table(columns: list[dict]) -> Optional[str]:
+    """Deterministic per-table classifier. None → table has no usable cursor."""
+    return _deterministic_pick(columns)
+
+
+# ── Source-side partition key ────────────────────────────────────────────────
+
+def _connector_partition_key(reg: Any, connector: Any, table: str) -> Optional[str]:
     """Source-side partition-key helper (postgres / mysql native partitions)."""
     type_id = (getattr(reg, "type_id", "") or "").lower()
     try:
@@ -115,66 +130,160 @@ def _connector_partition_key(reg, connector, table: str) -> Optional[str]:
     return None
 
 
-def _llm_classify(
-    tables: list[str],
-    columns_by_table: dict[str, list[dict]],
-    model: str,
-    provider: str,
-) -> dict[str, Optional[str]]:
-    """Batched single-call LLM watermark classifier. Returns {} on any error."""
-    try:
-        from backend.llm.factory import get_provider
-    except Exception:
-        logger.debug("LLM factory unavailable; skipping watermark classifier", exc_info=True)
-        return {}
+# ── Batched LLM classifier ───────────────────────────────────────────────────
 
-    # Compact JSON payload — column names + types only.
-    schema = {
-        t: [{"name": c.get("name"), "type": c.get("type")} for c in (columns_by_table.get(t) or [])]
-        for t in tables
+_SYSTEM_PROMPT = (
+    "You are a data-engineering assistant. For each table you must pick the "
+    "single best column to use as an incremental ingestion watermark (the "
+    "column that monotonically advances as rows are inserted or updated, so a "
+    "pipeline can pull only new/changed rows on each run). Prefer "
+    "last-modified timestamps over creation timestamps; prefer creation "
+    "timestamps over event/business dates; only pick a numeric ID column if "
+    "no date/time column exists and the ID is clearly monotonic. Return null "
+    "for a table when no column is a safe watermark."
+)
+
+_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _build_user_prompt(tables: dict[str, list[dict]]) -> str:
+    """Render the per-connection table schema as a compact JSON payload."""
+    payload = {
+        "tables": [
+            {
+                "name": table,
+                "columns": [
+                    {"name": c.get("name"), "type": c.get("type")}
+                    for c in cols
+                ],
+            }
+            for table, cols in tables.items()
+        ]
     }
-
-    system = (
-        "You pick the best column for incremental data ingestion. The cursor "
-        "column must (a) monotonically increase as new rows arrive and "
-        "(b) be a timestamp, date, or auto-increment id. Prefer 'updated_at' "
-        "> 'modified_at' > 'created_at' > integer surrogate ids. Output "
-        "STRICT JSON: {\"picks\": [{\"table\": \"name\", \"column\": \"col\", "
-        "\"confidence\": 0.0-1.0}, ...]}. Use null for `column` when no "
-        "suitable cursor exists. Set confidence < 0.6 when uncertain."
+    return (
+        "Pick one watermark column per table. Respond with **only** a JSON "
+        "object of the form "
+        '{"results": [{"table": "<name>", "column": "<col_or_null>", '
+        '"confidence": "high|medium|low"}, ...]}. '
+        "No prose, no markdown fences.\n\n"
+        f"Schema:\n{json.dumps(payload, indent=2)}"
     )
-    import json as _json
-    user = "Tables:\n" + _json.dumps(schema, indent=2, default=str)
 
-    try:
-        provider_obj = get_provider(provider or None)
-        resp = provider_obj.chat(  # type: ignore[attr-defined]
-            messages=[{"role": "user", "content": user}],
-            system=system,
-            model=model or None,
-            response_format={"type": "json_object"},
-        )
-    except Exception:
-        logger.warning("Watermark LLM call failed; falling back to deterministic", exc_info=True)
+
+def _is_low_confidence(conf: Any) -> bool:
+    """Confidence may be a string ('high|medium|low') or a float (0.0-1.0)."""
+    if isinstance(conf, str):
+        return conf.lower() == "low"
+    if isinstance(conf, (int, float)):
+        return conf < 0.6
+    return False  # unknown → trust the column
+
+
+def _parse_llm_response(text: str) -> dict[str, dict]:
+    """Pull the JSON object out of the LLM response, tolerating fence noise.
+
+    Accepts both the ``{"results": [...]}`` and ``{"picks": [...]}`` envelopes.
+    Returns ``{table_name: {"column": str|None, "confidence": Any}}``. Empty
+    dict on parse failure — caller falls back to deterministic per-table.
+    """
+    if not text:
         return {}
-
-    try:
-        parsed = _json.loads(resp if isinstance(resp, str) else (resp.get("content") or "{}"))
-        picks = parsed.get("picks") or []
-    except Exception:
-        logger.warning("Watermark LLM returned unparseable JSON; falling back", exc_info=True)
+    match = _JSON_RE.search(text)
+    if not match:
         return {}
-
-    result: dict[str, Optional[str]] = {}
-    for entry in picks:
+    try:
+        obj = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return {}
+    out: dict[str, dict] = {}
+    for entry in (obj.get("results") or obj.get("picks") or []):
         if not isinstance(entry, dict):
             continue
-        tbl = entry.get("table")
+        name = entry.get("table")
+        if not name:
+            continue
+        out[name] = {
+            "column": entry.get("column"),
+            "confidence": entry.get("confidence"),
+        }
+    return out
+
+
+async def _call_llm(prompt: str, provider_name: str, model: str) -> str:
+    """Run a single chat call. Caller wraps any exception."""
+    from backend.llm.factory import get_provider
+
+    provider = get_provider(provider_name, model=model)
+    return await provider.chat(
+        messages=[
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.0,
+        max_tokens=2000,
+    )
+
+
+def classify_connection(
+    tables: dict[str, list[dict]],
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> dict[str, Optional[str]]:
+    """Classify watermarks for every table on a connection in one batched call.
+
+    Args:
+      tables: mapping ``{table_name: [{"name": str, "type": str, ...}, ...]}``.
+      provider: optional override; falls back to ``WATERMARK_CLASSIFIER_PROVIDER``
+        env. Empty/None disables LLM and returns deterministic results.
+      model: optional override; falls back to ``WATERMARK_CLASSIFIER_MODEL``.
+
+    Returns: ``{table_name: column_name | None}``. Per-table fallback to the
+    deterministic matcher when the LLM call fails, response is unparseable, or
+    confidence for that table is "low".
+    """
+    deterministic = {t: classify_table(cols) for t, cols in tables.items()}
+
+    if not tables:
+        return deterministic
+
+    from backend.config import settings
+
+    provider = provider or getattr(settings, "watermark_classifier_provider", "") or ""
+    model = model or getattr(settings, "watermark_classifier_model", "") or ""
+    if not provider or not model:
+        return deterministic
+
+    try:
+        raw = asyncio.run(_call_llm(_build_user_prompt(tables), provider, model))
+    except Exception as exc:
+        logger.warning(
+            "watermark_classifier: LLM call failed (%s) — using deterministic fallback",
+            exc,
+        )
+        return deterministic
+
+    parsed = _parse_llm_response(raw)
+    if not parsed:
+        logger.warning(
+            "watermark_classifier: unparseable LLM response — using deterministic fallback"
+        )
+        return deterministic
+
+    final: dict[str, Optional[str]] = {}
+    for table, cols in tables.items():
+        entry = parsed.get(table)
+        if not entry or _is_low_confidence(entry.get("confidence")):
+            final[table] = deterministic[table]
+            continue
         col = entry.get("column")
-        conf = entry.get("confidence") or 0.0
-        if tbl in tables and isinstance(conf, (int, float)) and conf >= 0.6:
-            result[tbl] = col if isinstance(col, str) else None
-    return result
+        valid_names = {c.get("name") for c in cols}
+        if col in valid_names:
+            final[table] = col
+        else:
+            # Hallucinated column → fall back to deterministic for this table.
+            final[table] = deterministic[table]
+    return final
 
 
 def resolve_watermark(
@@ -183,38 +292,26 @@ def resolve_watermark(
     tables: list[str],
     columns_by_table: dict[str, list[dict]],
 ) -> dict[str, Optional[str]]:
-    """Return `{table: cursor_col | None}` for each table.
+    """Return `{table: cursor_col | None}` for each table (connector-aware).
 
     Priority per table:
-      1. Source-side native partition key (postgres / mysql).
-      2. LLM pick if `settings.watermark_classifier_model` is set AND the LLM
-         returns a high-confidence column.
-      3. Deterministic ranked matcher.
+      1. Source-side native partition key (postgres / mysql) — cheap and
+         authoritative.
+      2. The batched LLM-or-deterministic pick from `classify_connection`
+         (LLM when configured, deterministic matcher otherwise / on fallback).
     """
-    from backend.config import settings
-
     out: dict[str, Optional[str]] = {}
 
-    # Step 1: native partition keys (cheap and authoritative — keep these).
+    # Step 1: native partition keys.
     for t in tables:
         out[t] = _connector_partition_key(reg, connector, t)
 
-    # Step 2: LLM batched pick for everything still unresolved.
+    # Step 2: classify everything still unresolved (LLM-first, deterministic
+    # fallback already baked into classify_connection).
     unresolved = [t for t, v in out.items() if v is None]
-    if unresolved and settings.watermark_classifier_model:
-        llm = _llm_classify(
-            unresolved,
-            {t: columns_by_table.get(t) or [] for t in unresolved},
-            settings.watermark_classifier_model,
-            settings.watermark_classifier_provider,
-        )
-        for t, col in llm.items():
-            if col:
-                out[t] = col
-
-    # Step 3: deterministic fallback for anything the LLM skipped.
-    for t in tables:
-        if out.get(t) is None:
-            out[t] = _deterministic_pick(columns_by_table.get(t) or [])
+    if unresolved:
+        picks = classify_connection({t: columns_by_table.get(t) or [] for t in unresolved})
+        for t, col in picks.items():
+            out[t] = col
 
     return out

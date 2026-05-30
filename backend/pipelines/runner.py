@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Literal
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def run_pipeline(
     pipeline_id: str,
     triggered_by: Literal["cron", "manual", "api", "bootstrap", "manual-backfill"],
     triggered_by_user_id: str | None = None,
-    backfill_since: datetime | None = None,
+    backfill_since: str | None = None,
 ) -> str:
     """Execute a Pipeline; return the new pipeline_run_id.
 
@@ -39,6 +39,12 @@ def run_pipeline(
     9. Publish pipeline.run.failed event if failed.
     10. Chain profile_pipeline_output Celery task on success.
     11. Release lock.
+
+    `backfill_since` (ISO datetime string) is the "Load history" entry point:
+    overrides `extraction_config["initial_value"]` for this run only, and uses
+    an ephemeral dlt `pipeline_name` so the persisted incremental cursor is
+    bypassed (fresh state → `initial_value` is honored). The canonical pipeline
+    state row is left untouched; merge dedup via `unique_key` handles overlap.
     """
     import uuid
     import redis as syncredis
@@ -124,32 +130,24 @@ def run_pipeline(
                     connector_cls.pre_run(connection)
 
                 # Build dlt source. Inject the per-pipeline incremental cursor
-                # + optional backfill window into extraction_config so SQL
-                # connectors (postgres / mysql) can hand it to dlt's
+                # column + cutoff window into extraction_config so SQL
+                # connectors (postgres / mysql) hand them to dlt's
                 # `sources.incremental` for true incremental extracts. Other
                 # connectors (CSV, notion, GA4, …) ignore unknown keys.
+                #
+                # For a backfill ("Load history") run, override `initial_value`
+                # so the cursor pulls from `backfill_since` forward instead of
+                # the last persisted watermark. A no-op for full-snapshot
+                # pipelines.
                 extraction_config = dict(pipeline.extraction_config or {})
                 if pipeline.mode == "incremental" and pipeline.incremental_key:
-                    # SQL source resources are named by the source table (see
-                    # `_build_sql_pipeline_templates` — `extraction_config.tables`
-                    # carries the source name; `target_table` is the prefixed
-                    # plane-side name). Key the cursor by the source table so
-                    # `sql_dlt_source` can match dlt's `resources.get(name)`.
-                    src_tables = extraction_config.get("tables") or []
-                    if src_tables:
-                        extraction_config.setdefault("incremental_keys", {})[src_tables[0]] = (
-                            pipeline.incremental_key
-                        )
-                    # T-1 rule: Postgres incremental pipelines cap the cursor
-                    # at `utcnow() - 1 day` (exclusive). Today's rows are
-                    # excluded until they age past 24h; next run picks them
-                    # up. MySQL unchanged.
-                    if (connection.db_type or "").lower() == "postgres":
-                        extraction_config["end_value"] = (
-                            datetime.now(timezone.utc) - timedelta(days=1)
-                        )
-                if backfill_since is not None:
-                    extraction_config["backfill_since"] = backfill_since
+                    extraction_config["incremental_key"] = pipeline.incremental_key
+                    # T-N cutoff: cap the cursor's exclusive upper bound at
+                    # `cutoff_days` whole days before the start of today UTC
+                    # (default 1 = T-1). Applied in `sql_dlt_source`.
+                    extraction_config["cutoff_days"] = settings.incremental_cutoff_days
+                if backfill_since:
+                    extraction_config["initial_value"] = backfill_since
                 source = source_fn(connection, extraction_config)
 
                 # Build dlt destination wrapping DataPlane
@@ -159,24 +157,38 @@ def run_pipeline(
                     unique_key=tuple(pipeline.unique_key) if pipeline.unique_key else None,
                 )
 
-                # Run dlt
+                # Run dlt. Use an ephemeral `pipeline_name` for backfills so
+                # the saved watermark cursor doesn't shadow our `initial_value`
+                # override (dlt only respects `initial_value` when no prior
+                # state exists for that pipeline_name).
                 import dlt as _dlt
+                dlt_pipeline_name = (
+                    f"bingo_{pipeline_id[:8]}_bf_{int(started_at.timestamp())}"
+                    if backfill_since
+                    else f"bingo_{pipeline_id[:8]}"
+                )
                 dlt_pipeline = _dlt.pipeline(
-                    pipeline_name=f"bingo_{pipeline_id[:8]}",
+                    pipeline_name=dlt_pipeline_name,
                     destination=destination,
                 )
-                write_disposition = "replace" if pipeline.mode == "full" else "merge"
-                # dlt `primary_key` drives merge dedup — must be the natural-key
-                # column(s) populated by the template materializer from the
-                # source table's PRIMARY KEY, NOT the watermark cursor.
-                # `incremental_key` is consumed above via extraction_config and
-                # `sql_dlt_source` -> `dlt.sources.incremental`.
-                primary_key = tuple(pipeline.unique_key) if pipeline.unique_key else None
+                # write_disposition + primary_key:
+                #   full        → replace (snapshot)
+                #   incremental → merge on `unique_key` when present (dedup),
+                #                 else append (no PK to dedup on — UI surfaces
+                #                 this table as a dedup risk).
+                # `incremental_key` is the cursor (watermark) column, applied
+                # in `sql_dlt_source`; it is NOT a merge primary key.
+                if pipeline.mode == "full":
+                    write_disposition = "replace"
+                elif pipeline.unique_key:
+                    write_disposition = "merge"
+                else:
+                    write_disposition = "append"
                 load_info = dlt_pipeline.run(
                     source,
                     table_name=pipeline.target_table,
                     write_disposition=write_disposition,
-                    primary_key=primary_key,
+                    primary_key=tuple(pipeline.unique_key) if pipeline.unique_key else None,
                 )
 
                 # Rows: closure counter from the custom destination is the
@@ -193,22 +205,27 @@ def run_pipeline(
                 # try/except + rollback so a serialization gap (e.g. an
                 # unexpected non-JSON type in dlt's state dict) cannot strand
                 # the session and prevent the terminal run-status commit below.
-                from backend.pipelines.dlt_state import set_state as _set_state
-                raw_state = dlt_pipeline.state or {}
-                try:
-                    _set_state(
-                        pipeline_id,
-                        raw_state,
-                        db,
-                        owner_scope_kind=pipeline.owner_scope_kind,
-                        owner_scope_id=pipeline.owner_scope_id,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Pipeline %s run %s: failed to persist dlt state; continuing with run-status update",
-                        pipeline_id, run_id,
-                    )
-                    db.rollback()
+                # Backfill runs are ephemeral and intentionally do NOT
+                # overwrite the canonical pipeline's saved cursor — otherwise
+                # the next scheduled run would skip forward to the backfill's
+                # watermark and miss recent rows.
+                if not backfill_since:
+                    from backend.pipelines.dlt_state import set_state as _set_state
+                    raw_state = dlt_pipeline.state or {}
+                    try:
+                        _set_state(
+                            pipeline_id,
+                            raw_state,
+                            db,
+                            owner_scope_kind=pipeline.owner_scope_kind,
+                            owner_scope_id=pipeline.owner_scope_id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Pipeline %s run %s: failed to persist dlt state; continuing with run-status update",
+                            pipeline_id, run_id,
+                        )
+                        db.rollback()
 
         except Exception as exc:
             error_message = str(exc)[:2000]
@@ -241,8 +258,10 @@ def run_pipeline(
         ):
             pipeline.first_ingest_done = True
 
-        # Advance next_run_at for cron pipelines
-        if pipeline.cron:
+        # Advance next_run_at for cron pipelines. Skip for backfill runs —
+        # they're off-schedule "Load history" actions and must not push out
+        # the next scheduled run.
+        if pipeline.cron and not backfill_since:
             from croniter import croniter
             pipeline.next_run_at = croniter(pipeline.cron, finished_at).get_next(datetime)
 

@@ -1,17 +1,16 @@
 """Tests for the dlt incremental-cursor wiring in `connectors.sql_dlt`.
 
-Targets the Phase-1 fix: `sql_dlt_source` must apply a per-table
-`dlt.sources.incremental` hint when `extraction_config.incremental_keys` is
-set, threading `backfill_since` through as the cursor's `initial_value`. Also
-guards the no-cursor (full-snapshot) path against regressions.
+`sql_dlt_source` applies a per-table `dlt.sources.incremental` hint when
+`extraction_config.incremental_key` is set, threading `initial_value` (first-run
+lower bound) and an `end_value` computed from `cutoff_days` (T-N upper bound).
+Also guards the no-cursor (full-snapshot) path against regressions.
 """
 from __future__ import annotations
 
 import sys
 import types as _types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -67,7 +66,14 @@ def _conn():
     )
 
 
-def test_no_incremental_keys_does_not_apply_hints(_stub_dlt):
+_SENTINEL = datetime(1900, 1, 1, tzinfo=timezone.utc)
+
+
+def _start_of_today_utc():
+    return datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def test_no_incremental_key_does_not_apply_hints(_stub_dlt):
     from backend.connectors.sql_dlt import sql_dlt_source
     src = sql_dlt_source("postgresql", _conn(), {"tables": ["events"]})
     assert src is not None
@@ -78,61 +84,57 @@ def test_incremental_key_applies_cursor_hint(_stub_dlt):
     from backend.connectors.sql_dlt import sql_dlt_source
     sql_dlt_source(
         "postgresql", _conn(),
-        {"tables": ["events"], "incremental_keys": {"events": "updated_at"}},
+        {"tables": ["events"], "incremental_key": "updated_at"},
     )
     assert "events" in _stub_dlt
     inc = _stub_dlt["events"]["incremental"]
     assert inc.cursor_path == "updated_at"
-    assert inc.initial_value is None
+    # No `initial_value` supplied → unbounded-lower sentinel.
+    assert inc.initial_value == _SENTINEL
 
 
-def test_backfill_since_threads_into_initial_value(_stub_dlt):
+def test_initial_value_threads_into_cursor(_stub_dlt):
     from backend.connectors.sql_dlt import sql_dlt_source
-    since = datetime(2026, 5, 1, tzinfo=timezone.utc)
     sql_dlt_source(
         "postgresql", _conn(),
         {
             "tables": ["events"],
-            "incremental_keys": {"events": "updated_at"},
-            "backfill_since": since,
+            "incremental_key": "updated_at",
+            "initial_value": "2026-05-01T00:00:00+00:00",
         },
     )
     inc = _stub_dlt["events"]["incremental"]
-    assert inc.initial_value == since
+    assert inc.initial_value == datetime(2026, 5, 1, tzinfo=timezone.utc)
 
 
-def test_unknown_table_in_incremental_keys_is_skipped(_stub_dlt):
-    """Cursor for a table dlt did not produce as a resource is silently dropped."""
+def test_cutoff_days_default_is_t1(_stub_dlt):
+    """Default cutoff (1 = T-1) caps `end_value` at the start of today UTC."""
     from backend.connectors.sql_dlt import sql_dlt_source
     sql_dlt_source(
         "postgresql", _conn(),
-        {"tables": ["events"], "incremental_keys": {"ghost_table": "updated_at"}},
-    )
-    assert _stub_dlt == {}
-
-
-def test_end_value_threaded_to_incremental(_stub_dlt):
-    """`end_value` from extraction_config flows to dlt.sources.incremental."""
-    from backend.connectors.sql_dlt import sql_dlt_source
-    cutoff = datetime(2026, 5, 28, 14, 32, tzinfo=timezone.utc)
-    sql_dlt_source(
-        "postgresql", _conn(),
-        {
-            "tables": ["events"],
-            "incremental_keys": {"events": "updated_at"},
-            "end_value": cutoff,
-        },
+        {"tables": ["events"], "incremental_key": "updated_at"},
     )
     inc = _stub_dlt["events"]["incremental"]
-    assert inc.kwargs.get("end_value") == cutoff
+    assert inc.kwargs.get("end_value") == _start_of_today_utc()
 
 
-def test_end_value_optional_defaults_to_none(_stub_dlt):
-    """Omitting `end_value` passes None to dlt (no upper bound)."""
+def test_cutoff_days_two_shifts_back_one_day(_stub_dlt):
+    """cutoff_days=2 (T-2) caps `end_value` one whole day earlier."""
     from backend.connectors.sql_dlt import sql_dlt_source
     sql_dlt_source(
         "postgresql", _conn(),
-        {"tables": ["events"], "incremental_keys": {"events": "updated_at"}},
+        {"tables": ["events"], "incremental_key": "updated_at", "cutoff_days": 2},
     )
     inc = _stub_dlt["events"]["incremental"]
-    assert inc.kwargs.get("end_value") is None
+    assert inc.kwargs.get("end_value") == _start_of_today_utc() - timedelta(days=1)
+
+
+def test_incremental_key_applies_to_all_listed_tables(_stub_dlt):
+    from backend.connectors.sql_dlt import sql_dlt_source
+    sql_dlt_source(
+        "postgresql", _conn(),
+        {"tables": ["orders", "events"], "incremental_key": "updated_at"},
+    )
+    assert set(_stub_dlt) == {"orders", "events"}
+    assert _stub_dlt["orders"]["incremental"].cursor_path == "updated_at"
+    assert _stub_dlt["events"]["incremental"].cursor_path == "updated_at"

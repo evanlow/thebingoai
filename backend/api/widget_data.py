@@ -390,36 +390,6 @@ def _plane_missing_after_first_ingest(connection, tables: list[str], db: Session
     return False
 
 
-def _maybe_transpile_for_engine(sql: str, connection) -> str:
-    """Transpile *sql* to match *connection.db_type* when needed.
-
-    Direction is determined by the target engine:
-      - postgres/mysql → DuckDB  : source SQL (pg/mysql) runs on DuckDB
-        plane → transpile source→DuckDB.
-      - bigquery/bigquery_ga4 → postgres/mysql : legacy BigQuery SQL stored
-        in widgets must run on source → transpile BQ→target db_type.
-      - same-dialect → no-op.
-    """
-    db_type = (getattr(connection, "db_type", "") or "").lower()
-    # postgres/mysql source SQL runs on DuckDB plane → transpile to DuckDB
-    if db_type in ("postgres", "postgresql", "mysql"):
-        try:
-            from backend.utils.sql_refs import transpile_to_engine
-            return transpile_to_engine(sql, src=db_type, dst="duckdb")
-        except Exception:
-            return sql
-    # BigQuery-source SQL on postgres/mysql source DB (legacy unmigrated):
-    # transpile BQ → target db_type so psycopg2 can execute it.
-    if db_type in ("bigquery", "bigquery_ga4"):
-        # Transpile BigQuery → postgres for the source-DB fallback path.
-        try:
-            from backend.utils.sql_refs import transpile_to_engine
-            return transpile_to_engine(sql, src="bigquery", dst="postgres")
-        except Exception:
-            return sql
-    return sql
-
-
 def _serve_widget_via_dataplane(
     request: "WidgetRefreshRequest",
     dashboard: "Dashboard | None",
@@ -444,8 +414,9 @@ def _serve_widget_via_dataplane(
     from backend.services.data_plane_service import (
         get_gcs_duckdb_reader,
         get_plane_for_connection,
+        plane_table_map,
     )
-    from backend.utils.sql_refs import extract_table_refs
+    from backend.utils.sql_refs import extract_table_refs, rewrite_table_refs
 
     connection = db.query(DatabaseConnection).filter(
         DatabaseConnection.id == request.connection_id,
@@ -467,9 +438,14 @@ def _serve_widget_via_dataplane(
     # guarantees the read resolves to where the source Parquet was written.
     plane, scope = get_plane_for_connection(connection)
 
+    # Widget SQL is written against source table names (e.g. `orders`); rewrite
+    # them to the Pipeline's materialized plane table (e.g. `acme__orders`) so
+    # the Parquet glob resolves. No-op when the connection has no pipelines.
+    base_sql, _ = rewrite_table_refs(request.sql, plane_table_map(connection, db))
+
     # ── Dev: local plane → serve live over local Parquet ──────────────────
     if isinstance(plane, LocalFilesystemDataPlane):
-        tables = extract_table_refs(request.sql)
+        tables = extract_table_refs(base_sql)
         if not tables or not all(plane.table_exists(scope, t) for t in tables):
             # Cold/missing source. Apply the bootstrap-fallback policy: allow
             # one live source query while the connection's pipelines are still
@@ -487,15 +463,10 @@ def _serve_widget_via_dataplane(
                     },
                 )
             return None  # bootstrap fallback: legacy path hits source DB
-
-        # Pg/mysql widgets may carry source-dialect SQL — transpile to DuckDB
-        # so the plane.query (DuckDB engine) parses it. CSV / already-DuckDB
-        # SQL passes through unchanged via the no-op same-dialect branch.
-        sql = _maybe_transpile_for_engine(request.sql, connection)
-        params = None
+        sql, params = base_sql, None
         if request.filters:
             sql, params = inject_filters(
-                sql, request.filters,
+                base_sql, request.filters,
                 data_context=data_context, widget_sources=request.widget_sources,
                 dialect="duckdb",
             )
@@ -510,8 +481,6 @@ def _serve_widget_via_dataplane(
 
         if request.filters:
             # Filtered → no unfiltered cache hit; run the full SQL live (pruned).
-            # Source SQL (postgres/mysql/duckdb) must be DuckDB for the GCS reader.
-            base_sql = _maybe_transpile_for_engine(request.sql, connection)
             sql, params = inject_filters(
                 base_sql, request.filters,
                 data_context=data_context, widget_sources=request.widget_sources,
@@ -519,13 +488,25 @@ def _serve_widget_via_dataplane(
             )
             return _build_widget_response(reader.query(scope, sql, params), request.mapping)
 
-        # Unfiltered → read the warm _dash_* results cache (small, fast).
-        if not (dashboard and request.widget_id):
-            return None
-        from backend.services.dashboard_cache import _sanitize_widget_id
-        cache_table = f'_dash_{request.dashboard_id}__{_sanitize_widget_id(request.widget_id)}'
-        result = reader.query(scope, f'SELECT * FROM "{cache_table}"')
-        return _build_widget_response(result, request.mapping)
+        # Unfiltered → prefer the warm _dash_* results cache (small, fast); if
+        # it's cold or mis-scoped, serve live over the source Parquet (same as
+        # the dev local-plane branch) so the widget still reads from the lake.
+        if dashboard and request.widget_id:
+            from backend.services.dashboard_cache import _sanitize_widget_id
+            cache_table = f'_dash_{request.dashboard_id}__{_sanitize_widget_id(request.widget_id)}'
+            try:
+                result = reader.query(scope, f'SELECT * FROM "{cache_table}"')
+                return _build_widget_response(result, request.mapping)
+            except Exception as e:
+                # Cold/missing warm cache is the common, expected case → fall
+                # through to the live read below. Logged at debug (not warning)
+                # so a genuine error (bad SQL, permissions) is still observable
+                # when troubleshooting without spamming the common cold path.
+                logger.debug(
+                    "Warm _dash_ cache miss for widget %s (table %s): %s — serving live",
+                    request.widget_id, cache_table, e,
+                )
+        return _build_widget_response(reader.query(scope, base_sql), request.mapping)
     except Exception as e:
         logger.warning(
             "DuckDB-over-GCS serve failed for widget %s, falling back: %s",
@@ -653,12 +634,12 @@ async def refresh_widget(
             # for pre-migration widgets; transpile to whatever the connection is.
             try:
                 from backend.utils.sql_refs import transpile_to_engine
-                target = (getattr(connection, "db_type", "") or "postgres").lower()
+                db_type = (getattr(connection, "db_type", "") or "postgres").lower()
                 # Map common db_type values to sqlglot dialect names
-                dst = {"postgres": "postgres", "postgresql": "postgres",
-                       "mysql": "mysql", "bigquery": "bigquery",
-                       "bigquery_ga4": "bigquery"}.get(target, target)
-                sql = transpile_to_engine(sql, src="bigquery", dst=dst)
+                target = {"postgres": "postgres", "postgresql": "postgres",
+                          "mysql": "mysql", "bigquery": "bigquery",
+                          "bigquery_ga4": "bigquery"}.get(db_type, db_type)
+                sql = transpile_to_engine(sql, source="bigquery", target=target)
             except Exception:
                 pass  # best-effort; let the connector raise on parse failure
             result = connector.execute_query(sql, params=params)

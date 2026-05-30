@@ -55,77 +55,78 @@ def _unknown_duckdb_functions(ast: exp.Expression) -> set[str]:
     return unknown
 
 
-def transpile_bq_to_duckdb(sql: str) -> str:
-    """Transpile a single BigQuery SQL statement to DuckDB, or raise.
+_VALID_DIALECTS = frozenset({"bigquery", "duckdb", "postgres", "mysql", "sqlite"})
+
+
+def transpile_to_engine(sql: str, *, source: str, target: str = "duckdb") -> str:
+    """Transpile a single SQL statement from one dialect to another, or raise.
 
     Steps (each failure raises `UntranspilableSQLError` with a reason):
-      1. Parse as BigQuery (backticks, DATE_TRUNC(col, unit), SAFE_*, etc.).
-      2. Render in the DuckDB dialect (backticks→double-quotes, arg reorder,
-         SAFE_CAST→TRY_CAST handled by sqlglot).
-      3. Re-parse the output as DuckDB — catches any syntactically-invalid output.
-      4. Reject output containing functions absent from DuckDB's catalog
-         (BigQuery-only funcs sqlglot couldn't map, e.g. APPROX_QUANTILES).
+      1. Parse `sql` under the `source` dialect.
+      2. Render in the `target` dialect.
+      3. Re-parse the output under `target` — catches dialect-specific syntax
+         the generator emitted but the target rejects.
+      4. When `target == "duckdb"`: reject output containing functions absent
+         from DuckDB's catalog (e.g. `APPROX_QUANTILES` from BigQuery,
+         `pg_typeof` from postgres) since they'd 500 the read path at runtime.
 
-    NOT used on the hot read path — this drives the Phase 3 stored-SQL migration
-    and its validation. The read path runs already-DuckDB SQL.
+    Used by the plane-redirect read paths (widget + chat) so SQL written
+    against the source DB (postgres / mysql / bigquery) runs over Parquet via
+    DuckDB. `target` defaults to ``"duckdb"`` — the only non-source dialect
+    Bingo serves Parquet through today.
     """
+    src = (source or "").lower()
+    tgt = (target or "").lower()
+    if src not in _VALID_DIALECTS:
+        raise UntranspilableSQLError(sql, f"unknown source dialect {source!r}")
+    if tgt not in _VALID_DIALECTS:
+        raise UntranspilableSQLError(sql, f"unknown target dialect {target!r}")
+
+    # Same-dialect short-circuit: parse-validate but skip the round-trip so we
+    # don't spuriously rewrite hand-tuned SQL the user already wrote correctly.
+    if src == tgt:
+        try:
+            sqlglot.parse_one(sql, read=src, error_level=sqlglot.ErrorLevel.RAISE)
+        except Exception as e:  # noqa: BLE001
+            raise UntranspilableSQLError(sql, f"{src} parse failed: {e}") from e
+        return sql
+
     try:
-        ast = sqlglot.parse_one(sql, read="bigquery", error_level=sqlglot.ErrorLevel.RAISE)
+        ast = sqlglot.parse_one(sql, read=src, error_level=sqlglot.ErrorLevel.RAISE)
     except UntranspilableSQLError:
         raise
     except Exception as e:  # noqa: BLE001
-        raise UntranspilableSQLError(sql, f"BigQuery parse failed: {e}") from e
+        raise UntranspilableSQLError(sql, f"{src} parse failed: {e}") from e
 
     try:
-        out = ast.sql(dialect="duckdb")
+        out = ast.sql(dialect=tgt)
     except Exception as e:  # noqa: BLE001
-        raise UntranspilableSQLError(sql, f"DuckDB generation failed: {e}") from e
+        raise UntranspilableSQLError(sql, f"{tgt} generation failed: {e}") from e
 
     try:
-        out_ast = sqlglot.parse_one(out, read="duckdb", error_level=sqlglot.ErrorLevel.RAISE)
+        out_ast = sqlglot.parse_one(out, read=tgt, error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:  # noqa: BLE001
-        raise UntranspilableSQLError(sql, f"transpiled output is not valid DuckDB: {e}") from e
-
-    unknown = _unknown_duckdb_functions(out_ast)
-    if unknown:
         raise UntranspilableSQLError(
-            sql, f"function(s) unsupported by DuckDB: {', '.join(sorted(unknown))}"
-        )
+            sql, f"transpiled output is not valid {tgt}: {e}",
+        ) from e
+
+    if tgt == "duckdb":
+        unknown = _unknown_duckdb_functions(out_ast)
+        if unknown:
+            raise UntranspilableSQLError(
+                sql, f"function(s) unsupported by DuckDB: {', '.join(sorted(unknown))}",
+            )
 
     return out
 
 
-_DIALECT_MAP = {
-    "postgres": "postgres",
-    "postgresql": "postgres",
-    "mysql": "mysql",
-    "bigquery": "bigquery",
-    "bigquery_ga4": "bigquery",
-    "duckdb": "duckdb",
-    "sqlite": "sqlite",
-}
+def transpile_bq_to_duckdb(sql: str) -> str:
+    """Backwards-compatible shim — defer to `transpile_to_engine`.
 
-
-def transpile_to_engine(sql: str, *, src: str, dst: str) -> str:
-    """Transpile *sql* from *src* dialect to *dst* via sqlglot.
-
-    Used by the Phase-2 read-path cutover to run stored postgres / mysql widget
-    SQL on DuckDB-over-Parquet without forcing a per-widget migration. Falls
-    back to the input *sql* on any sqlglot error — the caller is expected to
-    handle that by reverting to the source DB.
-
-    Unlike `transpile_bq_to_duckdb`, this never raises: the dashboard/chat
-    redirect paths are best-effort and graceful fallback is the contract.
+    Kept so existing call sites (Phase 3 stored-SQL migration + its tests)
+    don't need to change. New code should call `transpile_to_engine` directly.
     """
-    src_d = _DIALECT_MAP.get((src or "").lower(), src)
-    dst_d = _DIALECT_MAP.get((dst or "").lower(), dst)
-    if src_d == dst_d:
-        return sql
-    try:
-        ast = sqlglot.parse_one(sql, read=src_d, error_level=sqlglot.ErrorLevel.RAISE)
-        return ast.sql(dialect=dst_d)
-    except Exception:
-        return sql
+    return transpile_to_engine(sql, source="bigquery", target="duckdb")
 
 
 def extract_table_refs(sql: str) -> list[str]:

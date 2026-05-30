@@ -1,17 +1,18 @@
-"""Tests for `services.watermark_classifier.resolve_watermark`.
+"""Tests for `services.watermark_classifier`.
 
 Covers:
   - Deterministic ranked matcher (type tier > name tier > source order).
   - Native partition-key helper short-circuits everything else.
   - LLM batched path: high-confidence pick overrides deterministic.
   - LLM low-confidence / error / unparseable response → deterministic fallback.
+  - Fence-tolerant LLM response parsing.
 """
 from __future__ import annotations
 
 import sys
 import types as _types
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -30,6 +31,7 @@ if "backend.config" not in sys.modules or not hasattr(sys.modules["backend.confi
 from backend.services.watermark_classifier import (  # noqa: E402
     _deterministic_pick,
     _name_tier,
+    _parse_llm_response,
     _type_tier,
     resolve_watermark,
 )
@@ -152,10 +154,10 @@ def _llm_settings(monkeypatch):
 
 
 def _patch_provider_chat(monkeypatch, json_str):
-    """Install a fake LLM provider whose `chat` returns *json_str*."""
+    """Install a fake LLM provider whose async `chat` returns *json_str*."""
     fake_llm = _types.ModuleType("backend.llm.factory")
     provider = MagicMock()
-    provider.chat = MagicMock(return_value=json_str)
+    provider.chat = AsyncMock(return_value=json_str)
     fake_llm.get_provider = MagicMock(return_value=provider)
     monkeypatch.setitem(sys.modules, "backend.llm.factory", fake_llm)
     return provider
@@ -209,7 +211,7 @@ def test_llm_error_falls_back_to_deterministic(monkeypatch, _llm_settings):
     monkeypatch.setitem(sys.modules, "backend.connectors.postgres", fake_pg)
     fake_llm = _types.ModuleType("backend.llm.factory")
     provider = MagicMock()
-    provider.chat = MagicMock(side_effect=RuntimeError("boom"))
+    provider.chat = AsyncMock(side_effect=RuntimeError("boom"))
     fake_llm.get_provider = MagicMock(return_value=provider)
     monkeypatch.setitem(sys.modules, "backend.llm.factory", fake_llm)
 
@@ -256,3 +258,17 @@ def test_llm_batched_call_includes_all_unresolved_tables(monkeypatch, _llm_setti
     )
     assert out == {"a": "updated_at", "b": "created_at"}
     assert provider.chat.call_count == 1
+
+
+# ── LLM response parsing ─────────────────────────────────────────────────────
+
+
+def test_parse_llm_response_tolerates_markdown_fences():
+    raw = (
+        "```json\n"
+        '{"results": [{"table": "t", "column": "c", "confidence": "high"}]}'
+        "\n```"
+    )
+    parsed = _parse_llm_response(raw)
+    assert parsed["t"]["column"] == "c"
+    assert parsed["t"]["confidence"] == "high"

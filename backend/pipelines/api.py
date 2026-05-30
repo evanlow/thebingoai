@@ -49,6 +49,7 @@ class PipelineResponse(BaseModel):
     timezone: str
     mode: str
     incremental_key: str | None
+    unique_key: list[str] | None
     extraction_config: dict[str, Any]
     pipeline_fingerprint: str
     last_run_at: datetime | None
@@ -495,3 +496,5 @@ async def delete_pipeline_endpoint(
     from backend.services.resource_lifecycle import delete_pipeline
     delete_pipeline(pipeline_id, db)
     db.commit()
+
+

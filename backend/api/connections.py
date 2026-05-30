@@ -261,6 +261,48 @@ async def create_connection(
                     "next dbt run will retry", connection.id, exc_info=True,
                 )
 
+        # Auto-enable the `new_pipelines` flag for the connection's Org the
+        # first time any pipeline is materialised for that Org. The beat
+        # dispatcher (`pipelines/tasks.dispatch_pipelines`) gates org-scoped
+        # cron pipelines on this flag, so without it they'd never fire even
+        # though the rows exist with `cron` set. User-scoped pipelines (the
+        # default for UI-created connections today) bypass the gate, but
+        # enabling it here keeps the bootstrap path future-proof when/if any
+        # of these pipelines become org-scoped or org-shared.
+        if new_p and getattr(connection, "org_id", None):
+            try:
+                from backend.config.feature_flags import enabled, set_flag
+                org_id_str = str(connection.org_id)
+                if not enabled(org_id_str, "new_pipelines"):
+                    set_flag(org_id_str, "new_pipelines", True)
+                    logger.info(
+                        "Auto-enabled new_pipelines flag for org %s on connection-create (%s)",
+                        org_id_str, connection.id,
+                    )
+            except Exception:
+                logger.warning(
+                    "Failed to auto-enable new_pipelines flag for org on connection %s",
+                    connection.id, exc_info=True,
+                )
+
+        # LLM watermark refinement is intentionally OFF the request path —
+        # `_apply_mysql_t1_schedule` used the deterministic matcher only. When
+        # the `WATERMARK_CLASSIFIER_*` env knobs are configured, fire the
+        # batched LLM classifier asynchronously so the connect response stays
+        # snappy; the worker rewrites any pipelines whose classifier choice
+        # differs from the deterministic one. No-op when env empty.
+        if new_p:
+            try:
+                from backend.tasks.watermark_tasks import refine_watermarks_task
+                refine_watermarks_task.delay(
+                    connection.id, [p.id for p in new_p],
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to enqueue refine_watermarks_task for connection %s",
+                    connection.id, exc_info=True,
+                )
+
     # Auto-discover schema for all connector types except BigQuery (legacy —
     # opted out because projects often have hundreds of datasets). BigQuery GA4
     # is single-project and runs discovery so the dashboard agent gets context.

@@ -90,23 +90,18 @@ def run_pipeline_task(
     pipeline_id: str,
     triggered_by: str,
     triggered_by_user_id: str | None,
-    backfill_since_iso: str | None = None,
+    backfill_since: str | None = None,
 ):
     """Execute a single pipeline run. Delegates to runner.run_pipeline().
 
-    `backfill_since_iso` is an ISO-8601 string (Celery args must be JSON-safe)
-    that the runner forwards to `sql_dlt_source` as the initial cursor for
-    incremental tables — used by `first_ingest_task` and the Phase 3
-    "Load history" endpoint.
+    `backfill_since` (ISO-8601 datetime string; Celery args must be JSON-safe)
+    → "Load history" / bootstrap run: overrides the dlt incremental cursor for
+    this run only, does not advance the schedule.
     """
     from backend.pipelines.runner import run_pipeline
-    backfill_since = None
-    if backfill_since_iso:
-        try:
-            backfill_since = datetime.fromisoformat(backfill_since_iso)
-        except Exception:
-            logger.warning("run_pipeline_task: bad backfill_since_iso=%r, ignoring", backfill_since_iso)
-    run_id = run_pipeline(pipeline_id, triggered_by, triggered_by_user_id, backfill_since=backfill_since)
+    run_id = run_pipeline(
+        pipeline_id, triggered_by, triggered_by_user_id, backfill_since=backfill_since,
+    )
     if run_id:
         logger.info("Pipeline %s run completed: run_id=%s", pipeline_id, run_id)
     return run_id
@@ -141,9 +136,10 @@ def first_ingest_task(connection_id: int, triggered_by_user_id: str | None):
             logger.info("first_ingest_task: no pipelines for connection %s", connection_id)
             return 0
 
-        backfill_since = datetime.now(timezone.utc) - timedelta(
-            days=int(getattr(settings, "first_ingest_lookback_days", 1)),
-        )
+        backfill_since_iso = (
+            datetime.now(timezone.utc)
+            - timedelta(days=int(getattr(settings, "first_ingest_lookback_days", 1)))
+        ).isoformat()
         ran = 0
         for p in pipelines:
             if p.first_ingest_done:
@@ -153,7 +149,7 @@ def first_ingest_task(connection_id: int, triggered_by_user_id: str | None):
                     p.id, "bootstrap", triggered_by_user_id,
                     # Full-snapshot tables ignore this; incremental ones use it
                     # as the dlt `initial_value` for their cursor.
-                    backfill_since=backfill_since,
+                    backfill_since=backfill_since_iso,
                 )
                 ran += 1
             except Exception:

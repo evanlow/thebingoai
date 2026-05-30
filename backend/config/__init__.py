@@ -76,6 +76,24 @@ class Settings(BaseSettings):
     celery_max_retries: int = 3
     celery_retry_base_countdown: int = 60
 
+    # Pipelines — default cron applied to auto-created MySQL pipelines at connect
+    default_sql_pipeline_cron: str = "0 2 * * *"  # daily 02:00 (pipeline timezone)
+    # Incremental first-run lower bound: today − N days (start of day, UTC).
+    # Applied as the dlt incremental cursor's `initial_value` so the first
+    # ingest pulls from T−N forward instead of the source's beginning.
+    first_ingest_lookback_days: int = 1
+    # Incremental cursor upper-bound cutoff, in whole days back from the start
+    # of today UTC. 1 = T-1 (exclude same-day partials); 2 = T-2; 0 = include
+    # today. Applied per incremental pipeline in `connectors.sql_dlt`.
+    incremental_cutoff_days: int = 1
+
+    # Watermark classifier — picks the per-table incremental cursor column from
+    # the live schema. Empty model/provider → deterministic-only fallback (no
+    # LLM call); both set → batched LLM classification with deterministic
+    # fallback on error / low confidence. See services/watermark_classifier.py.
+    watermark_classifier_provider: str = ""  # openai | anthropic | ollama | ""
+    watermark_classifier_model: str = ""     # e.g. gpt-4o-mini; "" disables
+
     # Async processing thresholds
     async_file_size_threshold: int = 100_000  # 100KB
     async_chunk_count_threshold: int = 20
@@ -176,16 +194,6 @@ class Settings(BaseSettings):
 
     # Agent mesh settings (Redis DB 4)
     agent_mesh_redis_url: str = "redis://localhost:6379/4"
-
-    # Connector → DataPlane materialization (Phase 1)
-    # Bootstrap (first) ingest pulls from now - this many days forward; full-
-    # snapshot tables (no watermark) ignore the lookback and load everything.
-    first_ingest_lookback_days: int = 1
-    # When set, `services.watermark_classifier.resolve_watermark` calls an LLM
-    # to pick the best incremental cursor per table; empty → deterministic
-    # ranked matcher only. Provider mirrors `default_llm_provider`.
-    watermark_classifier_model: str = ""
-    watermark_classifier_provider: str = ""
 
     @field_validator("chunk_overlap")
     @classmethod

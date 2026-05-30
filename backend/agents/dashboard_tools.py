@@ -688,6 +688,23 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
             db.commit()
             db.refresh(dashboard)
 
+            # When the Org is cut over to DuckDB serving, the agent emits DuckDB
+            # SQL — mark this dashboard born-DuckDB so the read path may serve it
+            # via DuckDB-over-DataPlane immediately. Mirrors
+            # api/dashboards.create_dashboard, which the agent's create path
+            # bypasses (it persists the Dashboard directly).
+            try:
+                from backend.config.feature_flags import enabled
+                from backend.services.dashboard_cache import _get_org_for_user
+                org_id = _get_org_for_user(context.user_id)
+                if org_id and enabled(str(org_id), "duckdb_widget_serving"):
+                    from backend.migration.dialect_migration import mark_born_duckdb
+                    mark_born_duckdb(dashboard.id, db)
+            except Exception:
+                logger.warning(
+                    "mark_born_duckdb failed for dashboard %s", dashboard.id, exc_info=True
+                )
+
             # Dispatch async cache materialization (non-blocking)
             try:
                 from backend.tasks.dashboard_refresh_tasks import execute_dashboard_refresh
