@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     # Applied as the dlt incremental cursor's `initial_value` so the first
     # ingest pulls from T−N forward instead of the source's beginning.
     first_ingest_lookback_days: int = 1
+    # Incremental cursor upper-bound cutoff, in whole days back from the start
+    # of today UTC. 1 = T-1 (exclude same-day partials); 2 = T-2; 0 = include
+    # today. Applied per incremental pipeline in `connectors.sql_dlt`.
+    incremental_cutoff_days: int = 1
 
     # Watermark classifier — picks the per-table incremental cursor column from
     # the live schema. Empty model/provider → deterministic-only fallback (no

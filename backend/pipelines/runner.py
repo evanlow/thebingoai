@@ -21,7 +21,7 @@ def compute_pipeline_fingerprint(connection_fingerprint: str | None, extraction_
 
 def run_pipeline(
     pipeline_id: str,
-    triggered_by: Literal["cron", "manual", "api"],
+    triggered_by: Literal["cron", "manual", "api", "bootstrap", "manual-backfill"],
     triggered_by_user_id: str | None = None,
     backfill_since: str | None = None,
 ) -> str:
@@ -129,11 +129,23 @@ def run_pipeline(
                 if hasattr(connector_cls, "pre_run"):
                     connector_cls.pre_run(connection)
 
-                # Build dlt source. For a backfill ("Load history") run,
-                # override `initial_value` so the dlt incremental cursor pulls
-                # from `backfill_since` forward instead of the last persisted
-                # watermark. A no-op for full-snapshot pipelines.
+                # Build dlt source. Inject the per-pipeline incremental cursor
+                # column + cutoff window into extraction_config so SQL
+                # connectors (postgres / mysql) hand them to dlt's
+                # `sources.incremental` for true incremental extracts. Other
+                # connectors (CSV, notion, GA4, …) ignore unknown keys.
+                #
+                # For a backfill ("Load history") run, override `initial_value`
+                # so the cursor pulls from `backfill_since` forward instead of
+                # the last persisted watermark. A no-op for full-snapshot
+                # pipelines.
                 extraction_config = dict(pipeline.extraction_config or {})
+                if pipeline.mode == "incremental" and pipeline.incremental_key:
+                    extraction_config["incremental_key"] = pipeline.incremental_key
+                    # T-N cutoff: cap the cursor's exclusive upper bound at
+                    # `cutoff_days` whole days before the start of today UTC
+                    # (default 1 = T-1). Applied in `sql_dlt_source`.
+                    extraction_config["cutoff_days"] = settings.incremental_cutoff_days
                 if backfill_since:
                     extraction_config["initial_value"] = backfill_since
                 source = source_fn(connection, extraction_config)
@@ -231,6 +243,20 @@ def run_pipeline(
 
         pipeline.last_run_status = status
         pipeline.last_run_at = finished_at
+
+        # Flip the bootstrap-flag latch on first successful ingest. Phase 2
+        # widget / chat plane-redirect paths read this to decide whether to
+        # allow a live source-DB fallback ("not-ready policy" — one live query
+        # per missing partition until the first ingest lands, then plane-only).
+        # Gate on rows_written > 0: a zero-row "success" never calls
+        # write_parquet → no BQ external table → latching would permanently
+        # 503 the widget read (plane_table_missing).
+        if (
+            status == "success"
+            and not pipeline.first_ingest_done
+            and (rows_written or 0) > 0
+        ):
+            pipeline.first_ingest_done = True
 
         # Advance next_run_at for cron pipelines. Skip for backfill runs —
         # they're off-schedule "Load history" actions and must not push out

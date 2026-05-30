@@ -26,6 +26,11 @@ class WidgetRefreshResponse(BaseModel):
     refreshed_at: str
     source_columns: List[str] = []
     source_rows: List[List[Any]] = []
+    # Where the rows came from. "data_plane" = DuckDB over Parquet (local or GCS).
+    # "cache" = warm _dash_* materialized cache. "source" = live connector
+    # (fallback). Frontend uses this to render a "Parquet • synced X ago" badge
+    # when the read served from the DataPlane.
+    served_from: str = "source"
 
 
 class BulkRefreshResponse(BaseModel):

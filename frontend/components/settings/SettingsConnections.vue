@@ -521,7 +521,7 @@
               </div>
             </div>
 
-            <div class="mt-8 pt-4 border-t border-red-100 dark:border-red-900/30">
+            <div class="mt-8 pt-4 pb-8 border-t border-red-100 dark:border-red-900/30">
               <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
               <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
               <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
@@ -625,7 +625,7 @@
             </div>
           </form>
 
-          <div v-if="editingConnection" class="mt-8 pt-4 border-t border-red-100 dark:border-red-900/30">
+          <div v-if="editingConnection" class="mt-8 pt-4 pb-8 border-t border-red-100 dark:border-red-900/30">
             <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
             <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
             <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
@@ -648,13 +648,6 @@
             />
           </template>
           <template v-else-if="editingConnection">
-            <!-- Pipelines tab — only for SQL-source connectors that auto-materialise. -->
-            <SettingsConnectionPipelines
-              v-if="showPipelinesTab"
-              :connection-id="editingConnection.id"
-              class="mb-4 pb-4 border-b border-gray-200 dark:border-neutral-700"
-            />
-
             <div class="flex items-center justify-between mb-3 shrink-0">
               <span class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
                 Schema<template v-if="schema"> · {{ schema.table_names?.length ?? 0 }} tables · {{ Object.keys(schema.schemas ?? {}).length }} schemas</template>
@@ -668,6 +661,15 @@
               :loading="schemaLoading"
               :error="schemaError"
             />
+            <div
+              v-if="isPostgresOrMysqlConnection"
+              class="mt-6 pt-4 border-t border-gray-200 dark:border-neutral-700"
+            >
+              <SettingsConnectionSync
+                :connection="editingConnection!"
+                :schema="schema"
+              />
+            </div>
           </template>
           <template v-else>
             <div class="flex items-center gap-2 text-sm text-gray-400 dark:text-neutral-400">
@@ -692,7 +694,8 @@
 
     <!-- Delete Confirmation Dialog -->
     <UiDialog
-      v-model:open="showDeleteDialog"
+      :open="showDeleteDialog"
+      @update:open="(v: boolean) => { if (!v) cancelDelete() }"
       size="sm"
       :closable="false"
     >
@@ -724,7 +727,7 @@
       />
 
       <template #footer>
-        <UiButton variant="outline" @click="showDeleteDialog = false">
+        <UiButton variant="outline" @click="cancelDelete">
           Cancel
         </UiButton>
         <UiButton
@@ -865,6 +868,16 @@ import connectorSqlite from '~/assets/icons/connector/sqlite.svg?raw'
 import connectorBigquery from '~/assets/icons/connector/bigquery.svg?raw'
 import connectorNotion from '~/assets/icons/connector/notion.svg?raw'
 
+function extractErrorMessage(err: any, fallback: string): string {
+  const detail = err?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object' && typeof detail.message === 'string') {
+    return detail.message
+  }
+  if (typeof err?.message === 'string') return err.message
+  return fallback
+}
+
 const api = useApi() as any
 const connectorForms = useConnectorForms()
 
@@ -925,6 +938,7 @@ const connectionSuccessMessage = ref('')
 const connectionFailedMessage = ref('')
 const showDeleteDialog = ref(false)
 const deletingConnection = ref<DatabaseConnection | null>(null)
+const wasEditingBeforeDelete = ref(false)
 const deleting = ref(false)
 const refreshingId = ref<number | null>(null)
 const testing = ref(false)
@@ -1108,6 +1122,11 @@ const isSqliteConnection = computed(() => {
   return form.value.db_type === 'sqlite' || editingConnection.value?.db_type === 'sqlite'
 })
 
+const isPostgresOrMysqlConnection = computed(() => {
+  const t = editingConnection.value?.db_type
+  return t === 'postgres' || t === 'mysql'
+})
+
 const isFacebookAdsConnection = computed(() => {
   return form.value.db_type === 'facebook_ads' || editingConnection.value?.db_type === 'facebook_ads'
 })
@@ -1187,15 +1206,6 @@ const showRightColumn = computed(() => {
   return !hasPluginForm.value
 })
 
-// Pipelines panel visible only when editing a SQL-source connection that
-// auto-materialises tables to the data plane (postgres / mysql today). File
-// uploads, BigQuery (its own pipeline UI), and plugin connectors are excluded.
-const showPipelinesTab = computed(() => {
-  if (!editingConnection.value) return false
-  const t = (editingConnection.value.db_type || '').toLowerCase()
-  return t === 'postgres' || t === 'mysql'
-})
-
 // Capability lookups for edit-mode header buttons. Default behavior preserved:
 // built-in types (postgres/mysql/sqlite) show both Refresh + Reprofile; file
 // uploads show neither; plugin types show only what their registration declares.
@@ -1259,7 +1269,7 @@ async function fetchConnections() {
     // Start polling for any connections with active profiling
     startPollingForActiveConnections()
   } catch (err: any) {
-    toast.error(err?.data?.detail || err?.message || 'Failed to fetch connections')
+    toast.error(extractErrorMessage(err, 'Failed to fetch connections'))
   } finally {
     loading.value = false
   }
@@ -1270,7 +1280,7 @@ async function fetchConnectorTypes() {
     const response = await api.connections.getTypes() as ConnectorType[]
     connectorTypes.value = response
   } catch (err: any) {
-    toast.error(err?.data?.detail || err?.message || 'Failed to fetch connector types')
+    toast.error(extractErrorMessage(err, 'Failed to fetch connector types'))
   }
 }
 
@@ -1287,13 +1297,13 @@ async function fetchSchema(connectionId: number) {
           await api.connections.refreshSchema(String(connectionId))
           schema.value = await api.connections.getSchema(String(connectionId)) as DatabaseSchema
         } catch (refreshErr: any) {
-          schemaError.value = refreshErr?.data?.detail || refreshErr?.message || 'Failed to load schema'
+          schemaError.value = extractErrorMessage(refreshErr, 'Failed to load schema')
         }
       } else {
         schema.value = null
       }
     } else {
-      schemaError.value = err?.data?.detail || err?.message || 'Failed to load schema'
+      schemaError.value = extractErrorMessage(err, 'Failed to load schema')
     }
   } finally {
     schemaLoading.value = false
@@ -1385,7 +1395,7 @@ async function handleReprofile(connection: DatabaseConnection) {
     // Start polling
     startProfilingPolling(connection.id)
   } catch (err: any) {
-    toast.error(err?.data?.detail || err?.message || 'Failed to start re-profiling')
+    toast.error(extractErrorMessage(err, 'Failed to start re-profiling'))
   } finally {
     reprofilingId.value = null
   }
@@ -1458,7 +1468,7 @@ async function handleNotionConnect() {
     notionFormErrors.value = {}
     await fetchConnections()
   } catch (err: any) {
-    toast.error(err?.data?.detail || err?.message || 'Failed to connect Notion')
+    toast.error(extractErrorMessage(err, 'Failed to connect Notion'))
   } finally {
     connectingNotion.value = false
   }
@@ -1471,7 +1481,7 @@ async function handleNotionSync() {
     await api.notion.triggerSync(editingConnection.value.id)
     toast.success('Sync started — schema will update automatically')
   } catch (err: any) {
-    toast.error(err?.data?.detail || err?.message || 'Sync failed')
+    toast.error(extractErrorMessage(err, 'Sync failed'))
   } finally {
     saving.value = false
   }
@@ -1538,7 +1548,7 @@ async function handleFacebookAccountSelect() {
     facebookSelectedAccount.value = ''
     await fetchConnections()
   } catch (err: any) {
-    toast.error(err?.data?.detail || err?.message || 'Failed to connect account')
+    toast.error(extractErrorMessage(err, 'Failed to connect account'))
   } finally {
     facebookConnecting.value = false
   }
@@ -1681,7 +1691,7 @@ async function handleFormSubmit() {
       showFormSheet.value = false
       await fetchConnections()
     } catch (err: any) {
-      toast.error(err?.data?.detail || err?.message || 'Failed to save')
+      toast.error(extractErrorMessage(err, 'Failed to save'))
     } finally {
       saving.value = false
     }
@@ -1731,8 +1741,7 @@ async function handleFormSubmit() {
     showTypePicker.value = false
     await fetchConnections()
   } catch (err: any) {
-    const errorMessage = err?.data?.detail || err?.message || 'Failed to save connection'
-    toast.error(errorMessage)
+    toast.error(extractErrorMessage(err, 'Failed to save connection'))
   } finally {
     saving.value = false
   }
@@ -1779,8 +1788,7 @@ async function handleTestConnection() {
       setTimeout(() => { connectionFailedMessage.value = '' }, 4000)
     }
   } catch (err: any) {
-    const errorMessage = err?.data?.detail || err?.message || 'Connection test failed'
-    connectionFailedMessage.value = errorMessage
+    connectionFailedMessage.value = extractErrorMessage(err, 'Connection test failed')
     setTimeout(() => { connectionFailedMessage.value = '' }, 4000)
   } finally {
     testing.value = false
@@ -1807,17 +1815,26 @@ async function refreshSchema(connection: DatabaseConnection) {
       }
     }
   } catch (err: any) {
-    const errorMessage = err?.data?.detail || err?.message || 'Failed to refresh schema'
-    toast.error(errorMessage)
+    toast.error(extractErrorMessage(err, 'Failed to refresh schema'))
   } finally {
     refreshingId.value = null
   }
 }
 
 function openDeleteDialog(connection: DatabaseConnection) {
+  wasEditingBeforeDelete.value = showFormSheet.value
+  if (wasEditingBeforeDelete.value) showFormSheet.value = false
   deletingConnection.value = connection
   deleteConfirmInput.value = ''
   showDeleteDialog.value = true
+}
+
+function cancelDelete() {
+  showDeleteDialog.value = false
+  if (wasEditingBeforeDelete.value) {
+    showFormSheet.value = true
+    wasEditingBeforeDelete.value = false
+  }
 }
 
 async function refreshAllConnections() {
@@ -1840,6 +1857,7 @@ async function confirmDelete() {
     toast.success('Connection deleted successfully')
     showDeleteDialog.value = false
     showFormSheet.value = false
+    wasEditingBeforeDelete.value = false
     await fetchConnections()
   } catch (err: any) {
     const detail = err?.data?.detail

@@ -209,6 +209,12 @@ export interface WidgetDataSource {
   sql: string
   mapping: DataSourceMapping
   lastRefreshedAt?: string
+  // Where the last refresh's rows came from. "data_plane" → DuckDB over the
+  // Parquet snapshot (badge shown on widget). "cache" → warm _dash_* table.
+  // "source" → live connector. Persisted alongside the widget JSON (same as
+  // `lastRefreshedAt`), so the badge reflects the last known refresh until the
+  // next refresh updates it.
+  servedFrom?: 'data_plane' | 'cache' | 'source'
 }
 
 // Discriminated union — enables type narrowing in templates

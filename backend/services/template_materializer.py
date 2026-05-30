@@ -123,6 +123,15 @@ def _materialize_pipeline(
         enabled=template.enabled,
         created_by_user_id=connection.user_id,
     )
+    # Seed `next_run_at` when cron is set — otherwise `dispatch_pipelines`
+    # filter (`next_run_at <= now`) silently skips the row because NULL
+    # comparisons never match.
+    if row.cron and row.enabled:
+        try:
+            from backend.utils.cron import compute_next_run
+            row.next_run_at = compute_next_run(row.cron, row.timezone or "UTC")
+        except Exception:
+            logger.debug("compute_next_run failed for template %s", template.name, exc_info=True)
     if _try_insert(db, row):
         return row
     return None
@@ -325,47 +334,49 @@ def _build_sql_pipeline_templates(
         prefix = _slugify_connection_name(connection, db)
         conn_name = getattr(connection, "name", None) or f"conn_{str(connection.id)[:8]}"
 
-        templates: list[PipelineTemplate] = []
+        # Collect columns up-front so the watermark classifier can run as a
+        # single batched call across all tables (cheaper for the LLM-first
+        # path; deterministic-only path is also fine with a batched dict).
+        columns_by_table: dict[str, list[dict]] = {}
+        unique_key_by_table: dict[str, Optional[tuple[str, ...]]] = {}
         for table in tables:
-            unique_key: Optional[tuple[str, ...]] = None
-            incremental_key: Optional[str] = None
-            columns: list[dict] = []
             try:
                 schema_obj = connector.get_table_schema(table, schema=None)
-                columns = list(getattr(schema_obj, "columns", []) or [])
+                cols = list(getattr(schema_obj, "columns", []) or [])
             except Exception:
                 logger.debug(
                     "get_table_schema failed for %s on connection %s; skipping unique_key/incremental_key",
                     table, connection.id, exc_info=True,
                 )
-                columns = []
+                cols = []
+            columns_by_table[table] = cols
+            pk_cols = tuple(c["name"] for c in cols if c.get("primary_key"))
+            unique_key_by_table[table] = pk_cols or None
 
-            pk_cols = tuple(c["name"] for c in columns if c.get("primary_key"))
-            if pk_cols:
-                unique_key = pk_cols
+        try:
+            from backend.services.watermark_classifier import resolve_watermark
+            watermark_by_table = resolve_watermark(reg, connector, tables, columns_by_table)
+        except Exception:
+            logger.debug(
+                "resolve_watermark raised on connection %s; defaulting to full-snapshot mode",
+                connection.id, exc_info=True,
+            )
+            watermark_by_table = {t: None for t in tables}
 
-            if columns:
-                try:
-                    incremental_key = _detect_incremental_key_for_table(
-                        reg, connector, table, columns,
-                    )
-                except Exception:
-                    logger.debug(
-                        "incremental-key detection failed for %s; defaulting to full mode",
-                        table, exc_info=True,
-                    )
-                    incremental_key = None
-
+        templates: list[PipelineTemplate] = []
+        for table in tables:
+            incremental_key = watermark_by_table.get(table)
             mode = "incremental" if incremental_key else "full"
-
             templates.append(PipelineTemplate(
                 name=f"{conn_name}: {table}",
                 target_table=f"{prefix}__{table}",
                 extraction_config={"tables": [table]},
-                cron=None,
+                # Auto-enabled daily ingest at 02:00 UTC (checklist default).
+                # Override via PATCH /api/pipelines/{id} once the row exists.
+                cron="0 2 * * *",
                 mode=mode,
                 incremental_key=incremental_key,
-                unique_key=unique_key,
+                unique_key=unique_key_by_table.get(table),
             ))
     finally:
         close_fn = getattr(connector, "close", None)

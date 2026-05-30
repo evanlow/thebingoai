@@ -1,6 +1,6 @@
 """Celery tasks for Pipeline scheduling and execution (Phase 2)."""
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from celery import shared_task
 
@@ -94,8 +94,9 @@ def run_pipeline_task(
 ):
     """Execute a single pipeline run. Delegates to runner.run_pipeline().
 
-    `backfill_since` (ISO datetime) → "Load history" run: overrides the dlt
-    incremental cursor for this run only, does not advance the schedule.
+    `backfill_since` (ISO-8601 datetime string; Celery args must be JSON-safe)
+    → "Load history" / bootstrap run: overrides the dlt incremental cursor for
+    this run only, does not advance the schedule.
     """
     from backend.pipelines.runner import run_pipeline
     run_id = run_pipeline(
@@ -104,6 +105,59 @@ def run_pipeline_task(
     if run_id:
         logger.info("Pipeline %s run completed: run_id=%s", pipeline_id, run_id)
     return run_id
+
+
+@shared_task(name="first_ingest_task", time_limit=3600)
+def first_ingest_task(connection_id: int, triggered_by_user_id: str | None):
+    """Bootstrap ingest: run every pipeline freshly materialised for `connection_id`.
+
+    Fired from `api/connections.create_connection` immediately after
+    `materialize_templates_for_connection` succeeds. Pulls
+    `now - settings.first_ingest_lookback_days` forward for incremental tables;
+    full-snapshot tables ignore the lookback and load everything.
+
+    Runs sequentially (one pipeline per loop iter) so multiple tables on the
+    same connection don't fan out a herd of concurrent dlt processes against
+    the same source DB.
+    """
+    from backend.config import settings
+    from backend.database.session import SessionLocal
+    from backend.models.pipeline import Pipeline
+    from backend.pipelines.runner import run_pipeline
+
+    db = SessionLocal()
+    try:
+        pipelines = (
+            db.query(Pipeline)
+            .filter(Pipeline.source_connection_id == connection_id)
+            .all()
+        )
+        if not pipelines:
+            logger.info("first_ingest_task: no pipelines for connection %s", connection_id)
+            return 0
+
+        backfill_since_iso = (
+            datetime.now(timezone.utc)
+            - timedelta(days=int(getattr(settings, "first_ingest_lookback_days", 1)))
+        ).isoformat()
+        ran = 0
+        for p in pipelines:
+            if p.first_ingest_done:
+                continue
+            try:
+                run_pipeline(
+                    p.id, "bootstrap", triggered_by_user_id,
+                    # Full-snapshot tables ignore this; incremental ones use it
+                    # as the dlt `initial_value` for their cursor.
+                    backfill_since=backfill_since_iso,
+                )
+                ran += 1
+            except Exception:
+                logger.exception("first_ingest_task: pipeline %s failed", p.id)
+        logger.info("first_ingest_task: ran %d pipeline(s) for connection %s", ran, connection_id)
+        return ran
+    finally:
+        db.close()
 
 
 @shared_task(name="pipeline_health_check")
@@ -139,21 +193,31 @@ def pipeline_health_check():
                 scope = OwnerScope(pipeline.owner_scope_kind, pipeline.owner_scope_id)
                 plane = get_default_plane(scope, db)
 
-                # Check if target table exists
-                table_exists = plane.table_exists(scope, pipeline.target_table)
+                # Check if target table exists — but only meaningful after the
+                # bootstrap has actually landed a row. A pre-bootstrap pipeline
+                # (or one whose only successful runs returned zero rows) has no
+                # BQ table yet by design; flagging it stale would be a false
+                # positive and noisy.
+                if pipeline.first_ingest_done:
+                    table_missing = not plane.table_exists(scope, pipeline.target_table)
+                else:
+                    table_missing = False
 
                 # Check staleness: last_run_at > 2× cron_interval?
                 is_stale = False
                 if pipeline.cron and pipeline.last_run_at:
                     try:
-                        # Get next run time from current cron expression
+                        # `pipeline.last_run_at` is naive (Column(DateTime) stores
+                        # UTC without tzinfo). `now` and croniter outputs derived
+                        # from it are aware. Coerce before subtracting to avoid
+                        # TypeError: can't subtract offset-naive and offset-aware.
+                        last_run = pipeline.last_run_at
+                        if last_run.tzinfo is None:
+                            last_run = last_run.replace(tzinfo=timezone.utc)
                         cron = croniter(pipeline.cron, now)
-                        last_expected_run = cron.get_prev(datetime)
-                        # If last_run_at is before last_expected_run - 1× interval, it's stale
-                        # Simple heuristic: if last_run_at is > 2× the interval old, mark stale
                         next_run = cron.get_next(datetime)
                         interval = (next_run - now).total_seconds()
-                        time_since_last_run = (now - pipeline.last_run_at).total_seconds()
+                        time_since_last_run = (now - last_run).total_seconds()
                         is_stale = time_since_last_run > (2 * interval)
                     except Exception as e:
                         logger.warning(
@@ -163,7 +227,7 @@ def pipeline_health_check():
                         is_stale = False
 
                 # Determine health
-                is_unhealthy = (not table_exists) or is_stale
+                is_unhealthy = table_missing or is_stale
 
                 if is_unhealthy:
                     # Update pipeline status

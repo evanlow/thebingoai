@@ -1,72 +1,95 @@
-/**
- * Pipelines REST client. Mirrors `bingo/backend/pipelines/api.py` — see the
- * router for response shapes and validation rules.
- */
-
-export interface PipelineRow {
+export interface Pipeline {
   id: string
   name: string
   source_connection_id: number
+  owner_scope_kind: string
+  owner_scope_id: string
   target_table: string
   cron: string | null
   timezone: string
-  mode: 'full' | 'incremental'
+  mode: string
   incremental_key: string | null
-  unique_key: string[] | null
   extraction_config: Record<string, any>
+  pipeline_fingerprint: string
   last_run_at: string | null
   last_run_status: string | null
   next_run_at: string | null
   enabled: boolean
+  created_by_user_id: string
+  created_at?: string | null
+  updated_at?: string | null
 }
 
-export interface PipelineRunRow {
-  id: string
-  pipeline_id: string
-  started_at: string
-  finished_at: string | null
-  status: string
-  rows_written: number | null
-  bytes_written: number | null
-  error_message: string | null
-  triggered_by: string
+export interface PipelineCreate {
+  name: string
+  source_connection_id: number
+  owner_scope_kind?: string
+  owner_scope_id: string
+  target_table: string
+  cron?: string | null
+  timezone?: string | null
+  mode?: string
+  incremental_key?: string | null
+  extraction_config?: Record<string, any>
 }
 
-export interface RedetectResponse {
-  pipeline_id: string
-  table: string | null
-  suggested_incremental_key: string | null
-  current_incremental_key: string | null
-  current_mode: string
+export interface PipelineUpdate {
+  // Mirrors backend PipelineUpdate. Schedule + enabled + name + cursor overrides.
+  // Passing incremental_key='' (empty string) explicitly clears the cursor.
+  // Switching mode to 'incremental' requires a non-empty cursor in the same call.
+  // Changing source tables still requires delete + recreate.
+  name?: string
+  cron?: string | null
+  timezone?: string | null
+  enabled?: boolean
+  mode?: 'full' | 'incremental'
+  incremental_key?: string | null
 }
 
 export function createPipelinesApi(fetchWithRefresh: Function) {
   return {
-    async list(): Promise<PipelineRow[]> {
+    async list(): Promise<Pipeline[]> {
       return fetchWithRefresh('/api/pipelines', {})
     },
-    async get(id: string): Promise<PipelineRow> {
+    async listForConnection(connectionId: number): Promise<Pipeline[]> {
+      // Server endpoint doesn't filter; we filter client-side. Lists are small.
+      const all: Pipeline[] = await fetchWithRefresh('/api/pipelines', {})
+      return all.filter((p) => p.source_connection_id === connectionId)
+    },
+    async get(id: string): Promise<Pipeline> {
       return fetchWithRefresh(`/api/pipelines/${id}`, {})
     },
-    async runs(id: string, limit = 20): Promise<PipelineRunRow[]> {
-      return fetchWithRefresh(`/api/pipelines/${id}/runs?limit=${limit}`, {})
-    },
-    async run(id: string) {
-      return fetchWithRefresh(`/api/pipelines/${id}/run`, { method: 'POST' })
-    },
-    async override(id: string, body: { mode?: string; incremental_key?: string | null }): Promise<PipelineRow> {
-      return fetchWithRefresh(`/api/pipelines/${id}/override`, {
-        method: 'PATCH',
-        body,
+    async create(data: PipelineCreate): Promise<Pipeline> {
+      return fetchWithRefresh('/api/pipelines', {
+        method: 'POST',
+        body: data,
       })
     },
-    async redetect(id: string): Promise<RedetectResponse> {
-      return fetchWithRefresh(`/api/pipelines/${id}/redetect`, { method: 'POST' })
+    async update(id: string, data: PipelineUpdate): Promise<Pipeline> {
+      return fetchWithRefresh(`/api/pipelines/${id}`, {
+        method: 'PATCH',
+        body: data,
+      })
     },
-    async backfill(id: string, backfill_since: string) {
-      return fetchWithRefresh(`/api/pipelines/${id}/backfill`, {
+    async delete(id: string): Promise<void> {
+      return fetchWithRefresh(`/api/pipelines/${id}`, {
+        method: 'DELETE',
+      })
+    },
+    async run(id: string): Promise<{ run_id: string; status: string }> {
+      return fetchWithRefresh(`/api/pipelines/${id}/run`, {
         method: 'POST',
-        body: { backfill_since },
+      })
+    },
+    async redetectWatermark(id: string): Promise<Pipeline> {
+      return fetchWithRefresh(`/api/pipelines/${id}/redetect-watermark`, {
+        method: 'POST',
+      })
+    },
+    async loadHistory(id: string, since: string): Promise<{ run_id: string; status: string; since: string }> {
+      return fetchWithRefresh(`/api/pipelines/${id}/load-history`, {
+        method: 'POST',
+        body: { since },
       })
     },
   }

@@ -26,6 +26,9 @@ class SqlExtractionConfig(BaseModel):
     # dlt tracks a watermark and only pulls newer rows on subsequent runs.
     incremental_key: Optional[str] = None
     initial_value: Optional[str] = None   # ISO datetime/date string (first-run lower bound)
+    # Exclusive upper-bound cutoff, in whole days back from the start of today
+    # UTC. 1 = T-1 (exclude same-day partials), 2 = T-2, 0 = include today.
+    cutoff_days: int = 1
 
 
 def build_sqlalchemy_url(drivername: str, connection) -> str:
@@ -64,14 +67,15 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
 
     if cfg.incremental_key and cfg.tables:
         import dlt
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
 
         # `end_value` is an EXCLUSIVE upper bound (`cursor < end_value`). Cap
-        # at the start of today UTC so same-day rows are never pulled while
-        # an incremental cursor is configured.
+        # at the start of today UTC, shifted back `cutoff_days - 1` whole days,
+        # so same-day (and optionally older) rows are never pulled while an
+        # incremental cursor is configured. `cutoff_days` defaults to 1 (T-1).
         #   - First run with `initial_value`: pulls `[initial_value, end_value)`.
         #   - First run without `initial_value`: pulls `[epoch, end_value)` →
-        #     all history up to and including T-1.
+        #     all history up to the cutoff.
         #   - Subsequent runs: dlt advances the watermark; pulls
         #     `(last_max, end_value)` → newly visible rows from prior days only.
         # dlt requires `initial_value` to be set whenever `end_value` is set,
@@ -79,7 +83,7 @@ def sql_dlt_source(drivername: str, connection, extraction_config: Optional[dict
         # sentinel that's safely before any real source data.
         end_value = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0,
-        )
+        ) - timedelta(days=max(0, cfg.cutoff_days) - 1)
         unbounded_lower_sentinel = datetime(1900, 1, 1, tzinfo=timezone.utc)
 
         initial: datetime

@@ -368,9 +368,10 @@ export const useDashboardStore = defineStore('dashboard', {
               dashboard_id: this.currentDashboardId ?? undefined,
               widget_id: widget.id,
               widget_sources: widget.sources ?? undefined,
-            }) as { config: Record<string, any>; refreshed_at: string }
+            }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source' }
             Object.assign(widget.widget.config, response.config)
             widget.dataSource.lastRefreshedAt = response.refreshed_at
+            widget.dataSource.servedFrom = response.served_from
           } catch (e) {
             console.error(`Widget ${widget.id} refresh failed:`, e)
           }

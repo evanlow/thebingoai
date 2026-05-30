@@ -38,31 +38,6 @@ class PipelineCreate(BaseModel):
     extraction_config: dict[str, Any] = {}
 
 
-class PipelineOverride(BaseModel):
-    """Per-table override of the watermark cursor + ingestion mode.
-
-    Only the fields actually provided are applied — omit one to leave it
-    unchanged. Used by the "Pipelines" tab on the connection-detail page to
-    correct the auto-detected cursor or flip a table between full / incremental.
-    """
-    mode: str | None = None              # "full" | "incremental"
-    incremental_key: str | None = None   # column name; required when mode=incremental
-
-
-class WatermarkRedetectResponse(BaseModel):
-    """Output of POST /pipelines/{id}/redetect — pipeline-side answers only."""
-    pipeline_id: str
-    table: str | None
-    suggested_incremental_key: str | None
-    current_incremental_key: str | None
-    current_mode: str
-
-
-class BackfillRequest(BaseModel):
-    """Trigger a one-off "Load history" run with a custom cursor lower bound."""
-    backfill_since: str  # ISO datetime string (e.g. "2024-01-01T00:00:00+00:00")
-
-
 class PipelineResponse(BaseModel):
     id: str
     name: str
@@ -86,6 +61,36 @@ class PipelineResponse(BaseModel):
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class PipelineUpdate(BaseModel):
+    """Fields the UI is allowed to mutate on an existing pipeline.
+
+    Schedule (`cron`/`timezone`), `enabled` toggle, `name`, and the
+    Phase 3 ingest-shape overrides: `mode` (full/incremental) and
+    `incremental_key` (cursor column). Changing source tables still requires
+    delete + recreate so the old fingerprint's Parquet stays untouched.
+
+    `incremental_key` uses an explicit empty-string sentinel for "clear the
+    cursor" because Pydantic can't distinguish `None` (unset) from `None`
+    (explicit null) in a JSON PATCH body.
+    """
+    name: str | None = None
+    cron: str | None = None
+    timezone: str | None = None
+    enabled: bool | None = None
+    mode: str | None = None
+    incremental_key: str | None = None
+
+
+class LoadHistoryRequest(BaseModel):
+    """Body of `POST /api/pipelines/{id}/load-history`.
+
+    `since` is an ISO-8601 timestamp (UTC by convention). The runner forwards
+    it to `sql_dlt_source` as the dlt incremental cursor's `initial_value`,
+    overriding any persisted state for this single run.
+    """
+    since: datetime
 
 
 class PipelineRunResponse(BaseModel):
@@ -296,6 +301,71 @@ async def get_pipeline_runs(
 
 
 # ---------------------------------------------------------------------------
+# PATCH /api/pipelines/{pipeline_id} — partial update
+# ---------------------------------------------------------------------------
+
+@router.patch("/{pipeline_id}", response_model=PipelineResponse)
+async def update_pipeline(
+    pipeline_id: str,
+    body: PipelineUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Partial update — schedule, name, and enabled toggle only.
+
+    Recomputes `next_run_at` when cron / timezone changes, or when the pipeline
+    is re-enabled with an existing cron.
+    """
+    pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
+
+    if body.timezone is not None and body.timezone != "UTC" and not is_valid_timezone(body.timezone):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown IANA timezone: {body.timezone}",
+        )
+
+    if body.mode is not None and body.mode not in ("full", "incremental"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"mode must be 'full' or 'incremental' (got: {body.mode!r})",
+        )
+
+    # `mode='incremental'` requires a cursor column. Use the body value when
+    # both fields arrive in the same PATCH; otherwise the existing pipeline value.
+    effective_mode = body.mode if body.mode is not None else pipeline.mode
+    effective_inc_key = (
+        body.incremental_key if body.incremental_key is not None else pipeline.incremental_key
+    )
+    if effective_mode == "incremental" and not effective_inc_key:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="incremental mode requires a non-empty incremental_key",
+        )
+
+    for field in ("name", "cron", "timezone", "enabled", "mode", "incremental_key"):
+        val = getattr(body, field)
+        if val is not None:
+            # Empty string on incremental_key explicitly clears the cursor.
+            if field == "incremental_key" and val == "":
+                setattr(pipeline, field, None)
+            else:
+                setattr(pipeline, field, val)
+
+    if body.cron is not None or body.timezone is not None or body.enabled is True:
+        if pipeline.cron and pipeline.enabled:
+            pipeline.next_run_at = compute_next_run(
+                pipeline.cron, pipeline.timezone or "UTC",
+            )
+        else:
+            pipeline.next_run_at = None
+
+    db.commit()
+    db.refresh(pipeline)
+    logger.info("Pipeline %s updated by user %s", pipeline.id, current_user.id)
+    return pipeline
+
+
+# ---------------------------------------------------------------------------
 # POST /api/pipelines/{pipeline_id}/run — manual trigger
 # ---------------------------------------------------------------------------
 
@@ -319,6 +389,99 @@ async def trigger_pipeline_run(
 
 
 # ---------------------------------------------------------------------------
+# POST /api/pipelines/{pipeline_id}/redetect-watermark
+# ---------------------------------------------------------------------------
+
+@router.post("/{pipeline_id}/redetect-watermark", response_model=PipelineResponse)
+async def redetect_watermark(
+    pipeline_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Re-run the watermark classifier for the pipeline's source table.
+
+    Useful after schema changes (new `updated_at` column added, etc.) so the
+    UI can refresh the cursor pick without delete + recreate. Persists the
+    pick, flips `mode` to 'incremental' on success / 'full' on miss.
+    """
+    pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
+    src_tables = (pipeline.extraction_config or {}).get("tables") or []
+    if not src_tables:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Pipeline has no source tables in extraction_config",
+        )
+    table = src_tables[0]
+
+    from backend.models.database_connection import DatabaseConnection
+    from backend.connectors.factory import (
+        get_connector_for_connection, get_connector_registration,
+    )
+    from backend.services.watermark_classifier import resolve_watermark
+
+    conn = db.query(DatabaseConnection).filter(
+        DatabaseConnection.id == pipeline.source_connection_id,
+    ).first()
+    if not conn:
+        raise HTTPException(status_code=404, detail="Source connection missing")
+    reg = get_connector_registration(conn.db_type)
+    try:
+        with get_connector_for_connection(conn) as connector:
+            schema_obj = connector.get_table_schema(table, schema=None)
+            cols = list(getattr(schema_obj, "columns", []) or [])
+            picks = resolve_watermark(reg, connector, [table], {table: cols})
+    except Exception as e:
+        logger.warning("redetect_watermark failed for pipeline %s: %s", pipeline.id, e)
+        raise HTTPException(status_code=502, detail=f"Watermark detection failed: {e}")
+
+    new_key = picks.get(table)
+    pipeline.incremental_key = new_key
+    pipeline.mode = "incremental" if new_key else "full"
+    db.commit()
+    db.refresh(pipeline)
+    logger.info(
+        "Pipeline %s watermark re-detected by user %s → key=%r, mode=%s",
+        pipeline.id, current_user.id, new_key, pipeline.mode,
+    )
+    return pipeline
+
+
+# ---------------------------------------------------------------------------
+# POST /api/pipelines/{pipeline_id}/load-history
+# ---------------------------------------------------------------------------
+
+@router.post("/{pipeline_id}/load-history", status_code=status.HTTP_202_ACCEPTED)
+async def load_history(
+    pipeline_id: str,
+    body: LoadHistoryRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Backfill pre-T-1 history: queue a one-shot run with `backfill_since`.
+
+    The runner forwards `since` to dlt's incremental cursor as `initial_value`,
+    so the next dlt extract pulls rows from `cursor_col >= since`. Merge
+    dedup via `unique_key` keeps subsequent normal cron runs idempotent.
+    """
+    pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
+    if pipeline.mode != "incremental" or not pipeline.incremental_key:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Load-history requires an incremental pipeline with a configured incremental_key",
+        )
+
+    from backend.pipelines.tasks import run_pipeline_task
+
+    since_iso = body.since.astimezone(timezone.utc).isoformat() if body.since.tzinfo else body.since.isoformat()
+    task = run_pipeline_task.delay(pipeline.id, "manual-backfill", current_user.id, since_iso)
+    logger.info(
+        "load-history triggered for pipeline %s by user %s since=%s → task %s",
+        pipeline.id, current_user.id, since_iso, task.id,
+    )
+    return {"run_id": task.id, "status": "queued", "since": since_iso}
+
+
+# ---------------------------------------------------------------------------
 # DELETE /api/pipelines/{pipeline_id}
 # ---------------------------------------------------------------------------
 
@@ -335,201 +498,3 @@ async def delete_pipeline_endpoint(
     db.commit()
 
 
-# ---------------------------------------------------------------------------
-# PATCH /api/pipelines/{pipeline_id}/override — edit cursor + mode
-# ---------------------------------------------------------------------------
-
-@router.patch("/{pipeline_id}/override", response_model=PipelineResponse)
-async def override_pipeline(
-    pipeline_id: str,
-    body: PipelineOverride,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Override the auto-detected cursor / mode for one pipeline.
-
-    Updates `mode`, `incremental_key`, and the matching keys in
-    `extraction_config` so the next dlt run picks up the new cursor. The dlt
-    state is NOT reset here — call `/backfill` if you need to re-pull history
-    under the new cursor.
-    """
-    pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
-
-    new_mode = body.mode if body.mode is not None else pipeline.mode
-    if new_mode not in ("full", "incremental"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"mode must be 'full' or 'incremental', got {new_mode!r}",
-        )
-
-    new_key = body.incremental_key if body.incremental_key is not None else pipeline.incremental_key
-    if new_mode == "incremental" and not new_key:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="incremental_key is required when mode='incremental'",
-        )
-
-    pipeline.mode = new_mode
-    pipeline.incremental_key = new_key if new_mode == "incremental" else None
-
-    cfg = dict(pipeline.extraction_config or {})
-    if new_mode == "incremental":
-        cfg["incremental_key"] = new_key
-        # initial_value left as-is; user can call /backfill to override the cursor lower bound
-    else:
-        cfg.pop("incremental_key", None)
-        cfg.pop("initial_value", None)
-    pipeline.extraction_config = cfg
-
-    db.commit()
-    db.refresh(pipeline)
-    logger.info(
-        "Pipeline %s override applied by user %s: mode=%s incremental_key=%s",
-        pipeline.id, current_user.id, pipeline.mode, pipeline.incremental_key,
-    )
-    return pipeline
-
-
-# ---------------------------------------------------------------------------
-# POST /api/pipelines/{pipeline_id}/redetect — re-run watermark classifier
-# ---------------------------------------------------------------------------
-
-@router.post("/{pipeline_id}/redetect", response_model=WatermarkRedetectResponse)
-def redetect_watermark(
-    pipeline_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Re-run the watermark classifier against the live source schema.
-
-    Defined sync (not ``async``) on purpose: ``classify_connection`` runs
-    ``asyncio.run()`` internally when the LLM classifier is configured, which
-    raises ``RuntimeError`` inside a running event loop. FastAPI executes sync
-    endpoints in a threadpool, so ``asyncio.run`` gets a fresh loop. The body
-    is fully synchronous (blocking connector + DB calls).
-
-    Returns the *suggested* cursor without auto-applying — the UI surfaces it
-    so the user can accept (via `/override`) or ignore. Honors the
-    `WATERMARK_CLASSIFIER_*` env knobs (deterministic-only when unset).
-    """
-    pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
-    tables = (pipeline.extraction_config or {}).get("tables") or []
-    if len(tables) != 1:
-        return WatermarkRedetectResponse(
-            pipeline_id=pipeline.id,
-            table=None,
-            suggested_incremental_key=None,
-            current_incremental_key=pipeline.incremental_key,
-            current_mode=pipeline.mode,
-        )
-    table = tables[0]
-
-    from backend.models.database_connection import DatabaseConnection
-    connection = db.query(DatabaseConnection).filter(
-        DatabaseConnection.id == pipeline.source_connection_id,
-        DatabaseConnection.user_id == current_user.id,
-    ).first()
-    if not connection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Source connection not found",
-        )
-
-    from backend.connectors.factory import get_connector_for_connection
-    from backend.services.watermark_classifier import classify_connection
-
-    suggested: str | None = None
-    try:
-        connector = get_connector_for_connection(connection)
-    except Exception:
-        logger.warning("redetect: cannot open connector for pipeline %s", pipeline.id, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not connect to the source database",
-        )
-    try:
-        try:
-            schema_obj = connector.get_table_schema(table, schema=None)
-        except Exception as exc:
-            logger.warning(
-                "redetect: schema fetch failed for table %s on pipeline %s",
-                table, pipeline.id, exc_info=True,
-            )
-            # Propagate as 503 instead of returning an ambiguous null suggestion —
-            # the UI message "Classifier found no usable cursor" would mislead the
-            # user when the real failure is a transient DB reachability issue.
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Could not read schema for table '{table}': {exc}",
-            )
-        columns = list(getattr(schema_obj, "columns", []) or [])
-        if columns:
-            suggested = classify_connection({table: columns}).get(table)
-    finally:
-        close = getattr(connector, "close", None)
-        if callable(close):
-            try:
-                close()
-            except Exception:
-                pass
-
-    return WatermarkRedetectResponse(
-        pipeline_id=pipeline.id,
-        table=table,
-        suggested_incremental_key=suggested,
-        current_incremental_key=pipeline.incremental_key,
-        current_mode=pipeline.mode,
-    )
-
-
-# ---------------------------------------------------------------------------
-# POST /api/pipelines/{pipeline_id}/backfill — "Load history" trigger
-# ---------------------------------------------------------------------------
-
-@router.post("/{pipeline_id}/backfill", status_code=status.HTTP_202_ACCEPTED)
-async def backfill_pipeline(
-    pipeline_id: str,
-    body: BackfillRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Trigger a one-off historical run with a custom cursor lower bound.
-
-    Off-schedule: does NOT advance `next_run_at`. Uses an ephemeral dlt
-    `pipeline_name` so the saved cursor isn't shadowed by prior state; merge
-    dedup via `unique_key` handles overlap with the canonical pipeline's
-    already-loaded rows. Tables without a `unique_key` will produce duplicates
-    (the override UI flags those as a dedup risk).
-    """
-    pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
-
-    # Validate + normalize `backfill_since` to an aware UTC datetime. A
-    # timezone-naive value would reach the dlt incremental cursor in
-    # `sql_dlt_source`, where it's compared against an aware UTC `end_value` —
-    # mixing aware/naive raises TypeError. Naive input is interpreted as UTC.
-    try:
-        parsed = datetime.fromisoformat(body.backfill_since)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"backfill_since must be an ISO datetime string, got {body.backfill_since!r}",
-        )
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    backfill_since = parsed.astimezone(timezone.utc).isoformat()
-
-    if pipeline.mode != "incremental":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Backfill only applies to incremental pipelines — full snapshots reload all rows on every run",
-        )
-
-    from backend.pipelines.tasks import run_pipeline_task
-    task = run_pipeline_task.delay(
-        pipeline.id, "manual", current_user.id, backfill_since,
-    )
-    logger.info(
-        "Backfill triggered for pipeline %s by user %s since=%s → task %s",
-        pipeline.id, current_user.id, backfill_since, task.id,
-    )
-    return {"run_id": task.id, "status": "queued", "backfill_since": backfill_since}
