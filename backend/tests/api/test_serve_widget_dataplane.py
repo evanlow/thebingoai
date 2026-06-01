@@ -83,13 +83,14 @@ class _FakeReader:
     def __init__(self, result):
         self._result = result
         self.calls = []
+        self.closed = False
 
     def query(self, scope, sql, params=None):
         self.calls.append((sql, params))
         return self._result
 
     def close(self):
-        pass
+        self.closed = True
 
 
 def _qr(columns, rows):
@@ -159,6 +160,41 @@ def test_prod_unfiltered_reads_warm_cache(monkeypatch, current_user, db_with_con
     assert resp is not None
     # Unfiltered prod read must hit the warm _dash_* cache, not run the full SQL.
     assert reader.calls == [('SELECT * FROM "_dash_5__w1"', None)]
+
+
+def test_supplied_reader_reused_and_not_closed(monkeypatch, current_user, db_with_connection):
+    """Bulk refresh passes one shared reader for the whole dashboard: the serve
+    must reuse it and must NOT close it (caller owns the lifecycle) nor build
+    its own via the factory."""
+    reader = _FakeReader(_qr(["region", "total"], [("EMEA", 15)]))
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
+
+    def _boom(scope, db):
+        raise AssertionError("must not create a reader when one is supplied")
+    monkeypatch.setattr(dps, "get_gcs_duckdb_reader", _boom)
+
+    dashboard = SimpleNamespace(data_context=None)
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region", dashboard_id=5)
+    resp = _serve_widget_via_dataplane(req, dashboard, current_user, db_with_connection, reader=reader)
+
+    assert resp is not None
+    assert reader.calls  # the supplied reader served the read
+    assert reader.closed is False  # caller owns lifecycle — not closed here
+
+
+def test_owned_reader_is_closed(monkeypatch, current_user, db_with_connection):
+    """Single-widget path (no reader supplied) builds its own reader and closes
+    it in the finally."""
+    reader = _FakeReader(_qr(["region", "total"], [("EMEA", 15)]))
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
+    monkeypatch.setattr(dps, "get_gcs_duckdb_reader", lambda scope, db: reader)
+
+    dashboard = SimpleNamespace(data_context=None)
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region", dashboard_id=5)
+    resp = _serve_widget_via_dataplane(req, dashboard, current_user, db_with_connection)
+
+    assert resp is not None
+    assert reader.closed is True  # owns_reader → closed
 
 
 def test_prod_filtered_runs_live_injected(monkeypatch, current_user, db_with_connection):

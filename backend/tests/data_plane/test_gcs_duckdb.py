@@ -73,3 +73,34 @@ def test_reader_named_param_binding(tmp_path, monkeypatch):
         assert [r[0] for r in res.rows] == [10]
     finally:
         reader.close()
+
+
+def test_register_views_dedups_per_glob(tmp_path, monkeypatch):
+    # A reader reused across widgets must register each table's view once, not
+    # once per query — the win behind sharing one reader for a whole dashboard.
+    f = tmp_path / "d.parquet"
+    _write(f)
+    monkeypatch.setattr(bqmod, "gcs_parquet_glob", lambda *a: str(f))
+
+    reader = GCSDuckDBReader("bkt", "K", "S")
+    try:
+        scope = OwnerScope("org", "o1")
+        reader.query(scope, "SELECT region FROM csv_1")
+        reader.query(scope, "SELECT amount FROM csv_1 ORDER BY amount")
+        assert reader._registered_globs == {str(f)}  # registered once across both queries
+    finally:
+        reader.close()
+
+
+def test_close_clears_registered_globs(tmp_path, monkeypatch):
+    # close() must reset the per-connection registry so a reused reader object
+    # re-registers after its connection is dropped.
+    f = tmp_path / "d.parquet"
+    _write(f)
+    monkeypatch.setattr(bqmod, "gcs_parquet_glob", lambda *a: str(f))
+
+    reader = GCSDuckDBReader("bkt", "K", "S")
+    reader.query(OwnerScope("org", "o1"), "SELECT region FROM csv_1")
+    assert reader._registered_globs
+    reader.close()
+    assert reader._registered_globs == set()
