@@ -135,8 +135,8 @@ export default defineNuxtConfig({
         { name: 'description', content: 'RAG system for indexing and querying markdown files' }
       ],
       link: [
-        { rel: 'icon', type: 'image/png', href: '/favicon/Bingo_fav_b.png', media: '(prefers-color-scheme: light)' },
-        { rel: 'icon', type: 'image/png', href: '/favicon/Bingo_fav_w.png', media: '(prefers-color-scheme: dark)' }
+        { rel: 'icon', type: 'image/png', href: '/favicon/bingo_icon_b.png', media: '(prefers-color-scheme: light)' },
+        { rel: 'icon', type: 'image/png', href: '/favicon/bingo_icon_w.png', media: '(prefers-color-scheme: dark)' }
       ]
     }
   }
