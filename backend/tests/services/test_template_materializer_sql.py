@@ -95,11 +95,33 @@ class _StubSqlExtractionConfig:
 _sql_dlt_module = _types.ModuleType("backend.connectors.sql_dlt")
 _sql_dlt_module.SqlExtractionConfig = _StubSqlExtractionConfig
 
+# Stub the watermark classifier — real module imports `backend.config` which
+# pulls pydantic-settings + the full Settings tree. The materializer only
+# needs `resolve_watermark(reg, connector, tables, columns_by_table)` to
+# return a `{table: cursor_col | None}` map.
+_watermark_module = _types.ModuleType("backend.services.watermark_classifier")
+_watermark_module._test_picks: dict[str, str | None] = {}
+
+
+def _stub_resolve_watermark(_reg, _connector, tables, columns_by_table):
+    return {t: _watermark_module._test_picks.get(t) for t in tables}
+
+
+_watermark_module.resolve_watermark = _stub_resolve_watermark
+
+# Stub the cron util so the `compute_next_run` call in `_materialize_pipeline`
+# doesn't pull croniter — return a fixed datetime sentinel.
+_cron_module = _types.ModuleType("backend.utils.cron")
+from datetime import datetime as _dt
+_cron_module.compute_next_run = MagicMock(return_value=_dt(2026, 1, 1, 2, 0, 0))
+
 sys.modules["backend.models.pipeline"] = _pipeline_module
 sys.modules["backend.models.transforms"] = _transforms_module
 sys.modules["backend.data_plane.scope"] = _scope_module
 sys.modules["backend.pipelines.runner"] = _runner_module
 sys.modules["backend.connectors.sql_dlt"] = _sql_dlt_module
+sys.modules["backend.services.watermark_classifier"] = _watermark_module
+sys.modules["backend.utils.cron"] = _cron_module
 
 
 # Load plugins.base for real dataclasses.
@@ -338,8 +360,42 @@ def test_build_sql_pipeline_templates_yields_one_per_table():
     assert all(t.extraction_config["tables"] == [name] for t, name in zip(
         templates, ["users", "orders", "events"]
     ))
-    assert all(t.cron is None for t in templates)
+    # Phase 1: auto-created Pipelines must ship with a default cron so
+    # `dispatch_pipelines` (`Pipeline.cron IS NOT NULL` filter) picks them up.
+    assert all(t.cron == "0 2 * * *" for t in templates)
+    # No columns supplied → watermark classifier stub returns None → full mode.
     assert all(t.mode == "full" for t in templates)
+
+
+def test_build_sql_pipeline_templates_incremental_mode_when_watermark_found():
+    """When the classifier picks a cursor, template flips to incremental mode."""
+    db = _make_db()
+    conn = _make_connection(name="pg_demo")
+    reg = _sql_reg(type_id="postgres")
+
+    _watermark_module._test_picks = {"orders": "updated_at"}
+    try:
+        with _patched_factory(
+            tables=["users", "orders"],
+            schemas={
+                "users": [{"name": "id", "type": "bigint", "primary_key": True}],
+                "orders": [
+                    {"name": "id", "type": "bigint", "primary_key": True},
+                    {"name": "updated_at", "type": "timestamp"},
+                ],
+            },
+        ):
+            templates = materializer._build_sql_pipeline_templates(conn, reg, db)
+    finally:
+        _watermark_module._test_picks = {}
+
+    by_name = {t.target_table: t for t in templates}
+    assert by_name["pg_demo__orders"].mode == "incremental"
+    assert by_name["pg_demo__orders"].incremental_key == "updated_at"
+    assert by_name["pg_demo__users"].mode == "full"
+    assert by_name["pg_demo__users"].incremental_key is None
+    # PRIMARY KEY columns drive `unique_key` (merge dedup).
+    assert by_name["pg_demo__orders"].unique_key == ("id",)
 
 
 def test_build_sql_pipeline_templates_returns_empty_when_connector_open_fails():

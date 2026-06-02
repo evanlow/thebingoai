@@ -1,6 +1,6 @@
 <template>
   <TransitionRoot :show="open" as="template">
-    <Dialog as="div" class="relative z-50" @close="$emit('update:open', false)">
+    <Dialog as="div" class="relative z-50" :initial-focus="panelRef" @close="$emit('update:open', false)">
       <TransitionChild
         as="template"
         enter="duration-300 ease-out"
@@ -25,6 +25,8 @@
             leave-to="opacity-0 translate-y-full"
           >
             <DialogPanel
+              ref="panelRef"
+              tabindex="-1"
               class="fixed inset-x-0 bottom-0 w-full transform overflow-hidden rounded-t-2xl bg-white dark:bg-neutral-800 text-left align-middle shadow-xl transition-all max-h-[80vh] flex flex-col"
               :class="[
                 fullHeight ? 'h-[80vh]' : '',
@@ -83,6 +85,8 @@ withDefaults(defineProps<Props>(), {
   fullHeight: false,
   panelClass: ''
 })
+
+const panelRef = ref<HTMLElement | null>(null)
 
 defineEmits<{
   'update:open': [value: boolean]

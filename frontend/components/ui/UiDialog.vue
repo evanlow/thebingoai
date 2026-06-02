@@ -1,6 +1,6 @@
 <template>
   <TransitionRoot :show="open" as="template">
-    <Dialog as="div" class="relative z-50" @close="$emit('update:open', false)">
+    <Dialog as="div" class="relative z-50" :initial-focus="panelRef" @close="$emit('update:open', false)">
       <TransitionChild
         as="template"
         enter="duration-300 ease-out"
@@ -24,7 +24,7 @@
             leave-from="opacity-100 scale-100"
             leave-to="opacity-0 scale-95"
           >
-            <DialogPanel :class="panelClasses">
+            <DialogPanel ref="panelRef" tabindex="-1" :class="panelClasses">
               <div v-if="title || $slots.header" class="flex items-center justify-between gap-6 border-b border-gray-200 dark:border-neutral-700 px-6 py-4">
                 <DialogTitle v-if="title" class="text-lg font-normal text-gray-900 dark:text-neutral-100">
                   {{ title }}
@@ -72,6 +72,8 @@ const props = withDefaults(defineProps<Props>(), {
   size: 'md',
   closable: true
 })
+
+const panelRef = ref<HTMLElement | null>(null)
 
 defineEmits<{
   'update:open': [value: boolean]

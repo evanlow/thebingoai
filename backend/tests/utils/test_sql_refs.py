@@ -7,6 +7,7 @@ from backend.utils.sql_refs import (
     rewrite_table_refs,
     can_parse,
     transpile_bq_to_duckdb,
+    transpile_to_engine,
     UntranspilableSQLError,
 )
 
@@ -136,3 +137,78 @@ def test_transpile_raises_on_unsupported_function():
     with pytest.raises(UntranspilableSQLError) as ei:
         transpile_bq_to_duckdb("SELECT ST_GEOGPOINT(lng, lat) FROM t")
     assert "st_geogpoint" in str(ei.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# transpile_to_engine — generic dialect → dialect helper
+# ---------------------------------------------------------------------------
+
+def test_transpile_to_engine_postgres_to_duckdb_double_colon_cast():
+    """Postgres `::` cast must render as a DuckDB-parseable CAST expression.
+
+    sqlglot canonicalises `NUMERIC` to `DECIMAL` (DuckDB's native name), so we
+    only assert the output parses and contains a cast keyword.
+    """
+    out = transpile_to_engine("SELECT amount::numeric FROM orders", source="postgres")
+    _assert_valid_duckdb(out)
+    lowered = out.lower()
+    assert "cast" in lowered or "::" in lowered
+
+
+def test_transpile_to_engine_mysql_to_duckdb_backticks():
+    out = transpile_to_engine("SELECT `col` FROM `orders`", source="mysql")
+    _assert_valid_duckdb(out)
+    assert "`" not in out  # backticks must be rewritten to double-quotes
+
+
+def test_transpile_to_engine_mysql_to_duckdb_year_function():
+    out = transpile_to_engine("SELECT YEAR(created_at) FROM orders", source="mysql")
+    _assert_valid_duckdb(out)
+
+
+def test_transpile_to_engine_default_target_is_duckdb():
+    """Omitting target should default to DuckDB."""
+    out = transpile_to_engine("SELECT `c` FROM t", source="mysql")
+    _assert_valid_duckdb(out)
+
+
+def test_transpile_to_engine_same_dialect_short_circuits():
+    """source == target → return input verbatim after parse-validation."""
+    sql = 'SELECT "col" FROM "tbl"'
+    assert transpile_to_engine(sql, source="duckdb", target="duckdb") == sql
+
+
+def test_transpile_to_engine_rejects_unknown_dialect():
+    with pytest.raises(UntranspilableSQLError) as ei:
+        transpile_to_engine("SELECT 1", source="oracle")
+    assert "unknown source dialect" in str(ei.value).lower()
+
+
+def test_transpile_to_engine_rejects_unknown_target():
+    with pytest.raises(UntranspilableSQLError) as ei:
+        transpile_to_engine("SELECT 1", source="mysql", target="snowflake")
+    assert "unknown target dialect" in str(ei.value).lower()
+
+
+def test_transpile_to_engine_parse_failure_raises():
+    """Truly broken input must raise; sqlglot's permissive parser means most
+    'looks-bad' SQL still parses, so we test the function-catalog reject path
+    above and rely on the generic raise here."""
+    with pytest.raises(UntranspilableSQLError):
+        # Re-parse step rejects this since the output is syntactically broken.
+        transpile_to_engine("SELECT FROM WHERE FROM", source="postgres")
+
+
+def test_transpile_to_engine_validates_duckdb_function_catalog():
+    """Function-catalog check only fires when target is DuckDB."""
+    with pytest.raises(UntranspilableSQLError):
+        transpile_to_engine(
+            "SELECT ST_GEOGPOINT(lng, lat) FROM t",
+            source="bigquery",
+        )
+
+
+def test_transpile_bq_shim_still_works():
+    """`transpile_bq_to_duckdb` is now a thin shim — must still pass."""
+    out = transpile_bq_to_duckdb("SELECT `col` FROM `tbl`")
+    _assert_valid_duckdb(out)

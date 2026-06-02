@@ -345,36 +345,35 @@ export const useDashboardStore = defineStore('dashboard', {
 
     async refreshAllWidgets() {
       const dashboard = this.currentDashboard
-      if (!dashboard) return
+      const dashboardId = this.currentDashboardId
+      if (!dashboard || dashboardId == null) return
       const api = useApi()
       this.refreshing = true
 
       try {
         const filters = this.activeFilters.length > 0 ? this.activeFilters : undefined
-        const sqlWidgets = dashboard.widgets.filter(w => w.dataSource)
+        // One bulk request for the whole dashboard: the backend reuses a single
+        // DuckDB reader + connector across all widgets (vs one connection per
+        // widget when refreshing them individually).
+        const res = await api.dashboards.refreshAll(dashboardId, filters) as {
+          widgets: Record<string, { config?: Record<string, any>; refreshed_at?: string; served_from?: 'data_plane' | 'cache' | 'source'; error?: string }>
+        }
+        const widgetsResult = res?.widgets ?? {}
 
-        await Promise.all(sqlWidgets.map(async (widget) => {
-          if (!widget.dataSource) return
-          try {
-            const chartType = widget.widget?.type
-            const mapping = chartType
-              ? { ...widget.dataSource.mapping, chartType }
-              : widget.dataSource.mapping
-            const response = await api.dashboards.refreshWidget({
-              connection_id: widget.dataSource.connectionId,
-              sql: widget.dataSource.sql,
-              mapping: mapping as any,
-              filters,
-              dashboard_id: this.currentDashboardId ?? undefined,
-              widget_id: widget.id,
-              widget_sources: widget.sources ?? undefined,
-            }) as { config: Record<string, any>; refreshed_at: string }
-            Object.assign(widget.widget.config, response.config)
-            widget.dataSource.lastRefreshedAt = response.refreshed_at
-          } catch (e) {
-            console.error(`Widget ${widget.id} refresh failed:`, e)
+        for (const widget of dashboard.widgets) {
+          if (!widget.dataSource) continue
+          const r = widgetsResult[widget.id]
+          if (!r) continue
+          if (r.error) {
+            console.error(`Widget ${widget.id} refresh failed:`, r.error)
+            continue
           }
-        }))
+          if (r.config) Object.assign(widget.widget.config, r.config)
+          if (r.refreshed_at) widget.dataSource.lastRefreshedAt = r.refreshed_at
+          widget.dataSource.servedFrom = r.served_from
+        }
+      } catch (e) {
+        console.error('Refresh all failed:', e)
       } finally {
         this.refreshing = false
       }

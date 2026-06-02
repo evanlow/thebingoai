@@ -83,13 +83,14 @@ class _FakeReader:
     def __init__(self, result):
         self._result = result
         self.calls = []
+        self.closed = False
 
     def query(self, scope, sql, params=None):
         self.calls.append((sql, params))
         return self._result
 
     def close(self):
-        pass
+        self.closed = True
 
 
 def _qr(columns, rows):
@@ -161,6 +162,41 @@ def test_prod_unfiltered_reads_warm_cache(monkeypatch, current_user, db_with_con
     assert reader.calls == [('SELECT * FROM "_dash_5__w1"', None)]
 
 
+def test_supplied_reader_reused_and_not_closed(monkeypatch, current_user, db_with_connection):
+    """Bulk refresh passes one shared reader for the whole dashboard: the serve
+    must reuse it and must NOT close it (caller owns the lifecycle) nor build
+    its own via the factory."""
+    reader = _FakeReader(_qr(["region", "total"], [("EMEA", 15)]))
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
+
+    def _boom(scope, db):
+        raise AssertionError("must not create a reader when one is supplied")
+    monkeypatch.setattr(dps, "get_gcs_duckdb_reader", _boom)
+
+    dashboard = SimpleNamespace(data_context=None)
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region", dashboard_id=5)
+    resp = _serve_widget_via_dataplane(req, dashboard, current_user, db_with_connection, reader=reader)
+
+    assert resp is not None
+    assert reader.calls  # the supplied reader served the read
+    assert reader.closed is False  # caller owns lifecycle — not closed here
+
+
+def test_owned_reader_is_closed(monkeypatch, current_user, db_with_connection):
+    """Single-widget path (no reader supplied) builds its own reader and closes
+    it in the finally."""
+    reader = _FakeReader(_qr(["region", "total"], [("EMEA", 15)]))
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
+    monkeypatch.setattr(dps, "get_gcs_duckdb_reader", lambda scope, db: reader)
+
+    dashboard = SimpleNamespace(data_context=None)
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region", dashboard_id=5)
+    resp = _serve_widget_via_dataplane(req, dashboard, current_user, db_with_connection)
+
+    assert resp is not None
+    assert reader.closed is True  # owns_reader → closed
+
+
 def test_prod_filtered_runs_live_injected(monkeypatch, current_user, db_with_connection):
     reader = _FakeReader(_qr(["region", "total"], [("EMEA", 15)]))
     monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
@@ -177,6 +213,109 @@ def test_prod_filtered_runs_live_injected(monkeypatch, current_user, db_with_con
     assert resp is not None
     sql, params = reader.calls[0]
     assert "$_f0" in sql and params == {"_f0": "EMEA"}  # filtered → live injected SQL
+
+
+# --- served_from provenance flag (Parquet badge on widget) ------------------
+
+def test_local_serve_marks_response_data_plane(monkeypatch, plane, scope, current_user, db_with_connection):
+    """Local dev path: a successful DuckDB-over-Parquet serve must tag the
+    response as `served_from='data_plane'` so the frontend renders the
+    "Parquet • synced X ago" badge instead of the plain age stamp.
+    """
+    _write_sales(plane, scope)
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region")
+    resp = _serve_widget_via_dataplane(req, None, current_user, db_with_connection)
+
+    assert resp is not None
+    assert resp.served_from == "data_plane"
+
+
+def test_prod_serve_marks_response_data_plane(monkeypatch, current_user, db_with_connection):
+    """Prod GCS-DuckDB path also tags `served_from='data_plane'`."""
+    reader = _FakeReader(_qr(["region", "total"], [("EMEA", 15)]))
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
+    monkeypatch.setattr(dps, "get_gcs_duckdb_reader", lambda scope, db: reader)
+
+    dashboard = SimpleNamespace(data_context=None)
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region", dashboard_id=5)
+    resp = _serve_widget_via_dataplane(req, dashboard, current_user, db_with_connection)
+
+    assert resp is not None
+    assert resp.served_from == "data_plane"
+
+
+# --- Bootstrap-fallback ("not-ready policy") for pg/mysql ------------------
+
+
+def _pipeline(*, target_table="pg_demo__orders", source_tables=("orders",), first_ingest_done=False):
+    return SimpleNamespace(
+        target_table=target_table,
+        extraction_config={"tables": list(source_tables)},
+        first_ingest_done=first_ingest_done,
+    )
+
+
+def _db_with_pipelines(connection_obj, pipelines):
+    """Fake Session whose `query(DatabaseConnection)` returns *connection_obj*
+    and `query(Pipeline)` returns *pipelines*."""
+    db = MagicMock()
+
+    def query(model):
+        q = MagicMock()
+        if getattr(model, "__name__", "") == "Pipeline":
+            q.filter.return_value.all.return_value = pipelines
+        else:
+            q.filter.return_value.first.return_value = connection_obj
+        return q
+
+    db.query = query
+    return db
+
+
+def test_bootstrap_fallback_when_first_ingest_not_done(monkeypatch, plane, scope, current_user):
+    """No Parquet partition yet, first_ingest_done=False → return None so the
+    caller's legacy source-DB fallback runs (one live query allowed)."""
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+    conn_obj = SimpleNamespace(id=1, user_id="u1", org_id=None, db_type="postgres")
+    db = _db_with_pipelines(conn_obj, [_pipeline(first_ingest_done=False)])
+
+    req = _request("SELECT * FROM orders")
+    resp = _serve_widget_via_dataplane(req, None, current_user, db)
+    # plane.table_exists is False (we never wrote `orders`) AND first_ingest_done
+    # is False → bootstrap fallback path returns None.
+    assert resp is None
+
+
+def test_503_after_first_ingest_done_when_plane_missing(monkeypatch, plane, scope, current_user):
+    """Pipeline reports first ingest finished but Parquet is missing — refuse to
+    re-hammer the source, raise HTTPException(503, code=plane_table_missing)."""
+    from fastapi import HTTPException
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+    conn_obj = SimpleNamespace(id=1, user_id="u1", org_id=None, db_type="postgres")
+    db = _db_with_pipelines(conn_obj, [_pipeline(first_ingest_done=True)])
+
+    req = _request("SELECT * FROM orders")
+    with pytest.raises(HTTPException) as exc:
+        _serve_widget_via_dataplane(req, None, current_user, db)
+    assert exc.value.status_code == 503
+    assert exc.value.detail.get("code") == "plane_table_missing"
+
+
+def test_bootstrap_fallback_ignores_unrelated_pipelines(monkeypatch, plane, scope, current_user):
+    """A done pipeline for a DIFFERENT table must not trigger the 503 for
+    the queried table — only matching pipelines gate the policy."""
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda conn: (plane, scope))
+    conn_obj = SimpleNamespace(id=1, user_id="u1", org_id=None, db_type="postgres")
+    db = _db_with_pipelines(
+        conn_obj,
+        [_pipeline(target_table="pg_demo__users", source_tables=("users",), first_ingest_done=True)],
+    )
+
+    req = _request("SELECT * FROM orders")
+    resp = _serve_widget_via_dataplane(req, None, current_user, db)
+    assert resp is None  # falls through to source DB
 
 
 def test_prod_reader_none_falls_back(monkeypatch, current_user, db_with_connection):
@@ -199,7 +338,8 @@ def test_gate_blocks_unmigrated_dashboard(monkeypatch, plane, scope, current_use
 
 
 def test_prod_cold_cache_falls_back(monkeypatch, current_user, db_with_connection):
-    # Cache table not warmed yet → reader raises → None → fall back.
+    # Reader fails on BOTH the _dash_* cache read and the live fallback read →
+    # None → source-DB fallback.
     class _Raiser:
         def query(self, *a, **k):
             raise RuntimeError("no files matched gs://…/_dash_5__w1/dt=*")
@@ -210,3 +350,68 @@ def test_prod_cold_cache_falls_back(monkeypatch, current_user, db_with_connectio
     monkeypatch.setattr(dps, "get_gcs_duckdb_reader", lambda scope, db: _Raiser())
     req = _request("SELECT region FROM csv_1", dashboard_id=5)
     assert _serve_widget_via_dataplane(req, SimpleNamespace(data_context=None), current_user, db_with_connection) is None
+
+
+def test_prod_unfiltered_cold_cache_serves_live(monkeypatch, current_user, db_with_connection):
+    # Cold _dash_* cache but a healthy reader → serve live over the source
+    # Parquet (cache read raises, live base_sql read succeeds) instead of None.
+    class _ColdThenLive:
+        def __init__(self, result):
+            self._r = result
+            self.calls = []
+
+        def query(self, scope, sql, params=None):
+            self.calls.append(sql)
+            if sql.startswith('SELECT * FROM "_dash_'):
+                raise RuntimeError("cold cache")
+            return self._r
+
+        def close(self):
+            pass
+
+    reader = _ColdThenLive(_qr(["region", "total"], [("EMEA", 15)]))
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (object(), OwnerScope("org", "o1")))
+    monkeypatch.setattr(dps, "get_gcs_duckdb_reader", lambda scope, db: reader)
+
+    dashboard = SimpleNamespace(data_context=None)
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region", dashboard_id=5)
+    resp = _serve_widget_via_dataplane(req, dashboard, current_user, db_with_connection)
+
+    assert resp is not None
+    assert {r["region"]: r["total"] for r in resp.config["rows"]} == {"EMEA": 15}
+    # cache tried first, then the live source SQL
+    assert reader.calls[0].startswith('SELECT * FROM "_dash_5__w1"')
+    assert any("csv_1" in c for c in reader.calls[1:])
+
+
+def test_serve_rewrites_source_table_to_plane(monkeypatch, plane, scope, current_user):
+    # Widget SQL references the SOURCE table `csv_1`; its Pipeline materialized
+    # it on the plane as `acme__csv_1`. The data exists only under the plane
+    # name, so serving must rewrite the ref or it returns None.
+    plane.write_parquet(scope, "acme__csv_1", pa.table({
+        "region": pa.array(["EMEA", "EMEA", "APAC"]),
+        "amount": pa.array([10, 5, 7], type=pa.int64()),
+    }))
+
+    db = MagicMock()
+    chain = db.query.return_value.filter.return_value
+    chain.order_by.return_value = chain  # plane_table_map orders enabled-first
+    chain.first.return_value = SimpleNamespace(id=1, user_id="u1", org_id=None)
+    chain.all.return_value = [
+        SimpleNamespace(extraction_config={"tables": ["csv_1"]}, target_table="acme__csv_1"),
+    ]
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (plane, scope))
+
+    req = _request("SELECT region, SUM(amount) AS total FROM csv_1 GROUP BY region")
+    resp = _serve_widget_via_dataplane(req, None, current_user, db)
+
+    assert resp is not None
+    assert {r["region"]: r["total"] for r in resp.config["rows"]} == {"EMEA": 15, "APAC": 7}
+
+
+def test_serve_no_pipeline_no_rewrite_cold(monkeypatch, plane, scope, current_user, db_with_connection):
+    # No pipeline for the connection → empty map → SQL unchanged → the source
+    # table isn't on the plane → cold → None (source-DB fallback).
+    monkeypatch.setattr(dps, "get_plane_for_connection", lambda c: (plane, scope))
+    req = _request("SELECT region FROM csv_1")
+    assert _serve_widget_via_dataplane(req, None, current_user, db_with_connection) is None

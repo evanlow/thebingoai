@@ -123,6 +123,15 @@ def _materialize_pipeline(
         enabled=template.enabled,
         created_by_user_id=connection.user_id,
     )
+    # Seed `next_run_at` when cron is set — otherwise `dispatch_pipelines`
+    # filter (`next_run_at <= now`) silently skips the row because NULL
+    # comparisons never match.
+    if row.cron and row.enabled:
+        try:
+            from backend.utils.cron import compute_next_run
+            row.next_run_at = compute_next_run(row.cron, row.timezone or "UTC")
+        except Exception:
+            logger.debug("compute_next_run failed for template %s", template.name, exc_info=True)
     if _try_insert(db, row):
         return row
     return None
@@ -325,47 +334,49 @@ def _build_sql_pipeline_templates(
         prefix = _slugify_connection_name(connection, db)
         conn_name = getattr(connection, "name", None) or f"conn_{str(connection.id)[:8]}"
 
-        templates: list[PipelineTemplate] = []
+        # Collect columns up-front so the watermark classifier can run as a
+        # single batched call across all tables (cheaper for the LLM-first
+        # path; deterministic-only path is also fine with a batched dict).
+        columns_by_table: dict[str, list[dict]] = {}
+        unique_key_by_table: dict[str, Optional[tuple[str, ...]]] = {}
         for table in tables:
-            unique_key: Optional[tuple[str, ...]] = None
-            incremental_key: Optional[str] = None
-            columns: list[dict] = []
             try:
                 schema_obj = connector.get_table_schema(table, schema=None)
-                columns = list(getattr(schema_obj, "columns", []) or [])
+                cols = list(getattr(schema_obj, "columns", []) or [])
             except Exception:
                 logger.debug(
                     "get_table_schema failed for %s on connection %s; skipping unique_key/incremental_key",
                     table, connection.id, exc_info=True,
                 )
-                columns = []
+                cols = []
+            columns_by_table[table] = cols
+            pk_cols = tuple(c["name"] for c in cols if c.get("primary_key"))
+            unique_key_by_table[table] = pk_cols or None
 
-            pk_cols = tuple(c["name"] for c in columns if c.get("primary_key"))
-            if pk_cols:
-                unique_key = pk_cols
+        try:
+            from backend.services.watermark_classifier import resolve_watermark
+            watermark_by_table = resolve_watermark(reg, connector, tables, columns_by_table)
+        except Exception:
+            logger.debug(
+                "resolve_watermark raised on connection %s; defaulting to full-snapshot mode",
+                connection.id, exc_info=True,
+            )
+            watermark_by_table = {t: None for t in tables}
 
-            if columns:
-                try:
-                    incremental_key = _detect_incremental_key_for_table(
-                        reg, connector, table, columns,
-                    )
-                except Exception:
-                    logger.debug(
-                        "incremental-key detection failed for %s; defaulting to full mode",
-                        table, exc_info=True,
-                    )
-                    incremental_key = None
-
+        templates: list[PipelineTemplate] = []
+        for table in tables:
+            incremental_key = watermark_by_table.get(table)
             mode = "incremental" if incremental_key else "full"
-
             templates.append(PipelineTemplate(
                 name=f"{conn_name}: {table}",
                 target_table=f"{prefix}__{table}",
                 extraction_config={"tables": [table]},
-                cron=None,
+                # Auto-enabled daily ingest at 02:00 UTC (checklist default).
+                # Override via PATCH /api/pipelines/{id} once the row exists.
+                cron="0 2 * * *",
                 mode=mode,
                 incremental_key=incremental_key,
-                unique_key=unique_key,
+                unique_key=unique_key_by_table.get(table),
             ))
     finally:
         close_fn = getattr(connector, "close", None)
@@ -402,6 +413,142 @@ def _build_sql_transform_templates(
     return transforms
 
 
+def _detect_snapshot_date_column(columns: list[dict]) -> Optional[str]:
+    """Thin shim over the shared watermark classifier's deterministic matcher.
+
+    Kept for callers/tests that import this symbol directly; new code should
+    call `backend.services.watermark_classifier.classify_table` (or the batched
+    `classify_connection`).
+    """
+    from backend.services.watermark_classifier import classify_table
+
+    return classify_table(columns)
+
+
+def _apply_mysql_t1_schedule(new_pipelines: list[Pipeline], connection, db: Session) -> None:
+    """Make freshly-created MySQL pipelines self-running daily.
+
+    Per the materialize-to-plane design:
+      - **Date-column detected** (live-schema introspection) → `mode='incremental'`
+        with a dlt watermark cursor on that column. **No `initial_value`** is
+        seeded, so the first run pulls all historical data up to and including
+        T-1 (yesterday end). `end_value` is computed at run time in
+        `sql_dlt_source` as the start of today UTC (exclusive) — same-day rows
+        are never ingested when an incremental cursor is configured.
+      - **No date column** → `mode='full'` snapshot each run (loads the whole
+        table; no T-1 cap).
+
+    Always sets `cron` + seeds `next_run_at` so the beat dispatcher picks it up.
+
+    Applied at the materialization layer — the per-table `PipelineTemplate` is
+    left untouched. No-op for non-MySQL connections.
+    """
+    if not new_pipelines or (getattr(connection, "db_type", "") or "").lower() != "mysql":
+        return
+
+    from datetime import datetime, timedelta, timezone
+
+    from backend.config import settings
+    from backend.connectors.factory import get_connector_for_connection
+    from backend.utils.cron import compute_next_run
+
+    cron = getattr(settings, "default_sql_pipeline_cron", "0 2 * * *")
+
+    # Lower-bound for first run: T-n, where n = `first_ingest_lookback_days`.
+    #   - N > 0  → first run pulls `[today − N days 00:00 UTC, today 00:00 UTC)`
+    #             (e.g. N=1 → yesterday only; N=7 → last 7 days).
+    #   - N ≤ 0 → no lower bound; first run pulls all history up to T-1.
+    # The upper bound (`end_value = today 00:00 UTC`, exclusive) is always
+    # applied at run time inside `sql_dlt_source` so same-day rows are never
+    # ingested when an incremental cursor is configured.
+    lookback_days = int(getattr(settings, "first_ingest_lookback_days", 0) or 0)
+    if lookback_days > 0:
+        initial_dt = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+    else:
+        initial_dt = None
+
+    try:
+        connector = get_connector_for_connection(connection)
+    except Exception:
+        logger.warning(
+            "MySQL schedule: cannot open connector for connection %s; skipping",
+            connection.id, exc_info=True,
+        )
+        return
+
+    try:
+        # Collect schemas for every single-table pipeline in one pass so the
+        # watermark classifier can score them in a single batched LLM call.
+        table_schemas: dict[str, list[dict]] = {}
+        for p in new_pipelines:
+            tables = (p.extraction_config or {}).get("tables") or []
+            if len(tables) != 1:
+                continue
+            try:
+                schema_obj = connector.get_table_schema(tables[0], schema=None)
+                table_schemas[tables[0]] = list(getattr(schema_obj, "columns", []) or [])
+            except Exception:
+                logger.debug(
+                    "schema fetch failed for %s; pipeline left as full snapshot",
+                    tables[0], exc_info=True,
+                )
+
+        # Sync path uses the deterministic matcher only — fast (no I/O) and
+        # safe under request latency. LLM refinement (when configured) runs in
+        # a background Celery task enqueued from `api/connections.py` after
+        # commit, so the connect handler returns immediately.
+        try:
+            from backend.services.watermark_classifier import classify_table
+            watermark_map = {t: classify_table(cols) for t, cols in table_schemas.items()}
+        except Exception:
+            logger.warning(
+                "watermark classifier crashed for connection %s; defaulting all tables to full snapshot",
+                connection.id, exc_info=True,
+            )
+            watermark_map = {t: None for t in table_schemas}
+
+        for p in new_pipelines:
+            tables = (p.extraction_config or {}).get("tables") or []
+            date_col = watermark_map.get(tables[0]) if len(tables) == 1 else None
+            new_cfg = dict(p.extraction_config or {})
+            if date_col:
+                p.mode = "incremental"
+                p.incremental_key = date_col
+                new_cfg["incremental_key"] = date_col
+                if initial_dt is not None:
+                    # Seed the first-run lower bound (T-n). dlt persists the
+                    # cursor after run 1, so this value is only consulted once.
+                    new_cfg["initial_value"] = initial_dt.isoformat()
+                else:
+                    # Lookback disabled → first run pulls all history up to
+                    # T-1 (yesterday end), bounded only by `end_value`.
+                    new_cfg.pop("initial_value", None)
+            else:
+                p.mode = "full"
+                # Drop any stale incremental hints — full snapshot loads fully.
+                new_cfg.pop("incremental_key", None)
+                new_cfg.pop("initial_value", None)
+            p.extraction_config = new_cfg
+            p.cron = cron
+            try:
+                p.next_run_at = compute_next_run(cron, getattr(p, "timezone", None) or "UTC")
+            except Exception:
+                logger.warning(
+                    "compute_next_run failed for cron %r; pipeline %s left unscheduled",
+                    cron, p.id, exc_info=True,
+                )
+        db.flush()
+    finally:
+        close = getattr(connector, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+
 def materialize_templates_for_connection(
     connection,
     registration: ConnectorRegistration,
@@ -434,6 +581,15 @@ def materialize_templates_for_connection(
                 "Failed to materialize pipeline template '%s' for connection %s",
                 tmpl.name, connection.id,
             )
+
+    # MySQL: make the new pipelines self-running daily T-1 snapshots (cron +
+    # next_run_at + date-capped full snapshot). Schema-driven, template intact.
+    try:
+        _apply_mysql_t1_schedule(new_pipelines, connection, db)
+    except Exception:
+        logger.warning(
+            "MySQL T-1 schedule application failed for connection %s", connection.id, exc_info=True
+        )
 
     # Dynamic SQL transforms = one stg_<table> view per dynamic pipeline.
     dynamic_transforms: list[TransformTemplate] = (

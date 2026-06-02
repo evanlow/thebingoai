@@ -440,10 +440,19 @@ class BaseConnector(ABC):
         start_time = time.time()
 
         try:
-            # Defense-in-depth: enforce read-only transaction at DB level
-            cursor.execute("SET TRANSACTION READ ONLY")
-            # Enforce query execution timeout
-            cursor.execute(f"SET LOCAL statement_timeout = '{settings.query_timeout_ms}'")
+            # Defense-in-depth: enforce read-only transaction at DB level (Postgres)
+            if self._db_type_name.lower() in ("postgresql", "postgres"):
+                cursor.execute("SET TRANSACTION READ ONLY")
+            # Enforce query execution timeout — Postgres vs MySQL use different vars.
+            # MySQL max_execution_time is best-effort (requires SET_VARIABLES priv or
+            # SUPER; older versions ignore it). The Python-side timeout still fires.
+            if self._db_type_name.lower() in ("postgresql", "postgres"):
+                cursor.execute(f"SET LOCAL statement_timeout = '{settings.query_timeout_ms}'")
+            elif self._db_type_name.lower() == "mysql":
+                try:
+                    cursor.execute(f"SET SESSION max_execution_time = {settings.query_timeout_ms}")
+                except Exception:
+                    pass
             if self._search_path:
                 cursor.execute(f"SET LOCAL search_path = {self._search_path}")
 

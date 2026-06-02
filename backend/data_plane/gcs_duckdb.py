@@ -48,8 +48,13 @@ def _view_sql(table: str, glob: str, unique_key: tuple[str, ...] | None = None) 
 class GCSDuckDBReader:
     """Runs DuckDB SQL over an Org's GCS Parquet via httpfs.
 
-    One reader per (bucket, scope chain) per task; close after use. Views are
-    (re)registered per query for the tables the SQL references.
+    Reuse one reader across every widget of a dashboard refresh (see
+    `refresh_dashboard_widgets` / `materialize_dashboard`): the connection
+    cold-start (INSTALL/LOAD httpfs + CREATE SECRET) and each table's view
+    registration are then paid once per refresh, not once per widget. `close`
+    after use. Each referenced table's view is registered once per connection
+    (deduped by its resolved glob); the glob re-evaluates at query time, so new
+    `dt=` partitions are picked up without re-registration.
     """
 
     def __init__(self, bucket: str, hmac_key_id: str, hmac_secret: str) -> None:
@@ -57,6 +62,7 @@ class GCSDuckDBReader:
         self._key_id = hmac_key_id
         self._secret = hmac_secret
         self._conn = None
+        self._registered_globs: set[str] = set()
 
     def _get_conn(self):
         if self._conn is None:
@@ -69,18 +75,34 @@ class GCSDuckDBReader:
             self._conn = conn
         return self._conn
 
+    def register_views(self, scope: OwnerScope, tables) -> None:
+        """Register a `read_parquet` view per table, once per connection.
+
+        Idempotent: a table whose resolved glob is already registered on this
+        connection is skipped, so a reader reused across many widgets pays the
+        `CREATE VIEW` (and its one-time GCS LIST) once per distinct table
+        instead of once per query.
+        """
+        from .bigquery_gcs import gcs_parquet_glob
+
+        conn = self._get_conn()
+        for table in tables:
+            glob = gcs_parquet_glob(self._bucket, scope, table)
+            if glob in self._registered_globs:
+                continue
+            conn.execute(_view_sql(table, glob))
+            self._registered_globs.add(glob)
+
     def query(self, scope: OwnerScope, sql: str, params: dict[str, Any] | None = None) -> QueryResult:
         from backend.utils.sql_refs import extract_table_refs
-        from .bigquery_gcs import gcs_parquet_glob
         from .duckdb_exec import run_duckdb_query
 
         conn = self._get_conn()
-        for table in extract_table_refs(sql):
-            glob = gcs_parquet_glob(self._bucket, scope, table)
-            conn.execute(_view_sql(table, glob))
+        self.register_views(scope, extract_table_refs(sql))
         return run_duckdb_query(conn, sql, params)
 
     def close(self) -> None:
+        self._registered_globs.clear()
         if self._conn is not None:
             try:
                 self._conn.close()

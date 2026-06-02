@@ -81,7 +81,10 @@
       <div class="flex gap-2.5 items-start">
         <div class="w-7 h-7 rounded-[var(--r-md)] bg-transparent flex items-center justify-center flex-shrink-0 overflow-hidden mt-0.5" :class="{ 'avatar-spin': isLoading }">
           <img v-if="agentAvatarUrl" :src="agentAvatarUrl" class="w-full h-full object-cover" alt="Agent" />
-          <img v-else src="/logo/BINGO Logo Design_FA_Icon_W.png" class="w-full h-full object-contain p-1" :alt="agentName || 'Bingo'" />
+          <template v-else>
+            <img src="/logo/BINGO Logo Design_FA_Icon.png" class="w-full h-full object-contain p-1 dark:hidden" :alt="agentName || 'Bingo'" />
+            <img src="/logo/BINGO Logo Design_FA_Icon_W.png" class="w-full h-full object-contain p-1 hidden dark:block" :alt="agentName || 'Bingo'" />
+          </template>
         </div>
         <div class="flex-1 min-w-0">
       <!-- Heartbeat source label -->

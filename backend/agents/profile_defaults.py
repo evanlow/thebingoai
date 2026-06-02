@@ -96,6 +96,95 @@ GROUP BY 1
 
 
 # ---------------------------------------------------------------------------
+# PostgreSQL dialect hints — used when the dashboard's target connection is a
+# Postgres source DB (no DataPlane cutover yet). Generator MUST emit Postgres
+# so the source connector can run the SQL verbatim. BigQuery idioms
+# (`DATE_SUB(..., INTERVAL N DAY)`, `CURRENT_DATE()`, `SAFE_DIVIDE`, backticks)
+# all fail at psycopg2 execution.
+# ---------------------------------------------------------------------------
+POSTGRES_DIALECT_HINTS = """
+
+## PostgreSQL SQL Dialect — REQUIRED for all generated SQL
+
+All widget queries execute against PostgreSQL. BigQuery idioms FAIL. Apply these rules without exception:
+
+**Syntax rules:**
+- Identifiers are unquoted or in double quotes: `col` or `"col"`. Backticks are NOT valid.
+- `CAST(x AS TYPE)` or `x::TYPE` — both work; prefer `CAST` for readability.
+- `DATE_TRUNC('day', col)` — first arg is a QUOTED unit string. NEVER `DATE_TRUNC(col, DAY)`.
+- `INTERVAL '1 day'` — quoted string. NEVER `INTERVAL 1 DAY` (BigQuery) or unquoted unit.
+- `CURRENT_DATE` (NO parens) for today's date; `NOW()` for current timestamp. NEVER `CURRENT_DATE()`.
+- `col - INTERVAL '90 day'` for date subtraction. NEVER `DATE_SUB(col, INTERVAL 90 DAY)`.
+- `ILIKE` for case-insensitive match (or `LOWER(col) LIKE LOWER(pattern)`).
+- No `SAFE_DIVIDE` / `SAFE_CAST` — use `a / NULLIF(b, 0)` for divide-by-zero-safe division.
+- String concat: `||` operator or `CONCAT()`.
+
+**Date arithmetic skeleton (copy/adapt — do NOT use BigQuery DATE_SUB/CURRENT_DATE()):**
+```sql
+WITH bounds AS (
+  SELECT
+    CURRENT_DATE AS today,
+    CURRENT_DATE - INTERVAL '1 day' AS yesterday,
+    CURRENT_DATE - INTERVAL '60 day' AS sixty_days_ago
+)
+SELECT
+  CAST(date_start AS DATE) AS date_start,
+  SUM(spend) AS spend
+FROM insights_daily, bounds
+WHERE CAST(date_start AS DATE) = bounds.yesterday
+GROUP BY 1
+```
+
+**Schema-qualified tables:** Prefix with schema when relevant, e.g. `public.subscriptions`.
+
+**General:**
+- `LIMIT N` goes at the end of the query
+- `OFFSET N` after `LIMIT` for pagination"""
+
+
+# ---------------------------------------------------------------------------
+# MySQL dialect hints — used when the dashboard's target connection is a MySQL
+# source DB. BigQuery idioms (backticks-as-strings? — MySQL uses backticks for
+# identifiers like BQ, but most other patterns differ) fail at MySQL execution.
+# ---------------------------------------------------------------------------
+MYSQL_DIALECT_HINTS = """
+
+## MySQL SQL Dialect — REQUIRED for all generated SQL
+
+All widget queries execute against MySQL. BigQuery and Postgres idioms FAIL. Apply these rules without exception:
+
+**Syntax rules:**
+- Identifiers in backticks: `` `col` `` (same as BigQuery). Double quotes are STRING LITERALS by default.
+- `CAST(x AS TYPE)` — NEVER `x::TYPE` (Postgres) and BigQuery `SAFE_CAST` is not available.
+- `DATE_FORMAT(col, '%Y-%m-01')` or `DATE(col)` for truncation. NEVER `DATE_TRUNC` — not a MySQL function.
+- `CURDATE()` for today; `NOW()` for current timestamp. `CURRENT_DATE` (no parens) also works.
+- `DATE_SUB(col, INTERVAL 90 DAY)` — MySQL supports this BigQuery-style form. `col - INTERVAL 90 DAY` also works.
+- `INTERVAL N UNIT` — unquoted `N`, unquoted `UNIT` keyword (like BigQuery). NEVER `INTERVAL '1 day'` (Postgres).
+- `LIKE` only (no `ILIKE`). Case-insensitive: `LOWER(col) LIKE LOWER(pattern)` — most MySQL collations are already case-insensitive.
+- No `SAFE_DIVIDE` — use `a / NULLIF(b, 0)`.
+- String concat: `CONCAT(a, b, c)` — `||` is logical OR in MySQL, NOT concat.
+
+**Date arithmetic skeleton (copy/adapt):**
+```sql
+WITH bounds AS (
+  SELECT
+    CURDATE() AS today,
+    DATE_SUB(CURDATE(), INTERVAL 1 DAY) AS yesterday,
+    DATE_SUB(CURDATE(), INTERVAL 60 DAY) AS sixty_days_ago
+)
+SELECT
+  CAST(date_start AS DATE) AS date_start,
+  SUM(spend) AS spend
+FROM insights_daily, bounds
+WHERE CAST(date_start AS DATE) = bounds.yesterday
+GROUP BY 1
+```
+
+**General:**
+- `LIMIT N` at end of query; `LIMIT N OFFSET M` for pagination"""
+
+
+# ---------------------------------------------------------------------------
 # DuckDB dialect hints — used once an Org is cut over to DuckDB-over-Parquet
 # serving (`duckdb_widget_serving` on). Post-cutover the agent emits native
 # DuckDB so newly-created widgets need no transpile.
@@ -144,11 +233,19 @@ _DUCKDB_REQUIRED_TOKENS = (
 )
 
 
-def _dialect_hints_for_org(org_id: Optional[str]) -> str:
-    """Return the dashboard-agent SQL dialect hints for *org_id*.
+def _dialect_hints_for_target(
+    org_id: Optional[str],
+    target_db_type: Optional[str] = None,
+) -> str:
+    """Return the dashboard-agent SQL dialect hints for *org_id* + target connection.
 
-    DuckDB once the Org has `duckdb_widget_serving` on (post-cutover the agent
-    emits native DuckDB); BigQuery otherwise (default / legacy / no org).
+    Selection order:
+    1. If Org has `duckdb_widget_serving` on → DuckDB hints (post-cutover override).
+    2. Else if *target_db_type* identifies a known source dialect → matching hints.
+    3. Fallback → BigQuery hints (default / legacy / unknown target).
+
+    *target_db_type* matches `database_connections.db_type` strings:
+    `postgres`/`postgresql`, `mysql`, `bigquery`/`bigquery_ga4`, `duckdb`, etc.
     """
     if org_id:
         try:
@@ -156,9 +253,28 @@ def _dialect_hints_for_org(org_id: Optional[str]) -> str:
             if enabled(str(org_id), "duckdb_widget_serving"):
                 return DUCKDB_DIALECT_HINTS
         except Exception:
-            # Flag store unavailable → fail safe to the established BigQuery hints.
+            # Flag store unavailable → fall through to target-based selection.
             pass
+
+    db_type = (target_db_type or "").lower().strip()
+    if db_type in ("postgres", "postgresql"):
+        return POSTGRES_DIALECT_HINTS
+    if db_type == "mysql":
+        return MYSQL_DIALECT_HINTS
+    if db_type == "duckdb":
+        return DUCKDB_DIALECT_HINTS
+    # bigquery / bigquery_ga4 / unknown / None → established BigQuery default.
     return BIGQUERY_DIALECT_HINTS
+
+
+def _dialect_hints_for_org(org_id: Optional[str]) -> str:
+    """Backward-compatible shim: no target connection known → BigQuery default.
+
+    Callers that have a specific target connection should use
+    `_dialect_hints_for_target(org_id, target_db_type)` instead so the agent
+    emits SQL that runs on the source DB without a transpile.
+    """
+    return _dialect_hints_for_target(org_id, target_db_type=None)
 
 
 def _bigquery_plugin_loaded() -> bool:

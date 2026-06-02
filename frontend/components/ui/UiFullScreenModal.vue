@@ -1,6 +1,6 @@
 <template>
   <TransitionRoot :show="open" as="template">
-    <Dialog as="div" class="relative z-50" @close="handleClose">
+    <Dialog as="div" class="relative z-50" :initial-focus="panelRef" @close="handleClose">
       <TransitionChild
         as="template"
         enter="duration-200 ease-out"
@@ -10,7 +10,7 @@
         leave-from="opacity-100 scale-100"
         leave-to="opacity-0 scale-[0.99]"
       >
-        <DialogPanel class="fixed inset-0 bg-white dark:bg-neutral-900 flex flex-col overflow-hidden">
+        <DialogPanel ref="panelRef" tabindex="-1" class="fixed inset-0 bg-white dark:bg-neutral-900 flex flex-col overflow-hidden">
           <div
             v-if="$slots.header"
             class="shrink-0 border-b border-gray-200 dark:border-neutral-700 px-6 py-4"
@@ -45,6 +45,8 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), { closable: true })
 
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
+
+const panelRef = ref<HTMLElement | null>(null)
 
 function handleClose() {
   if (props.closable) emit('update:open', false)

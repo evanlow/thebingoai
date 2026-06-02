@@ -3,6 +3,7 @@ import { createFetchHelper } from '~/utils/api/fetchHelper'
 import { createChatApi } from '~/utils/api/chatApi'
 import { createConnectionsApi } from '~/utils/api/connectionsApi'
 import { createDashboardsApi } from '~/utils/api/dashboardsApi'
+import { createPipelinesApi } from '~/utils/api/pipelinesApi'
 import { createResourcesApi } from '~/utils/api/resourcesApi'
 import { useApiExtensions } from '~/composables/useApiExtensions'
 
@@ -19,6 +20,7 @@ export const useApi = () => {
     connections: createConnectionsApi(fetchWithRefresh, authStore, router),
     chat: createChatApi(fetchWithRefresh, authStore, router),
     dashboards: createDashboardsApi(fetchWithRefresh),
+    pipelines: createPipelinesApi(fetchWithRefresh),
   }
 
   const ext = useApiExtensions()
