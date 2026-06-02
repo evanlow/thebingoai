@@ -6,7 +6,7 @@ from backend.auth.dependencies import get_current_user
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
 from backend.models.dashboard import Dashboard
-from backend.schemas.widget_data import FilterParam, WidgetRefreshRequest, WidgetRefreshResponse, BulkRefreshResponse, WidgetSuggestFixRequest, WidgetSuggestFixResponse
+from backend.schemas.widget_data import FilterParam, WidgetRefreshRequest, WidgetRefreshResponse, BulkRefreshRequest, BulkRefreshResponse, WidgetSuggestFixRequest, WidgetSuggestFixResponse
 from backend.services.widget_transform import transform_widget_data, _to_json_safe
 import logging
 from typing import List, Optional, Tuple
@@ -395,6 +395,7 @@ def _serve_widget_via_dataplane(
     dashboard: "Dashboard | None",
     current_user: User,
     db: Session,
+    reader=None,
 ) -> "WidgetRefreshResponse | None":
     """Serve a widget read from DuckDB over the DataPlane Parquet.
 
@@ -405,6 +406,11 @@ def _serve_widget_via_dataplane(
         Unfiltered → read the warm `_dash_*` results cache (small, fast);
         filtered → run the full SQL live (dt=-pruned). Gated by the reader
         factory (residency-locked / customer / no-HMAC planes → None → BQ).
+
+    When *reader* is supplied (bulk refresh passing one shared `GCSDuckDBReader`
+    for the whole dashboard), the prod GCS branch reuses it and does NOT close
+    it — the caller owns its lifecycle. When *reader* is None, the branch
+    creates and closes its own per call (single-widget path, unchanged).
 
     Returns a response on success, or None to fall back to the legacy cache /
     source-DB path. Transpile never runs here — stored SQL is assumed DuckDB;
@@ -473,9 +479,10 @@ def _serve_widget_via_dataplane(
         return _build_widget_response(plane.query(scope, sql, params), request.mapping)
 
     # ── Prod: DuckDB-over-GCS (direct httpfs) ─────────────────────────────
-    reader = None
+    owns_reader = reader is None
     try:
-        reader = get_gcs_duckdb_reader(scope, db)
+        if reader is None:
+            reader = get_gcs_duckdb_reader(scope, db)
         if reader is None:
             return None  # residency-locked / customer / no-HMAC → BQ fallback
 
@@ -514,7 +521,7 @@ def _serve_widget_via_dataplane(
         )
         return None
     finally:
-        if reader is not None:
+        if owns_reader and reader is not None:
             reader.close()
 
 
@@ -672,6 +679,7 @@ async def refresh_widget(
 @router.post("/{dashboard_id}/refresh", response_model=BulkRefreshResponse)
 async def refresh_dashboard_widgets(
     dashboard_id: int,
+    payload: Optional[BulkRefreshRequest] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -695,99 +703,169 @@ async def refresh_dashboard_widgets(
     results: dict = {}
     org_id = getattr(current_user, "org_id", None)
     refreshed_at = datetime.now(timezone.utc).isoformat()
+    # Dashboard-level filters (parity with single-widget refresh). When present,
+    # the warm `_dash_*` cache is skipped (it holds unfiltered rows) and filters
+    # are injected per widget on both the DuckDB and source-DB paths.
+    filters = payload.filters if payload else None
+    data_context = dashboard.data_context
 
-    for widget in widgets:
-        widget_id = widget.get("id")
-        data_source = widget.get("dataSource")
-        if not data_source:
-            continue
+    # One shared DuckDB-over-GCS reader for the whole dashboard, mirroring
+    # materialize_dashboard: the connection cold-start (INSTALL/LOAD httpfs +
+    # CREATE SECRET) and each table's view registration are paid once per
+    # refresh instead of once per widget. The reader's bucket/creds resolve from
+    # the Org's default plane, so one reader serves every (same-Org) widget;
+    # the per-widget scope is still passed to `query()` for the glob path.
+    # None when serving is off/unavailable (dev local plane, residency-locked,
+    # customer-managed, no-HMAC) → `_serve_widget_via_dataplane` falls back
+    # exactly as before (dev serves via its local-plane branch).
+    duck_enabled = _duckdb_serving_enabled(org_id)
+    shared_reader = None
+    if duck_enabled:
+        from backend.data_plane.scope import OwnerScope
+        from backend.services.data_plane_service import get_gcs_duckdb_reader
+        reader_scope = OwnerScope("org", org_id) if org_id else OwnerScope("user", current_user.id)
+        shared_reader = get_gcs_duckdb_reader(reader_scope, db)
 
-        connection_id = data_source.get("connectionId")
-        sql = data_source.get("sql")
-        mapping = data_source.get("mapping")
+    # Source-DB fallback memoized per connection_id so widgets sharing a
+    # connection don't each re-fetch the DatabaseConnection row and rebuild a
+    # connector (the N+1 the old per-widget loop paid). Connectors are built
+    # lazily on first fallback and closed once after the loop.
+    connection_cache: dict = {}
+    connector_cache: dict = {}
 
-        if not connection_id or not sql or not mapping:
-            results[widget_id] = {"error": "Incomplete dataSource (missing connectionId, sql, or mapping)"}
-            continue
-
-        chart_type = widget.get("widget", {}).get("config", {}).get("type")
-        if chart_type and "chartType" not in mapping:
-            mapping = {**mapping, "chartType": chart_type}
-
-        # DuckDB-over-DataPlane serving (flag-gated, per migrated dashboard) —
-        # same path as single-widget refresh, so bulk loads on cut-over Orgs
-        # avoid the per-widget BQ job. Falls through on None (GAP-7).
-        if _duckdb_serving_enabled(org_id):
-            try:
-                served = _serve_widget_via_dataplane(
-                    WidgetRefreshRequest(
-                        connection_id=connection_id, sql=sql, mapping=mapping,
-                        dashboard_id=dashboard_id, widget_id=widget_id,
-                    ),
-                    dashboard, current_user, db,
-                )
-                if served is not None:
-                    results[widget_id] = {"config": served.config, "refreshed_at": refreshed_at}
-                    continue
-            except Exception as e:
-                logger.warning(f"DuckDB serving failed for widget {widget_id}, falling back: {e}")
-
-        # Try DataPlane cache first.
-        try:
-            cached = _read_widget_from_cache(
-                dashboard_id, widget_id,
-                org_id=org_id, user_id=current_user.id,
-            )
-            if cached is not None:
-                results[widget_id] = {
-                    "config": transform_widget_data(cached, mapping),
-                    "refreshed_at": refreshed_at,
-                }
+    try:
+        for widget in widgets:
+            widget_id = widget.get("id")
+            data_source = widget.get("dataSource")
+            if not data_source:
                 continue
-        except Exception as e:
-            logger.warning(f"DataPlane cache read failed for widget {widget_id}, falling back to source DB: {e}")
 
-        # Fallback: source DB query.
-        connection = db.query(DatabaseConnection).filter(
-            DatabaseConnection.id == connection_id,
-            DatabaseConnection.user_id == current_user.id,
-        ).first()
+            connection_id = data_source.get("connectionId")
+            sql = data_source.get("sql")
+            mapping = data_source.get("mapping")
 
-        if not connection:
-            results[widget_id] = {"error": f"Connection {connection_id} not found"}
-            continue
+            if not connection_id or not sql or not mapping:
+                results[widget_id] = {"error": "Incomplete dataSource (missing connectionId, sql, or mapping)"}
+                continue
 
-        from backend.connectors.factory import get_connector_for_connection
+            chart_type = widget.get("widget", {}).get("config", {}).get("type")
+            if chart_type and "chartType" not in mapping:
+                mapping = {**mapping, "chartType": chart_type}
 
-        connector = get_connector_for_connection(connection)
+            # DuckDB-over-DataPlane serving (flag-gated, per migrated dashboard) —
+            # same path as single-widget refresh, so bulk loads on cut-over Orgs
+            # avoid the per-widget BQ job. Falls through on None (GAP-7).
+            if duck_enabled:
+                try:
+                    served = _serve_widget_via_dataplane(
+                        WidgetRefreshRequest(
+                            connection_id=connection_id, sql=sql, mapping=mapping,
+                            filters=filters, dashboard_id=dashboard_id, widget_id=widget_id,
+                            widget_sources=widget.get("sources"),
+                        ),
+                        dashboard, current_user, db,
+                        reader=shared_reader,
+                    )
+                    if served is not None:
+                        results[widget_id] = {"config": served.config, "refreshed_at": refreshed_at, "served_from": served.served_from}
+                        continue
+                except Exception as e:
+                    logger.warning(f"DuckDB serving failed for widget {widget_id}, falling back: {e}")
 
-        try:
-            if connection.db_type == "bigquery_ga4":
-                from backend.data_plane.scope import OwnerScope as _OS
-                from backend.models.pipeline import Pipeline as _Pipeline
-                from backend.services.data_plane_service import (
-                    get_default_plane as _get_default_plane,
-                )
-                _p = db.query(_Pipeline).filter(
-                    _Pipeline.source_connection_id == connection.id,
+            # Try DataPlane cache — only when unfiltered (the `_dash_*` cache
+            # holds unfiltered rows; serving it under a filter would be stale).
+            if not filters:
+                try:
+                    cached = _read_widget_from_cache(
+                        dashboard_id, widget_id,
+                        org_id=org_id, user_id=current_user.id,
+                    )
+                    if cached is not None:
+                        results[widget_id] = {
+                            "config": transform_widget_data(cached, mapping),
+                            "refreshed_at": refreshed_at,
+                            "served_from": "cache",
+                        }
+                        continue
+                except Exception as e:
+                    logger.warning(f"DataPlane cache read failed for widget {widget_id}, falling back to source DB: {e}")
+
+            # Fallback: source DB query. Connection row + connector are memoized
+            # per connection_id so a dashboard with many widgets on one
+            # connection pays a single fetch + connector build, not N.
+            if connection_id not in connection_cache:
+                connection_cache[connection_id] = db.query(DatabaseConnection).filter(
+                    DatabaseConnection.id == connection_id,
+                    DatabaseConnection.user_id == current_user.id,
                 ).first()
-                if _p is not None:
-                    _s = _OS(kind=_p.owner_scope_kind, id=_p.owner_scope_id)
-                    _plane = _get_default_plane(_s, db)
-                    result = _plane.query(_s, sql)
+            connection = connection_cache[connection_id]
+
+            if not connection:
+                results[widget_id] = {"error": f"Connection {connection_id} not found"}
+                continue
+
+            if connection_id not in connector_cache:
+                from backend.connectors.factory import get_connector_for_connection
+                connector_cache[connection_id] = get_connector_for_connection(connection)
+            connector = connector_cache[connection_id]
+
+            try:
+                # Parity with single-widget refresh: inject filters in the
+                # connection dialect, then transpile stored BigQuery SQL to the
+                # source engine before executing.
+                fb_sql = sql
+                params = None
+                if filters:
+                    fb_sql, params = inject_filters(
+                        sql, filters,
+                        data_context=data_context,
+                        widget_sources=widget.get("sources"),
+                        dialect=connection.db_type or "bigquery",
+                    )
+                served_from = "source"
+                if connection.db_type == "bigquery_ga4":
+                    from backend.data_plane.scope import OwnerScope as _OS
+                    from backend.models.pipeline import Pipeline as _Pipeline
+                    from backend.services.data_plane_service import (
+                        get_default_plane as _get_default_plane,
+                    )
+                    _p = db.query(_Pipeline).filter(
+                        _Pipeline.source_connection_id == connection.id,
+                    ).first()
+                    if _p is not None:
+                        _s = _OS(kind=_p.owner_scope_kind, id=_p.owner_scope_id)
+                        _plane = _get_default_plane(_s, db)
+                        result = _plane.query(_s, fb_sql, params=params)
+                        served_from = "data_plane"
+                    else:
+                        result = connector.execute_query(fb_sql, params=params)
                 else:
-                    result = connector.execute_query(sql)
-            else:
-                result = connector.execute_query(sql)
-            results[widget_id] = {
-                "config": transform_widget_data(result, mapping),
-                "refreshed_at": refreshed_at,
-            }
-        except Exception as e:
-            logger.error(f"Bulk refresh failed for widget {widget_id}: {e}")
-            results[widget_id] = {"error": str(e)}
-        finally:
-            connector.close()
+                    try:
+                        from backend.utils.sql_refs import transpile_to_engine
+                        db_type = (getattr(connection, "db_type", "") or "postgres").lower()
+                        target = {"postgres": "postgres", "postgresql": "postgres",
+                                  "mysql": "mysql", "bigquery": "bigquery",
+                                  "bigquery_ga4": "bigquery"}.get(db_type, db_type)
+                        fb_sql = transpile_to_engine(fb_sql, source="bigquery", target=target)
+                    except Exception:
+                        pass  # best-effort; let the connector raise on parse failure
+                    result = connector.execute_query(fb_sql, params=params)
+                results[widget_id] = {
+                    "config": transform_widget_data(result, mapping),
+                    "refreshed_at": refreshed_at,
+                    "served_from": served_from,
+                }
+            except Exception as e:
+                logger.error(f"Bulk refresh failed for widget {widget_id}: {e}")
+                results[widget_id] = {"error": str(e)}
+    finally:
+        if shared_reader is not None:
+            shared_reader.close()
+        for _connector in connector_cache.values():
+            try:
+                _connector.close()
+            except Exception:
+                pass
 
     return BulkRefreshResponse(widgets=results)
 

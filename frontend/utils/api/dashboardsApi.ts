@@ -29,9 +29,10 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
         body: data,
       })
     },
-    async refreshAll(dashboardId: number) {
+    async refreshAll(dashboardId: number, filters?: Array<{ column: string; op: string; value: any }>) {
       return fetchWithRefresh(`/api/dashboards/${dashboardId}/refresh`, {
         method: 'POST',
+        body: { filters: filters ?? null },
       })
     },
     async suggestFix(data: { connection_id: number; sql: string; error_message: string; mapping: any; widget_title?: string; widget_description?: string }) {
