@@ -471,13 +471,14 @@ def test_bulk_refresh_uses_one_shared_reader_for_all_widgets(monkeypatch):
     # endpoint dashboard lookup, then one connection lookup per widget inside _serve
     db = _db_with_first(dashboard, FakeConnection(), FakeConnection(), FakeConnection())
 
-    resp = _run(wd.refresh_dashboard_widgets(1, _user(org_id="org-1"), db))
+    resp = _run(wd.refresh_dashboard_widgets(1, None, _user(org_id="org-1"), db))
 
     assert factory_calls["n"] == 1          # ONE reader for the whole dashboard
     assert reader.query_calls == 3          # all three widgets served by it
     assert reader.closed is True            # closed once after the loop
     assert set(resp.widgets.keys()) == {"w1", "w2", "w3"}
     assert all("config" in resp.widgets[w] for w in ("w1", "w2", "w3"))
+    assert all(resp.widgets[w]["served_from"] == "data_plane" for w in ("w1", "w2", "w3"))
 
 
 def test_bulk_refresh_source_fallback_reuses_one_connector(monkeypatch):
@@ -511,12 +512,48 @@ def test_bulk_refresh_source_fallback_reuses_one_connector(monkeypatch):
     # endpoint dashboard lookup, then ONE connection lookup (second widget reuses cache)
     db = _db_with_first(dashboard, FakeConnection())
 
-    resp = _run(wd.refresh_dashboard_widgets(1, _user(org_id="org-1"), db))
+    resp = _run(wd.refresh_dashboard_widgets(1, None, _user(org_id="org-1"), db))
 
     assert factory_calls["n"] == 1                       # one connector for both widgets
     assert fake_connector.execute_query.call_count == 2  # but each widget queried
     assert fake_connector.close.call_count == 1          # closed once, after the loop
     assert set(resp.widgets.keys()) == {"w1", "w2"}
+    assert all(resp.widgets[w]["served_from"] == "source" for w in ("w1", "w2"))
+
+
+def test_bulk_refresh_applies_filters_and_skips_cache(monkeypatch):
+    """With filters, the bulk endpoint must (a) NOT read the unfiltered cache and
+    (b) inject the filter into the source SQL — parity with single-widget."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+
+    cache_calls = {"n": 0}
+    def _cache(*a, **k):
+        cache_calls["n"] += 1
+        return FakeQueryResult(columns=["v"], rows=[(1,)], row_count=1)
+    monkeypatch.setattr(wd, "_read_widget_from_cache", _cache)
+
+    captured = {"sql": None, "params": None}
+    fake_connector = MagicMock()
+    def _exec(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return FakeQueryResult(columns=["v"], rows=[(1,)], row_count=1)
+    fake_connector.execute_query.side_effect = _exec
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection", lambda c: fake_connector,
+    )
+    monkeypatch.setattr(wd, "transform_widget_data", lambda r, m: {"value": 1})
+
+    dashboard = SimpleNamespace(id=1, user_id="u-1", data_context={}, widgets=[_bulk_widget("w1")])
+    db = _db_with_first(dashboard, FakeConnection(db_type="bigquery"))
+
+    payload = wd.BulkRefreshRequest(filters=[wd.FilterParam(column="region", op="eq", value="EMEA")])
+    resp = _run(wd.refresh_dashboard_widgets(1, payload, _user(org_id="org-1"), db))
+
+    assert cache_calls["n"] == 0                       # cache skipped under filters
+    assert resp.widgets["w1"]["served_from"] == "source"
+    assert "region" in captured["sql"]                 # filter injected
+    assert captured["params"] == {"_f0": "EMEA"}
 
 
 # ── Bootstrap policy: pg/mysql connectors both fallback correctly ──────────

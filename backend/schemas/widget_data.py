@@ -33,8 +33,14 @@ class WidgetRefreshResponse(BaseModel):
     served_from: str = "source"
 
 
+class BulkRefreshRequest(BaseModel):
+    # Optional dashboard-level filters applied to every widget, mirroring the
+    # single-widget refresh. None/empty = unfiltered (warm-cache eligible).
+    filters: Optional[List[FilterParam]] = None
+
+
 class BulkRefreshResponse(BaseModel):
-    # widgetId -> {config, refreshed_at} on success, or {error} on failure
+    # widgetId -> {config, refreshed_at, served_from} on success, or {error}
     widgets: Dict[str, Any]
 
 
