@@ -48,69 +48,72 @@
       </template>
     </UiEmptyState>
 
-    <!-- Pipeline list -->
-    <div v-else class="space-y-3">
-      <UiCard
-        v-for="pipeline in pipelines"
-        :key="pipeline.id"
-        class="px-5 py-4 cursor-pointer hover:shadow-lg transition-shadow"
-        @click="openDetail(pipeline.id)"
-      >
-        <div class="flex items-start justify-between gap-4">
-          <!-- Left: name + meta -->
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-sm font-medium text-gray-900 dark:text-neutral-100 truncate">
-                {{ pipeline.name }}
-              </span>
+    <!-- Pipeline table -->
+    <div v-else class="rounded-xl border border-[var(--line)] overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-[var(--line)] bg-[var(--paper-1)]">
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Pipeline</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Source</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Target</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Schedule</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Status</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Last run</th>
+            <th class="px-4 py-2.5"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="pipeline in pipelines"
+            :key="pipeline.id"
+            class="border-b border-[var(--line)] last:border-b-0 hover:bg-[var(--paper-1)] cursor-pointer transition-colors"
+            @click="openDetail(pipeline.id)"
+          >
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-[var(--ink-0)] truncate">{{ pipeline.name }}</span>
+                <UiBadge v-if="!pipeline.enabled" variant="default" size="sm">disabled</UiBadge>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2 min-w-0">
+                <span
+                  class="grid place-items-center h-6 w-6 rounded-md text-[11px] font-semibold text-white shrink-0"
+                  :class="avatarColor(pipeline.source_connection_id)"
+                >
+                  {{ sourceInitial(pipeline.source_connection_id) }}
+                </span>
+                <span class="text-[var(--ink-1)] truncate">{{ sourceLabel(pipeline.source_connection_id) }}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-[var(--ink-2)]">{{ pipeline.target_table }}</td>
+            <td class="px-4 py-3">
+              <span v-if="pipeline.cron" class="font-mono text-xs text-[var(--ink-2)]">{{ pipeline.cron }}</span>
+              <span v-else class="text-xs italic text-[var(--ink-3)]">Manual only</span>
+            </td>
+            <td class="px-4 py-3">
               <UiBadge :variant="statusVariant(pipeline.last_run_status)" size="sm" :dot="true">
                 {{ statusLabel(pipeline.last_run_status) }}
               </UiBadge>
-              <UiBadge v-if="!pipeline.enabled" variant="warning" size="sm">Disabled</UiBadge>
-            </div>
-
-            <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-neutral-400">
-              <span class="flex items-center gap-1">
-                <Database class="h-3 w-3" />
-                Connection #{{ pipeline.source_connection_id }}
-              </span>
-              <span class="flex items-center gap-1">
-                <Table2 class="h-3 w-3" />
-                {{ pipeline.target_table }}
-              </span>
-              <span v-if="pipeline.cron" class="flex items-center gap-1">
-                <Clock class="h-3 w-3" />
-                {{ pipeline.cron }}
-              </span>
-              <span v-else class="flex items-center gap-1 italic">
-                <Clock class="h-3 w-3" />
-                Manual only
-              </span>
-            </div>
-
-            <div v-if="pipeline.last_run_at" class="mt-1 text-xs text-gray-400 dark:text-neutral-500">
-              Last run {{ formatRelative(pipeline.last_run_at) }}
-              <template v-if="pipeline.next_run_at">
-                · Next {{ formatRelative(pipeline.next_run_at) }}
-              </template>
-            </div>
-          </div>
-
-          <!-- Right: run button -->
-          <div class="shrink-0 flex items-center gap-2">
-            <UiButton
-              size="sm"
-              variant="outline"
-              :loading="runningPipelines.has(pipeline.id)"
-              @click.stop="handleRun(pipeline.id)"
-              :disabled="runningPipelines.has(pipeline.id)"
-            >
-              <Play class="h-3.5 w-3.5" />
-              Run
-            </UiButton>
-          </div>
-        </div>
-      </UiCard>
+            </td>
+            <td class="px-4 py-3 text-xs text-[var(--ink-3)] whitespace-nowrap">
+              {{ pipeline.last_run_at ? formatRelative(pipeline.last_run_at) : '—' }}
+            </td>
+            <td class="px-4 py-3 text-right">
+              <UiButton
+                size="sm"
+                variant="outline"
+                :loading="runningPipelines.has(pipeline.id)"
+                @click.stop="handleRun(pipeline.id)"
+                :disabled="runningPipelines.has(pipeline.id)"
+              >
+                <Play class="h-3.5 w-3.5" />
+                Run
+              </UiButton>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- Create modal -->
@@ -124,8 +127,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Plus, Database, Clock, Play, Table2, Workflow } from 'lucide-vue-next'
+import { Plus, Play, Workflow } from 'lucide-vue-next'
 import { useUserPipelines, type Pipeline } from '~/composables/useUserPipelines'
+import { useConnections } from '~/composables/useConnections'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,10 +147,28 @@ function closeDetail() {
 }
 
 const { pipelines, loading, error, fetchPipelines, triggerRun } = useUserPipelines()
+const { ensureLoaded, getConnectionLabel } = useConnections()
 const showCreateModal = ref(false)
 const runningPipelines = ref<Set<string>>(new Set())
 
-onMounted(() => fetchPipelines())
+onMounted(() => {
+  fetchPipelines()
+  ensureLoaded()
+})
+
+// Source connection display — rows only carry source_connection_id, so resolve
+// names through the shared connections cache (falls back to "Connection #id").
+function sourceLabel(id: number): string {
+  return getConnectionLabel(id)
+}
+function sourceInitial(id: number): string {
+  const label = getConnectionLabel(id).replace(/^[^:]+:\s*/, '')
+  return (label.match(/[a-z0-9]/i)?.[0] ?? '#').toUpperCase()
+}
+const AVATAR_COLORS = ['bg-indigo-500', 'bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-violet-500']
+function avatarColor(id: number): string {
+  return AVATAR_COLORS[id % AVATAR_COLORS.length]
+}
 
 async function handleRun(pipelineId: string) {
   runningPipelines.value = new Set([...runningPipelines.value, pipelineId])
