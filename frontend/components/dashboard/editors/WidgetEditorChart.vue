@@ -155,7 +155,36 @@
           </div>
 
           <div class="space-y-2">
-            <label class="text-xs text-gray-600">Metrics (Y-axis)</label>
+            <div class="flex items-center justify-between">
+              <label class="text-xs text-gray-600">Metrics (Y-axis)</label>
+              <button
+                v-if="editMode"
+                type="button"
+                class="flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                @click="addDatasetColumn()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Add Metric
+              </button>
+            </div>
+
+            <!-- Empty state: guide user to add first metric -->
+            <div
+              v-if="!chartMapping.datasetColumns || chartMapping.datasetColumns.length === 0"
+              class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-center"
+            >
+              <p class="text-xs text-gray-400 mb-2">No metrics added yet</p>
+              <button
+                v-if="editMode"
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
+                @click="addDatasetColumn()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Add Metric (Y-axis)
+              </button>
+            </div>
+
             <div
               v-for="(ds, idx) in chartMapping.datasetColumns"
               :key="idx"
@@ -200,46 +229,14 @@
                 </button>
               </div>
             </div>
-            <button
-              v-if="editMode"
-              type="button"
-              class="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
-              @click="addDatasetColumn()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-              Add Metric
-            </button>
           </div>
         </div>
       </template>
     </div>
 
-    <!-- X-axis mode (line/area charts) -->
-    <div v-if="localType === 'line' || localType === 'area'" class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">X-axis Type</h3>
-      <div class="flex rounded border border-gray-200 overflow-hidden">
-        <button
-          v-for="opt in xAxisModeOptions"
-          :key="opt.value"
-          type="button"
-          :disabled="!editMode"
-          class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
-          :class="(localOptions.xAxisMode ?? 'category') === opt.value
-            ? 'bg-indigo-600 text-white'
-            : 'bg-white text-gray-500 hover:bg-gray-50'"
-          @click="editMode && setXAxisMode(opt.value as 'category' | 'date')"
-        >{{ opt.label }}</button>
-      </div>
-      <p class="text-[11px] text-gray-400">
-        {{ localOptions.xAxisMode === 'date'
-          ? 'Date mode: labels are treated as date strings. Sort is disabled; time-series options appear in Style.'
-          : 'Category mode: labels are plotted as equally-spaced categories.' }}
-      </p>
-    </div>
-
-    <!-- Sort (hidden in date mode and scatter) -->
+    <!-- Sort (hidden for scatter) -->
     <div
-      v-if="localType !== 'scatter' && localOptions.xAxisMode !== 'date'"
+      v-if="localType !== 'scatter'"
       class="space-y-3"
     >
       <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Sort</h3>
@@ -274,9 +271,9 @@
       </div>
     </div>
 
-    <!-- Number of points (line/area, category mode only) -->
+    <!-- Number of points (line/area) -->
     <div
-      v-if="(localType === 'line' || localType === 'area') && localOptions.xAxisMode !== 'date'"
+      v-if="localType === 'line' || localType === 'area'"
       class="space-y-1.5"
     >
       <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Number of Points</label>
@@ -396,11 +393,6 @@ function setType(t: string) {
   emitDebounced()
 }
 
-function setXAxisMode(mode: 'category' | 'date') {
-  localOptions.value.xAxisMode = mode
-  emitDebounced()
-}
-
 // ── Stacked segmented ────────────────────────────────────────────────────────
 
 const stackedOptions = [
@@ -446,11 +438,6 @@ function removeDatasetColumn(idx: number) {
 }
 
 // ── Static data ──────────────────────────────────────────────────────────────
-
-const xAxisModeOptions = [
-  { value: 'category', label: 'Category' },
-  { value: 'date', label: 'Date / Time series' },
-]
 
 const aggregationOptions = [
   { value: 'sum', label: 'Sum' },

@@ -27,8 +27,9 @@ def _dimension_applies_to_sources(
             dim_sources = dim_data.get("sources", [])
             # Check if any of the widget's sources overlap with the dimension's sources
             return bool(set(dim_sources) & set(widget_sources))
-    # Dimension not found in context — apply anyway (backward compat)
-    return True
+    # Context provided but column not found → filter doesn't apply to this widget.
+    # Only fall back to True when no data_context at all (backward compat).
+    return data_context is None
 
 
 _OP_MAP = {
@@ -215,7 +216,10 @@ def _inject_via_sqlglot(
     filter_columns = {f.column for f in filters}
     target_scope = _pick_target_scope(candidate_scopes, filter_columns, data_context)
     if target_scope is None:
-        target_scope = root_scope
+        # No inner scope covers all filter columns. Appending to root_scope risks
+        # referencing columns that aren't in the outer projection (BigQuery 400).
+        # Raise so inject_filters routes to the subquery-wrap fallback instead.
+        raise ValueError("no covering scope for filter columns — routing to subquery wrap")
 
     target_select = target_scope.expression
     if not isinstance(target_select, exp.Select):
