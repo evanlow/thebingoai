@@ -225,13 +225,13 @@ def _inject_via_sqlglot(
         target_select.where(cond, append=True, copy=False)
 
     rendered = ast.sql(dialect=dialect)
-    if dialect == "bigquery":
-        # sqlglot renders exp.Placeholder as `@name` for BigQuery; swap to the
-        # psycopg2 `%(name)s` form the source-DB connectors bind.
-        return _PLACEHOLDER_REWRITE.sub(r"%(\1)s", rendered)
-    # DuckDB renders exp.Placeholder as `$name` natively — bound by name from
-    # the params dict, no rewrite needed.
-    return rendered
+    if dialect == "duckdb":
+        # DuckDB renders exp.Placeholder as `$name` natively — bound by name from
+        # the params dict, no rewrite needed.
+        return rendered
+    # BigQuery renders exp.Placeholder as `@name`; MySQL/Postgres render `:name`.
+    # Both swap to the psycopg2 / pymysql `%(name)s` form the source-DB connectors bind.
+    return _PLACEHOLDER_REWRITE.sub(r"%(\1)s", rendered)
 
 
 def _pick_target_scope(

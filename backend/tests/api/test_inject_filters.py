@@ -33,6 +33,27 @@ def test_bigquery_in_operator_multikey():
     assert params == {"_f0_0": "EMEA", "_f0_1": "APAC"}
 
 
+# --- MySQL / Postgres source-DB path ---------------------------------------
+
+def test_mysql_emits_psycopg_placeholders():
+    # MySQL/Postgres render exp.Placeholder as `:name`; it must be rewritten to
+    # the pymysql/psycopg2 `%(name)s` form. A raw `:_f0` reaches the driver and
+    # triggers a (1064) syntax error.
+    sql = "SELECT status, COUNT(*) AS c FROM orders GROUP BY status"
+    out, params = inject_filters(sql, [_f("status", "eq", "paid")], dialect="mysql")
+    assert "%(_f0)s" in out
+    assert ":_f0" not in out
+    assert params == {"_f0": "paid"}
+
+
+def test_postgres_emits_psycopg_placeholders():
+    sql = "SELECT country, COUNT(*) AS c FROM customers GROUP BY country"
+    out, params = inject_filters(sql, [_f("country", "eq", "Malaysia")], dialect="postgres")
+    assert "%(_f0)s" in out
+    assert ":_f0" not in out
+    assert params == {"_f0": "Malaysia"}
+
+
 # --- DuckDB path -----------------------------------------------------------
 
 def test_duckdb_emits_dollar_placeholders():
