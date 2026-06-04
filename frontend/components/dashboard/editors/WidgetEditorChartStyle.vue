@@ -95,7 +95,7 @@
             <div class="flex rounded border border-gray-200 overflow-hidden">
               <button v-for="opt in seriesTypeOptions" :key="opt.value" type="button" :disabled="!editMode"
                 class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                :class="(ds.seriesType ?? 'line') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'"
+                :class="(ds.seriesType ?? defaultSeriesType) === opt.value ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'"
                 @click="editMode && setDatasetProp(i, 'seriesType', opt.value)">{{ opt.label }}</button>
             </div>
           </div>

@@ -95,20 +95,26 @@ def _period_ranges(period_label: str, reference: date) -> Tuple[date, date, date
     return today, today, today, today
 
 
-def _aggregate_values(values: List[float], aggregation: str) -> Optional[float]:
+def _aggregate_values(values: List[Any], aggregation: str) -> Optional[float]:
     """Aggregate a list of values using the given method."""
     if not values:
         return None
     if aggregation == "sum":
-        return sum(values)
+        numeric = [v for v in values if isinstance(v, (int, float))]
+        return sum(numeric) if numeric else None
     elif aggregation == "avg":
-        return round(sum(values) / len(values), 2)
+        numeric = [v for v in values if isinstance(v, (int, float))]
+        return round(sum(numeric) / len(numeric), 2) if numeric else None
     elif aggregation == "count":
         return float(len(values))
+    elif aggregation == "countDistinct":
+        return float(len(set(v for v in values if v is not None)))
     elif aggregation == "min":
-        return min(values)
+        numeric = [v for v in values if isinstance(v, (int, float))]
+        return min(numeric) if numeric else None
     elif aggregation == "max":
-        return max(values)
+        numeric = [v for v in values if isinstance(v, (int, float))]
+        return max(numeric) if numeric else None
     elif aggregation == "last":
         return values[-1]
     else:  # "first" or unrecognized
@@ -119,34 +125,77 @@ def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
     """Transform QueryResult into chart widget config data.
 
     Mapping keys:
-      - labelColumn: column name to use for chart labels (x-axis / slices)
-      - datasetColumns: list of {column, label} dicts for datasets
-      - chartType: (optional) the chart subtype (e.g. "scatter") — when "scatter",
-        produces {x, y} point objects grouped by labelColumn instead of flat arrays.
+      - labelColumn: dimension column (x-axis labels / pie slices)
+      - datasetColumns: list of {column, label, aggregation?, seriesType?, ...} dicts
+      - xMetricColumn / yMetricColumn: scatter via dedicated x+y metric columns
+      - xAggregation / yAggregation: aggregation for scatter metric columns
+      - chartType: legacy hint for (X)/(Y) label-based scatter (fallback only)
+      - options: dict with missingData, numberOfPoints, stacked, etc.
 
     Returns dict suitable for widget.config (merged with existing chart-level fields).
     """
     label_col = mapping.get("labelColumn")
     dataset_cols = mapping.get("datasetColumns", [])
-    chart_type = mapping.get("chartType", "")
     x_metric_col = mapping.get("xMetricColumn")
-
-    # Incomplete mapping (no dimension or scatter axes set yet) — return stub so
-    # callers can still read source_columns to populate the editor dropdowns.
-    if not label_col and not x_metric_col:
-        return {"data": {"labels": [], "datasets": []}}
-
-    label_idx = _find_column(label_col, result.columns, "labelColumn")
-    labels = [_to_json_safe(row[label_idx]) for row in result.rows]
+    y_metric_col = mapping.get("yMetricColumn")
+    chart_type = mapping.get("chartType", "")
+    opts: Dict[str, Any] = mapping.get("options") or {}
 
     _PASSTHROUGH_KEYS = {
-        "backgroundColor", "borderColor", "borderWidth", "fill",
-        "tension", "pointRadius",
+        "backgroundColor", "borderColor", "borderWidth", "fill", "tension", "pointRadius",
+        "seriesType", "lineWeight", "lineStyle", "showPoints", "stepped", "gradient",
+        "cumulative", "showDataLabels", "yAxisID", "trendline",
     }
 
-    # Scatter charts need {x, y} point objects grouped by label (e.g. team)
+    empty: Dict[str, Any] = {"data": {"labels": [], "datasets": []}}
+
+    # Guard: no rows → return empty structure preserving dataset labels
+    if not result.rows:
+        if x_metric_col and y_metric_col:
+            return {"data": {"labels": [], "datasets": [{"label": "Scatter", "data": []}]}}
+        return {"data": {"labels": [], "datasets": [
+            {"label": ds.get("label") or ds["column"], "data": []} for ds in dataset_cols
+        ]}}
+
+    # ── SCATTER: dedicated x+y metric columns → {x, y} point objects ─────────
+    if x_metric_col and y_metric_col:
+        x_idx = _find_column(x_metric_col, result.columns, "xMetricColumn")
+        y_idx = _find_column(y_metric_col, result.columns, "yMetricColumn")
+        y_agg = mapping.get("yAggregation") or "none"
+
+        if y_agg and y_agg != "none":
+            # Group by X value, aggregate Y per group
+            order: List[Any] = []
+            x_groups: Dict[Any, List[Any]] = {}
+            for row in result.rows:
+                x_val = _to_json_safe(row[x_idx])
+                y_val = _to_json_safe(row[y_idx])
+                if x_val not in x_groups:
+                    x_groups[x_val] = []
+                    order.append(x_val)
+                x_groups[x_val].append(y_val)
+            points = [
+                {"x": x, "y": _aggregate_values(x_groups[x], y_agg)}
+                for x in order
+            ]
+        else:
+            points = [
+                {"x": _to_json_safe(row[x_idx]), "y": _to_json_safe(row[y_idx])}
+                for row in result.rows
+            ]
+        return {"data": {"labels": [], "datasets": [{"label": "Scatter", "data": points}]}}
+
+    # ── STANDARD: dimension + metric columns ──────────────────────────────────
+    if not label_col:
+        return empty
+
+    label_idx = _find_column(label_col, result.columns, "labelColumn")
+
+    if not dataset_cols:
+        return empty
+
+    # Legacy scatter: (X)/(Y) label-hint detection grouped by labelColumn
     if chart_type == "scatter" and len(dataset_cols) >= 2:
-        # Detect X/Y roles from label hints like "(X)" / "(Y)", else default first=X, second=Y
         col0_label = (dataset_cols[0].get("label") or "").upper()
         col1_label = (dataset_cols[1].get("label") or "").upper()
         if "(X)" in col0_label and "(Y)" in col1_label:
@@ -157,32 +206,98 @@ def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
             x_col, y_col = dataset_cols[0], dataset_cols[1]
         x_idx = _find_column(x_col["column"], result.columns, "datasetColumns(X).column")
         y_idx = _find_column(y_col["column"], result.columns, "datasetColumns(Y).column")
-
-        # Group points by label (e.g. team name)
         groups: Dict[str, List[Dict[str, Any]]] = {}
         for row in result.rows:
             group_key = str(_to_json_safe(row[label_idx]))
             point = {"x": _to_json_safe(row[x_idx]), "y": _to_json_safe(row[y_idx])}
             groups.setdefault(group_key, []).append(point)
+        return {"data": {"labels": [], "datasets": [
+            {"label": gk, "data": gpts} for gk, gpts in groups.items()
+        ]}}
 
+    has_aggregation = any(
+        ds.get("aggregation") and ds["aggregation"] != "none"
+        for ds in dataset_cols
+    )
+    missing_data = opts.get("missingData")
+
+    if has_aggregation:
+        # Group rows by labelColumn, aggregate each metric per group
+        label_order: List[Any] = []
+        row_groups: Dict[Any, List[list]] = {}
+        for row in result.rows:
+            lv = _to_json_safe(row[label_idx])
+            if lv not in row_groups:
+                row_groups[lv] = []
+                label_order.append(lv)
+            row_groups[lv].append(row)
+        labels: List[Any] = label_order
+
+        datasets: List[Dict[str, Any]] = []
+        for ds in dataset_cols:
+            col = ds["column"]
+            col_idx = _find_column(col, result.columns, "datasetColumns[].column")
+            agg = ds.get("aggregation") or "sum"
+            data: List[Any] = []
+            for lv in labels:
+                vals = [_to_json_safe(r[col_idx]) for r in row_groups.get(lv, [])]
+                data.append(
+                    vals[0] if agg == "none" else _aggregate_values(vals, agg)
+                )
+            if missing_data == "lineToZero":
+                data = [0 if v is None else v for v in data]
+            dataset: Dict[str, Any] = {"label": ds.get("label") or col, "data": data}
+            for key in _PASSTHROUGH_KEYS:
+                if key in ds:
+                    dataset[key] = ds[key]
+            if ds.get("cumulative"):
+                running = 0.0
+                cum: List[Any] = []
+                for v in dataset["data"]:
+                    running += v if isinstance(v, (int, float)) else 0
+                    cum.append(running)
+                dataset["data"] = cum
+            datasets.append(dataset)
+    else:
+        # 1:1 row mapping
+        labels = [_to_json_safe(row[label_idx]) for row in result.rows]
         datasets = []
-        for group_label, points in groups.items():
-            datasets.append({"label": group_label, "data": points})
+        for ds in dataset_cols:
+            col = ds["column"]
+            col_idx = _find_column(col, result.columns, "datasetColumns[].column")
+            raw = [_to_json_safe(row[col_idx]) for row in result.rows]
+            data = [0 if v is None else v for v in raw] if missing_data == "lineToZero" else raw
+            dataset = {"label": ds.get("label") or col, "data": data}
+            for key in _PASSTHROUGH_KEYS:
+                if key in ds:
+                    dataset[key] = ds[key]
+            if ds.get("cumulative"):
+                running = 0.0
+                cum = []
+                for v in dataset["data"]:
+                    running += v if isinstance(v, (int, float)) else 0
+                    cum.append(running)
+                dataset["data"] = cum
+            datasets.append(dataset)
 
-        return {"data": {"labels": [], "datasets": datasets}}
+    # Limit to last N points (after aggregation, before percentage normalization)
+    number_of_points = opts.get("numberOfPoints")
+    if number_of_points and number_of_points > 0 and datasets:
+        labels = labels[-number_of_points:]
+        datasets = [{**ds, "data": ds["data"][-number_of_points:]} for ds in datasets]
 
-    datasets = []
-    for ds in dataset_cols:
-        col = ds["column"]
-        col_idx = _find_column(col, result.columns, "datasetColumns[].column")
-        dataset: Dict[str, Any] = {
-            "label": ds.get("label", col),
-            "data": [_to_json_safe(row[col_idx]) for row in result.rows],
-        }
-        for key in _PASSTHROUGH_KEYS:
-            if key in ds:
-                dataset[key] = ds[key]
-        datasets.append(dataset)
+    # 100% stacked normalization
+    if opts.get("stacked") == "percentage":
+        for i in range(len(labels)):
+            total = sum(
+                ds["data"][i] for ds in datasets
+                if i < len(ds["data"]) and isinstance(ds["data"][i], (int, float))
+            )
+            if total > 0:
+                for ds in datasets:
+                    if i < len(ds["data"]):
+                        v = ds["data"][i]
+                        ds["data"][i] = round((v / total) * 10000) / 100 if isinstance(v, (int, float)) else 0
 
     return {"data": {"labels": labels, "datasets": datasets}}
 

@@ -23,6 +23,7 @@ import {
 } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import annotationPlugin from 'chartjs-plugin-annotation'
+import 'chartjs-adapter-date-fns'
 import type { Ref } from 'vue'
 import type { ChartConfig, ChartType, DatasetConfig, ChartLineStyle, ChartFontFamily, ChartFontSize } from '~/types/chart'
 
@@ -437,11 +438,28 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       ? (value: unknown) => formatTickValue(value, opts)
       : undefined
 
+    const isDateAxis = !isScatter && opts.xAxisMode === 'date'
     const scales: Record<string, any> = {
       x: {
-        // Scatter needs a linear X axis; all others use category (or time if date mode)
-        type: isScatter ? 'linear' : 'category',
+        // Scatter → linear; date mode → time (needs chartjs-adapter-date-fns); default → category
+        type: isScatter ? 'linear' : (isDateAxis ? 'time' : 'category'),
         position: 'bottom',
+        ...(isDateAxis ? {
+          time: {
+            tooltipFormat: 'MMM d, yyyy',
+            displayFormats: {
+              millisecond: 'HH:mm:ss.SSS',
+              second: 'HH:mm:ss',
+              minute: 'HH:mm',
+              hour: 'MMM d, HH:mm',
+              day: 'MMM d',
+              week: 'MMM d',
+              month: 'MMM yyyy',
+              quarter: 'qqq yyyy',
+              year: 'yyyy',
+            },
+          },
+        } : {}),
         grid: {
           display: showXGrid,
           color: gridColor,
@@ -453,7 +471,6 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
           color: colors.tickColor,
           maxRotation: xCfg.labelRotation ?? undefined,
           display: xCfg.showLabels !== false,
-          ...(tickCallback && !isHorizontal ? {} : {}), // X ticks are labels, not values — skip rounding
         },
         title: {
           display: !!(xCfg.showTitle && xCfg.title),
