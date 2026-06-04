@@ -172,10 +172,29 @@ export interface FilterWidgetConfig {
 }
 
 // DataSource mapping types — one per refreshable widget type
+export type ChartAggregation = 'sum' | 'avg' | 'count' | 'countDistinct' | 'min' | 'max' | 'none'
+
+export interface ChartDatasetColumn {
+  column: string
+  label: string
+  aggregation?: ChartAggregation
+  seriesType?: 'line' | 'bars'
+  yAxisID?: 'left' | 'right'
+  [key: string]: any
+}
+
 export interface ChartDataSourceMapping {
   type: 'chart'
-  labelColumn: string
-  datasetColumns: { column: string; label: string }[]
+  labelColumn?: string              // dimension; optional for scatter
+  datasetColumns: ChartDatasetColumn[]
+  // Scatter-only
+  xMetricColumn?: string
+  xAggregation?: ChartAggregation
+  yMetricColumn?: string
+  yAggregation?: ChartAggregation
+  // Reserved for future stacked-bar breakdown (not in v1)
+  breakdownColumn?: string
+  options?: Record<string, any>
 }
 
 export interface KpiDataSourceMapping {

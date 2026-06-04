@@ -129,6 +129,12 @@ def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
     label_col = mapping.get("labelColumn")
     dataset_cols = mapping.get("datasetColumns", [])
     chart_type = mapping.get("chartType", "")
+    x_metric_col = mapping.get("xMetricColumn")
+
+    # Incomplete mapping (no dimension or scatter axes set yet) — return stub so
+    # callers can still read source_columns to populate the editor dropdowns.
+    if not label_col and not x_metric_col:
+        return {"data": {"labels": [], "datasets": []}}
 
     label_idx = _find_column(label_col, result.columns, "labelColumn")
     labels = [_to_json_safe(row[label_idx]) for row in result.rows]
@@ -200,6 +206,10 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
     trend_col = mapping.get("trendValueColumn")
     sparkline_x_col = mapping.get("sparklineXColumn")
     sparkline_y_col = mapping.get("sparklineYColumn")
+
+    # Incomplete mapping — return stub so editor dropdowns can still populate.
+    if not value_col:
+        return {"value": None}
 
     # Validate columns case-insensitively (precompute indices)
     value_idx = _find_column(value_col, result.columns, "valueColumn")
