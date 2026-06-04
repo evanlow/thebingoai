@@ -222,3 +222,31 @@ def test_no_unique_key_keeps_raw_union(plane, scope, monkeypatch):
 
     result = plane.query(scope, "SELECT count(*) AS n FROM events")
     assert result.rows[0][0] == 2  # both snapshots present, no dedup
+
+
+def test_put_and_get_raw_object_round_trips(plane, scope):
+    plane.put_raw_object(scope, "chat_files/thread-1/file-1.csv", b"a,b\n1,2\n", "text/csv")
+    assert plane.get_raw_object(scope, "chat_files/thread-1/file-1.csv") == b"a,b\n1,2\n"
+
+
+def test_get_raw_object_missing_returns_none(plane, scope):
+    assert plane.get_raw_object(scope, "chat_files/none/none.csv") is None
+
+
+def test_put_raw_object_lives_outside_scope_root(plane, scope, root):
+    plane.put_raw_object(scope, "chat_files/t/f.csv", b"x", "text/csv")
+    # Stored under a sibling `_raw/` namespace, NOT under the scope's table root.
+    expected = os.path.join(root, "_raw", scope.as_path(), "chat_files/t/f.csv")
+    assert os.path.isfile(expected)
+
+
+def test_raw_object_isolated_by_scope(plane, scope, scope_b):
+    plane.put_raw_object(scope, "chat_files/t/f.csv", b"mine", "text/csv")
+    assert plane.get_raw_object(scope_b, "chat_files/t/f.csv") is None
+
+
+def test_raw_object_not_listed_as_table(plane, scope):
+    """A raw object must never surface as a phantom table or break query()."""
+    plane.put_raw_object(scope, "chat_files/t/f.csv", b"x", "text/csv")
+    assert "chat_files" not in plane.list_tables(scope)
+    assert "_raw" not in plane.list_tables(scope)

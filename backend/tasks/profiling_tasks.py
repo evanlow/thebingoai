@@ -206,24 +206,19 @@ def profile_chat_file(file_id: str):
     file_data = json.loads(raw)
     mime_type = file_data.get("mime_type", "")
 
-    # Re-read the raw file from object storage
-    from backend.services import object_storage
+    # Re-read the raw dataset from the per-user DataPlane (CSV/XLSX live there
+    # post-migration; storage_key is a plane rel_path, not a DO key).
+    from backend.services.chat_file_service import get_raw_file
 
-    storage_key = file_data.get("storage_key")
-    if not storage_key:
-        logger.warning("profile_chat_file: no storage_key for file %s", file_id)
+    raw = get_raw_file(file_data.get("user_id", ""), file_id)
+    if raw is None:
+        logger.warning("profile_chat_file: raw dataset unavailable for %s", file_id)
         file_data["profile_status"] = "ready"
         ttl = max(redis_client.ttl(key), 60)
         redis_client.setex(key, ttl, json.dumps(file_data))
         return
 
-    file_bytes = object_storage.download_bytes(storage_key)
-    if file_bytes is None:
-        logger.warning("profile_chat_file: could not download %s", storage_key)
-        file_data["profile_status"] = "ready"
-        ttl = max(redis_client.ttl(key), 60)
-        redis_client.setex(key, ttl, json.dumps(file_data))
-        return
+    file_bytes, _ext = raw
 
     try:
         if "csv" in mime_type:

@@ -286,6 +286,27 @@ class BigQueryGCSPlane:
             self._bq().create_table(table_ref)
         logger.debug("Registered BQ external table %s", full_table_id)
 
+    def put_raw_object(
+        self,
+        scope: OwnerScope,
+        rel_path: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """Store opaque bytes at *rel_path* in the per-Org bucket (non-Parquet sidecar)."""
+        blob = self._gcs().bucket(self._bucket_name).blob(rel_path)
+        blob.upload_from_string(data, content_type=content_type)
+        logger.debug("Wrote raw object gs://%s/%s", self._bucket_name, rel_path)
+
+    def get_raw_object(self, scope: OwnerScope, rel_path: str) -> bytes | None:
+        """Read opaque bytes at *rel_path*; None when the object is absent."""
+        from google.cloud.exceptions import NotFound
+        blob = self._gcs().bucket(self._bucket_name).blob(rel_path)
+        try:
+            return blob.download_as_bytes()
+        except NotFound:
+            return None
+
     def query(
         self,
         scope: OwnerScope,

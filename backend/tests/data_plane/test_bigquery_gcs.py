@@ -456,3 +456,46 @@ def test_register_cache_plain_external(plane, sample_table):
             plane.write_parquet(s, "tbl", sample_table, mode="append")
 
     assert mock_register.call_count == 1
+
+
+def test_put_raw_object_uploads_to_bare_key(plane, scope):
+    mock_blob = MagicMock()
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        plane.put_raw_object(scope, "chat_files/t/f.csv", b"a,b\n1,2\n", "text/csv")
+
+    mock_gcs.bucket.assert_called_once_with("test-bucket")
+    mock_bucket.blob.assert_called_once_with("chat_files/t/f.csv")
+    mock_blob.upload_from_string.assert_called_once_with(b"a,b\n1,2\n", content_type="text/csv")
+
+
+def test_get_raw_object_returns_bytes(plane, scope):
+    mock_blob = MagicMock()
+    mock_blob.download_as_bytes.return_value = b"payload"
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        result = plane.get_raw_object(scope, "chat_files/t/f.csv")
+
+    assert result == b"payload"
+    mock_bucket.blob.assert_called_once_with("chat_files/t/f.csv")
+
+
+def test_get_raw_object_missing_returns_none(plane, scope):
+    from google.cloud.exceptions import NotFound
+    mock_blob = MagicMock()
+    mock_blob.download_as_bytes.side_effect = NotFound("nope")
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        assert plane.get_raw_object(scope, "chat_files/t/f.csv") is None
