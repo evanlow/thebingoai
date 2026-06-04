@@ -57,7 +57,7 @@ async def validate_token(access_token: str) -> Optional[AuthUser]:
     3. Cache result with TTL from settings
     4. Return AuthUser or None on 401/error
 
-    X-API-Key header is only included when sso_secret_key is configured (enterprise).
+    X-API-Key uses sso_secret_key (enterprise) or sso_publishable_key (community).
     """
     redis = _get_redis_client()
     cache_key = _cache_key(access_token)
@@ -74,7 +74,11 @@ async def validate_token(access_token: str) -> Optional[AuthUser]:
     try:
         client = _get_http_client()
         headers = {"Authorization": f"Bearer {access_token}"}
-        if settings.sso_publishable_key:
+        # X-API-Key: secret key for server-side validation (enterprise),
+        # else publishable/app-name key (community). SSO /auth/me requires sk_.
+        if settings.sso_secret_key:
+            headers["X-API-Key"] = settings.sso_secret_key
+        elif settings.sso_publishable_key:
             headers["X-API-Key"] = settings.sso_publishable_key
 
         response = await client.get("/api/v1/auth/me", headers=headers)
@@ -113,7 +117,7 @@ async def logout(access_token: str, refresh_token: str) -> bool:
     """
     Invalidate token cache and blacklist refresh token on SSO.
 
-    X-API-Key header is only included when sso_secret_key is configured (enterprise).
+    X-API-Key uses sso_secret_key (enterprise) or sso_publishable_key (community).
     """
     redis = _get_redis_client()
 
@@ -125,7 +129,10 @@ async def logout(access_token: str, refresh_token: str) -> bool:
     try:
         client = _get_http_client()
         headers = {}
-        if settings.sso_publishable_key:
+        # X-API-Key: secret key (enterprise) or publishable/app-name key (community).
+        if settings.sso_secret_key:
+            headers["X-API-Key"] = settings.sso_secret_key
+        elif settings.sso_publishable_key:
             headers["X-API-Key"] = settings.sso_publishable_key
 
         response = await client.post(
