@@ -225,13 +225,13 @@ def _inject_via_sqlglot(
         target_select.where(cond, append=True, copy=False)
 
     rendered = ast.sql(dialect=dialect)
-    if dialect == "bigquery":
-        # sqlglot renders exp.Placeholder as `@name` for BigQuery; swap to the
-        # psycopg2 `%(name)s` form the source-DB connectors bind.
-        return _PLACEHOLDER_REWRITE.sub(r"%(\1)s", rendered)
-    # DuckDB renders exp.Placeholder as `$name` natively — bound by name from
-    # the params dict, no rewrite needed.
-    return rendered
+    if dialect == "duckdb":
+        # DuckDB renders exp.Placeholder as `$name` natively — bound by name from
+        # the params dict, no rewrite needed.
+        return rendered
+    # BigQuery renders exp.Placeholder as `@name`; MySQL/Postgres render `:name`.
+    # Both swap to the psycopg2 / pymysql `%(name)s` form the source-DB connectors bind.
+    return _PLACEHOLDER_REWRITE.sub(r"%(\1)s", rendered)
 
 
 def _pick_target_scope(
@@ -606,12 +606,13 @@ async def refresh_widget(
     connector = get_connector_for_connection(connection)
 
     try:
-        sql = request.sql
-        params = None
-        if request.filters:
+        def _prepare(base_sql):
+            """Inject filters into base_sql in the connection dialect."""
+            if not request.filters:
+                return base_sql, None
             data_context = dashboard.data_context if dashboard else None
-            sql, params = inject_filters(
-                sql, request.filters,
+            return inject_filters(
+                base_sql, request.filters,
                 data_context=data_context,
                 widget_sources=request.widget_sources,
                 dialect=connection.db_type or "bigquery",
@@ -621,6 +622,7 @@ async def refresh_widget(
         # materialised view) instead of the raw GA4 source connector.
         served_from = "source"
         if connection.db_type == "bigquery_ga4":
+            sql, params = _prepare(request.sql)
             from backend.data_plane.scope import OwnerScope
             from backend.models.pipeline import Pipeline
             from backend.services.data_plane_service import get_default_plane
@@ -635,21 +637,38 @@ async def refresh_widget(
             else:
                 result = connector.execute_query(sql, params=params)
         else:
-            # Legacy BigQuery-dialect SQL (DATE_SUB, CURRENT_DATE(), SAFE_*,
-            # backticks) stored in widgets must be transpiled to the source DB
-            # dialect before execute_query. The stored SQL is always BigQuery
-            # for pre-migration widgets; transpile to whatever the connection is.
-            try:
-                from backend.utils.sql_refs import transpile_to_engine
-                db_type = (getattr(connection, "db_type", "") or "postgres").lower()
-                # Map common db_type values to sqlglot dialect names
-                target = {"postgres": "postgres", "postgresql": "postgres",
-                          "mysql": "mysql", "bigquery": "bigquery",
-                          "bigquery_ga4": "bigquery"}.get(db_type, db_type)
-                sql = transpile_to_engine(sql, source="bigquery", target=target)
-            except Exception:
-                pass  # best-effort; let the connector raise on parse failure
-            result = connector.execute_query(sql, params=params)
+            # Stored widget SQL is normally in the connection's native dialect
+            # (agent-generated). Try it as-is with the filter first; fall back to
+            # unfiltered (when the filter can't be applied — e.g. ambiguous column
+            # in a joined query) and to a BigQuery→source transpile (legacy SQL).
+            # Order ensures a native widget with a bad filter renders unfiltered
+            # and never reaches transpile (which would corrupt native DATE_TRUNC).
+            from backend.utils.sql_refs import transpile_to_engine
+            db_type = (getattr(connection, "db_type", "") or "postgres").lower()
+            target = {"postgres": "postgres", "postgresql": "postgres",
+                      "mysql": "mysql", "bigquery": "bigquery",
+                      "bigquery_ga4": "bigquery"}.get(db_type, db_type)
+
+            def _attempt(transpile, with_filter):
+                base = (transpile_to_engine(request.sql, source="bigquery", target=target)
+                        if transpile else request.sql)
+                s, p = (_prepare(base) if with_filter else (base, None))
+                return connector.execute_query(s, params=p)
+
+            plans = [(False, True), (False, False), (True, True), (True, False)]
+            if not request.filters:
+                plans = [(False, False), (True, False)]
+            first_err = None
+            for i, (tr, wf) in enumerate(plans):
+                try:
+                    if i:  # reset aborted-txn / stale conn before a retry
+                        connector.close()
+                    result = _attempt(tr, wf)
+                    break
+                except Exception as e:
+                    first_err = first_err or e
+            else:
+                raise first_err
 
         config = transform_widget_data(result, request.mapping)
 
@@ -810,20 +829,20 @@ async def refresh_dashboard_widgets(
             connector = connector_cache[connection_id]
 
             try:
-                # Parity with single-widget refresh: inject filters in the
-                # connection dialect, then transpile stored BigQuery SQL to the
-                # source engine before executing.
-                fb_sql = sql
-                params = None
-                if filters:
-                    fb_sql, params = inject_filters(
-                        sql, filters,
+                def _prepare_bulk(base_sql):
+                    """Inject filters into base_sql in the connection dialect."""
+                    if not filters:
+                        return base_sql, None
+                    return inject_filters(
+                        base_sql, filters,
                         data_context=data_context,
                         widget_sources=widget.get("sources"),
                         dialect=connection.db_type or "bigquery",
                     )
+
                 served_from = "source"
                 if connection.db_type == "bigquery_ga4":
+                    fb_sql, params = _prepare_bulk(sql)
                     from backend.data_plane.scope import OwnerScope as _OS
                     from backend.models.pipeline import Pipeline as _Pipeline
                     from backend.services.data_plane_service import (
@@ -840,16 +859,36 @@ async def refresh_dashboard_widgets(
                     else:
                         result = connector.execute_query(fb_sql, params=params)
                 else:
-                    try:
-                        from backend.utils.sql_refs import transpile_to_engine
-                        db_type = (getattr(connection, "db_type", "") or "postgres").lower()
-                        target = {"postgres": "postgres", "postgresql": "postgres",
-                                  "mysql": "mysql", "bigquery": "bigquery",
-                                  "bigquery_ga4": "bigquery"}.get(db_type, db_type)
-                        fb_sql = transpile_to_engine(fb_sql, source="bigquery", target=target)
-                    except Exception:
-                        pass  # best-effort; let the connector raise on parse failure
-                    result = connector.execute_query(fb_sql, params=params)
+                    # Native-first with filter, then unfiltered, then BigQuery
+                    # transpile (filtered/unfiltered). Order renders a native
+                    # widget unfiltered when its filter is unusable and avoids
+                    # corrupting native SQL via transpile. See refresh_widget.
+                    from backend.utils.sql_refs import transpile_to_engine
+                    db_type = (getattr(connection, "db_type", "") or "postgres").lower()
+                    target = {"postgres": "postgres", "postgresql": "postgres",
+                              "mysql": "mysql", "bigquery": "bigquery",
+                              "bigquery_ga4": "bigquery"}.get(db_type, db_type)
+
+                    def _attempt_bulk(transpile, with_filter):
+                        base = (transpile_to_engine(sql, source="bigquery", target=target)
+                                if transpile else sql)
+                        s, p = (_prepare_bulk(base) if with_filter else (base, None))
+                        return connector.execute_query(s, params=p)
+
+                    plans = [(False, True), (False, False), (True, True), (True, False)]
+                    if not filters:
+                        plans = [(False, False), (True, False)]
+                    first_err = None
+                    for _i, (_tr, _wf) in enumerate(plans):
+                        try:
+                            if _i:
+                                connector.close()
+                            result = _attempt_bulk(_tr, _wf)
+                            break
+                        except Exception as e:
+                            first_err = first_err or e
+                    else:
+                        raise first_err
                 results[widget_id] = {
                     "config": transform_widget_data(result, mapping),
                     "refreshed_at": refreshed_at,
