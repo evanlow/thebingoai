@@ -42,6 +42,23 @@ _OP_MAP = {
     'ilike': 'ILIKE',
 }
 
+
+def _resolve_inject_dialect(connection) -> str:
+    """sqlglot dialect for filter injection, matching the engine that runs the SQL.
+
+    Dataset / bigquery_ga4 connections are DataPlane-backed; their stored SQL
+    dialect tracks settings.disable_local_data_plane (BigQuery in lockdown,
+    DuckDB in dev) — mirror that so the injected WHERE parses + binds correctly.
+    Passing the raw db_type (e.g. 'dataset') makes sqlglot raise 'Unknown dialect'
+    and fall back to a naive subquery wrap that mis-scopes the filter.
+    """
+    db_type = (getattr(connection, "db_type", "") or "bigquery").lower()
+    if db_type in ("dataset", "bigquery_ga4"):
+        from backend.config import settings
+        return "bigquery" if getattr(settings, "disable_local_data_plane", False) else "duckdb"
+    return {"postgres": "postgres", "postgresql": "postgres",
+            "mysql": "mysql", "bigquery": "bigquery"}.get(db_type, db_type)
+
 # psycopg2-style placeholders (`%(name)s`) aren't valid SQL, so sqlglot can't
 # parse them as expressions. We build conditions via the AST instead, using
 # `exp.Placeholder` (which sqlglot renders dialect-aware: `@name` for BigQuery,
@@ -619,7 +636,7 @@ async def refresh_widget(
                 base_sql, request.filters,
                 data_context=data_context,
                 widget_sources=request.widget_sources,
-                dialect=connection.db_type or "bigquery",
+                dialect=_resolve_inject_dialect(connection),
             )
 
         # Route bigquery_ga4 widget SQL through the data plane (managed
@@ -841,7 +858,7 @@ async def refresh_dashboard_widgets(
                         base_sql, filters,
                         data_context=data_context,
                         widget_sources=widget.get("sources"),
-                        dialect=connection.db_type or "bigquery",
+                        dialect=_resolve_inject_dialect(connection),
                     )
 
                 served_from = "source"
