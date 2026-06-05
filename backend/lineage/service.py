@@ -261,7 +261,7 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
             db.rollback()
 
     # 4. Attach error messages for failed nodes
-    _attach_errors(nodes, db)
+    _attach_errors(nodes, db, scope)
 
     graph.nodes = list(nodes.values())
     graph.edges = edges
@@ -391,7 +391,7 @@ def last_write(table_name: str, scope: OwnerScope, db: Session) -> Optional[dict
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _attach_errors(nodes: dict, db: Session) -> None:
+def _attach_errors(nodes: dict, db: Session, scope: OwnerScope) -> None:
     """For every failed pipeline/parquet/transform node, query the latest run's
     error_message and attach it to meta."""
     from backend.models.pipeline import PipelineRun
@@ -408,19 +408,29 @@ def _attach_errors(nodes: dict, db: Session) -> None:
             failed_model_ids.add(n.meta["model_id"])
 
     if failed_pipeline_ids:
-        from sqlalchemy import tuple_
-        subs = (
-            db.query(PipelineRun.pipeline_id, PipelineRun.error_message)
-            .filter(PipelineRun.status == "failed")
-            .order_by(PipelineRun.started_at.desc())
+        from sqlalchemy import func
+        ranked = (
+            db.query(
+                PipelineRun.pipeline_id,
+                PipelineRun.error_message,
+                func.row_number().over(
+                    partition_by=PipelineRun.pipeline_id,
+                    order_by=PipelineRun.started_at.desc(),
+                ).label("rn"),
+            )
+            .filter(
+                PipelineRun.status == "failed",
+                PipelineRun.error_message.isnot(None),
+                PipelineRun.pipeline_id.in_(failed_pipeline_ids),
+            )
             .subquery()
         )
         rows = (
-            db.query(subs.c.pipeline_id, subs.c.error_message)
-            .distinct(subs.c.pipeline_id)
+            db.query(ranked.c.pipeline_id, ranked.c.error_message)
+            .filter(ranked.c.rn == 1)
             .all()
         )
-        per_id = {r[0]: r[1] for r in rows if r[1]}
+        per_id = {pid: msg for pid, msg in rows if msg}
         if per_id:
             for n in nodes.values():
                 pid = n.meta.get("pipeline_id")
@@ -428,19 +438,37 @@ def _attach_errors(nodes: dict, db: Session) -> None:
                     n.meta["error_message"] = per_id[pid]
 
     if failed_model_ids:
-        run = (
+        # error_message is run-level; pick, per model, the newest scope run that
+        # lists that model as failed (models_run JSONB has per-model status only).
+        failed_names = {
+            n.name
+            for n in nodes.values()
+            if n.meta.get("model_id") in failed_model_ids
+        }
+        runs = (
             db.query(DbtRun)
             .filter(
+                DbtRun.owner_scope_kind == scope.kind,
+                DbtRun.owner_scope_id == scope.id,
                 DbtRun.status == "failed",
                 DbtRun.error_message.isnot(None),
             )
             .order_by(DbtRun.started_at.desc())
-            .first()
+            .all()
         )
-        if run and run.error_message:
-            for n in nodes.values():
-                if n.meta.get("model_id") in failed_model_ids:
-                    n.meta["error_message"] = run.error_message
+        msg_by_name: dict[str, str] = {}
+        for r in runs:
+            for entry in (r.models_run or []):
+                nm = entry.get("name")
+                if nm in failed_names and entry.get("status") == "failed":
+                    msg_by_name.setdefault(nm, r.error_message)
+        # Fallback for models not enumerated in models_run (run errored early).
+        fallback = runs[0].error_message if runs else None
+        for n in nodes.values():
+            if n.meta.get("model_id") in failed_model_ids:
+                msg = msg_by_name.get(n.name) or fallback
+                if msg:
+                    n.meta["error_message"] = msg
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
