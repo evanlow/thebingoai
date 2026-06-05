@@ -100,6 +100,7 @@ export interface ChartOptions {
   showValues?: boolean
   roundValues?: boolean
   decimalPlaces?: number
+  sliceLabel?: 'none' | 'value' | 'percentage' | 'label'  // pie/doughnut slice label (Data Studio parity)
 
   // Setup
   xAxisMode?: 'category' | 'date'   // date = time-series semantics (category scale, date labels)

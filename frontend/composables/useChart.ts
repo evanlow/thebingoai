@@ -408,18 +408,43 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
           size: getFontSizePx(opts.titleFontSize),
         },
       },
-      datalabels: {
-        display: opts.showValues ?? false,
-        color: isPieOrDoughnut ? '#fff' : colors.datalabelColor,
-        font: { size: 11, weight: 'bold' as const },
-        anchor: isPieOrDoughnut ? 'center' : 'end',
-        align: isPieOrDoughnut ? 'center' : isHorizontal ? 'right' : 'top',
-        formatter: (value: unknown) => {
-          if (typeof value !== 'number') return value
-          const formatted = opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
-          return isPercentage ? `${formatted}%` : formatted
-        },
-      },
+      datalabels: isPieOrDoughnut
+        ? (() => {
+            // Pie/doughnut slice label (Data Studio parity): none | value | percentage | label.
+            // Default to percentage; honor legacy showValues → value.
+            const mode = opts.sliceLabel ?? (opts.showValues ? 'value' : 'percentage')
+            return {
+              display: mode !== 'none',
+              color: '#fff',
+              font: { size: 11, weight: 'bold' as const },
+              anchor: 'center' as const,
+              align: 'center' as const,
+              formatter: (value: unknown, ctx: any) => {
+                if (mode === 'label') return ctx?.chart?.data?.labels?.[ctx.dataIndex] ?? ''
+                if (typeof value !== 'number') return value
+                if (mode === 'percentage') {
+                  const arr = (ctx?.dataset?.data ?? []) as unknown[]
+                  const total = arr.reduce((s: number, v) => s + (typeof v === 'number' ? v : 0), 0)
+                  if (!total) return ''
+                  return `${((value / total) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
+                }
+                // value
+                return opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+              },
+            }
+          })()
+        : {
+            display: opts.showValues ?? false,
+            color: colors.datalabelColor,
+            font: { size: 11, weight: 'bold' as const },
+            anchor: 'end' as const,
+            align: isHorizontal ? 'right' : 'top',
+            formatter: (value: unknown) => {
+              if (typeof value !== 'number') return value
+              const formatted = opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+              return isPercentage ? `${formatted}%` : formatted
+            },
+          },
       annotation: {
         annotations: buildAnnotations(config),
       },

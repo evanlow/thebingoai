@@ -178,8 +178,8 @@
             </button>
           </div>
 
-          <!-- Show data labels -->
-          <div class="flex items-center justify-between py-0.5">
+          <!-- Show data labels (hidden for pie — use Slice label in General instead) -->
+          <div v-if="!isPie" class="flex items-center justify-between py-0.5">
             <span class="text-xs text-gray-700">Show data labels</span>
             <button type="button" role="switch" :aria-checked="!!ds.showDataLabels" :disabled="!editMode"
               class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -264,7 +264,17 @@
             :class="localOpts.showTooltips !== false ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
         </button>
       </div>
-      <div class="flex items-center justify-between py-1">
+      <!-- Pie/doughnut: slice label type (Data Studio parity) -->
+      <div v-if="isPie" class="flex items-center justify-between py-1">
+        <span class="text-sm text-gray-700">Slice label</span>
+        <select :value="localOpts.sliceLabel ?? 'percentage'" :disabled="!editMode"
+          class="w-32 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
+          @change="setOpt('sliceLabel', ($event.target as HTMLSelectElement).value)">
+          <option v-for="opt in sliceLabelOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+      </div>
+      <!-- Non-pie: show values toggle -->
+      <div v-else class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700">Show values</span>
         <button type="button" role="switch" :aria-checked="!!localOpts.showValues" :disabled="!editMode"
           class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -693,6 +703,15 @@ watch(
 )
 
 const hasRightAxis = computed(() => localDatasets.value.some(ds => ds.yAxisID === 'right'))
+
+const isPie = computed(() => chartConfig.value.type === 'pie' || chartConfig.value.type === 'doughnut')
+
+const sliceLabelOptions = [
+  { value: 'none', label: 'None' },
+  { value: 'percentage', label: 'Percentage' },
+  { value: 'value', label: 'Value' },
+  { value: 'label', label: 'Label' },
+]
 
 // Infer default series type from chart type
 const defaultSeriesType = computed(() => {
