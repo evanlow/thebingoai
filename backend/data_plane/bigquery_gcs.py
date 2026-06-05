@@ -142,6 +142,15 @@ class BigQueryGCSPlane:
     def _gcs_object_path(self, scope: OwnerScope, table: str, dt: str, part: str | int = 0) -> str:
         return f"{self._gcs_prefix(scope, table, dt)}/part-{part}.parquet"
 
+    def storage_bytes(self, scope: OwnerScope) -> int:
+        prefix = f"data_plane/{scope.as_path()}/"
+        try:
+            blobs = self._gcs().list_blobs(self._bucket_name, prefix=prefix)
+            return sum(b.size or 0 for b in blobs)
+        except Exception:
+            logger.warning("storage_bytes scan failed for %s", scope, exc_info=True)
+            return 0
+
     # ── DataPlane interface ───────────────────────────────────────────────
 
     def write_parquet(

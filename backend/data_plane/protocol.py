@@ -84,6 +84,11 @@ class DataPlane(Protocol):
 
     def get_schema(self, scope: OwnerScope, table: str) -> pa.Schema: ...
 
+    def storage_bytes(self, scope: OwnerScope) -> int:
+        """Total bytes of stored Parquet data for *scope*. Best-effort: returns 0
+        on a scan error rather than raising, so callers can degrade gracefully."""
+        ...
+
     def to_dbt_profile(self) -> dict:
         """Return a dbt profiles.yml target config dict for this DataPlane.
 
