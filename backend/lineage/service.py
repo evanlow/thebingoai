@@ -450,7 +450,9 @@ def _attach_errors(nodes: dict, db: Session, scope: OwnerScope) -> None:
             .filter(
                 DbtRun.owner_scope_kind == scope.kind,
                 DbtRun.owner_scope_id == scope.id,
-                DbtRun.status == "failed",
+                # partial_success runs still fail individual models; the per-model
+                # models_run check below keeps attribution correct.
+                DbtRun.status.in_(["failed", "partial_success"]),
                 DbtRun.error_message.isnot(None),
             )
             .order_by(DbtRun.started_at.desc())
