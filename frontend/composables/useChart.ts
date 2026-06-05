@@ -439,77 +439,83 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       : undefined
 
     const isDateAxis = !isScatter && opts.xAxisMode === 'date'
-    const scales: Record<string, any> = {
-      x: {
-        // Scatter → linear; date mode → time (needs chartjs-adapter-date-fns); default → category
-        type: isScatter ? 'linear' : (isDateAxis ? 'time' : 'category'),
-        position: 'bottom',
-        ...(isDateAxis ? {
-          time: {
-            tooltipFormat: 'MMM d, yyyy',
-            displayFormats: {
-              millisecond: 'HH:mm:ss.SSS',
-              second: 'HH:mm:ss',
-              minute: 'HH:mm',
-              hour: 'MMM d, HH:mm',
-              day: 'MMM d',
-              week: 'MMM d',
-              month: 'MMM yyyy',
-              quarter: 'qqq yyyy',
-              year: 'yyyy',
-            },
+
+    // Category (dimension/label) axis — physical X when vertical, Y when horizontal.
+    const categoryScale: Record<string, any> = {
+      // Scatter → linear; date mode → time (needs chartjs-adapter-date-fns); default → category
+      type: isScatter ? 'linear' : (isDateAxis ? 'time' : 'category'),
+      ...(isDateAxis ? {
+        time: {
+          tooltipFormat: 'MMM d, yyyy',
+          displayFormats: {
+            millisecond: 'HH:mm:ss.SSS',
+            second: 'HH:mm:ss',
+            minute: 'HH:mm',
+            hour: 'MMM d, HH:mm',
+            day: 'MMM d',
+            week: 'MMM d',
+            month: 'MMM yyyy',
+            quarter: 'qqq yyyy',
+            year: 'yyyy',
           },
-        } : {}),
-        grid: {
-          display: showXGrid,
-          color: gridColor,
-          borderDash: gridDash.length ? gridDash : undefined,
         },
-        stacked: stackedActive,
-        reverse: opts.reverseXAxis ?? false,
-        ticks: {
-          color: colors.tickColor,
-          maxRotation: xCfg.labelRotation ?? undefined,
-          display: xCfg.showLabels !== false,
-        },
-        title: {
-          display: !!(xCfg.showTitle && xCfg.title),
-          text: xCfg.title ?? '',
-          color: colors.tickColor,
-        },
-        border: { display: xCfg.showLine !== false },
-        grace: isHorizontal && opts.showValues ? '10%' : undefined,
+      } : {}),
+      grid: {
+        display: showXGrid,
+        color: gridColor,
+        borderDash: gridDash.length ? gridDash : undefined,
       },
-      y: {
-        type: (leftCfg.logScale ? 'logarithmic' : 'linear') as any,
-        position: 'left',
-        grid: {
-          display: showYGrid,
-          color: gridColor,
-          borderDash: gridDash.length ? gridDash : undefined,
-        },
-        stacked: stackedActive,
-        reverse: opts.reverseYAxis ?? false,
-        ticks: {
-          color: colors.tickColor,
-          maxRotation: leftCfg.labelRotation ?? undefined,
-          display: leftCfg.showLabels !== false,
-          stepSize: leftCfg.tickInterval ?? undefined,
-          ...(tickCallback ? { callback: tickCallback } : {}),
-        },
-        title: {
-          display: !!(leftCfg.showTitle && leftCfg.title),
-          text: leftCfg.title ?? '',
-          color: colors.tickColor,
-        },
-        border: { display: leftCfg.showLine !== false },
-        min: isPercentage ? (leftCfg.min ?? 0) : leftCfg.min,
-        max: isPercentage ? (leftCfg.max ?? 100) : leftCfg.max,
-        grace: !isHorizontal && opts.showValues ? '20%' : undefined,
+      stacked: stackedActive,
+      ticks: {
+        color: colors.tickColor,
+        maxRotation: xCfg.labelRotation ?? undefined,
+        display: xCfg.showLabels !== false,
       },
+      title: {
+        display: !!(xCfg.showTitle && xCfg.title),
+        text: xCfg.title ?? '',
+        color: colors.tickColor,
+      },
+      border: { display: xCfg.showLine !== false },
     }
 
-    if (opts.indexAxis) scales.x.stacked = stackedActive
+    // Value (metric) axis — physical Y when vertical, X when horizontal.
+    const valueScale: Record<string, any> = {
+      type: (leftCfg.logScale ? 'logarithmic' : 'linear') as any,
+      grid: {
+        display: showYGrid,
+        color: gridColor,
+        borderDash: gridDash.length ? gridDash : undefined,
+      },
+      stacked: stackedActive,
+      ticks: {
+        color: colors.tickColor,
+        maxRotation: leftCfg.labelRotation ?? undefined,
+        display: leftCfg.showLabels !== false,
+        stepSize: leftCfg.tickInterval ?? undefined,
+        ...(tickCallback ? { callback: tickCallback } : {}),
+      },
+      title: {
+        display: !!(leftCfg.showTitle && leftCfg.title),
+        text: leftCfg.title ?? '',
+        color: colors.tickColor,
+      },
+      border: { display: leftCfg.showLine !== false },
+      min: isPercentage ? (leftCfg.min ?? 0) : leftCfg.min,
+      max: isPercentage ? (leftCfg.max ?? 100) : leftCfg.max,
+      grace: opts.showValues ? '10%' : undefined,
+    }
+
+    // Horizontal bars (indexAxis:'y') need the value scale on X and category on Y.
+    const scales: Record<string, any> = isHorizontal
+      ? {
+          x: { ...valueScale, position: 'bottom', reverse: opts.reverseXAxis ?? false },
+          y: { ...categoryScale, position: 'left', reverse: opts.reverseYAxis ?? false },
+        }
+      : {
+          x: { ...categoryScale, position: 'bottom', reverse: opts.reverseXAxis ?? false },
+          y: { ...valueScale, position: 'left', reverse: opts.reverseYAxis ?? false },
+        }
 
     if (hasRightAxis) {
       scales.y1 = {
