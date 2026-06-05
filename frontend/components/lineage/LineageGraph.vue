@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, watch, ref } from 'vue'
-import { VueFlow, useVueFlow, type Node, type Edge } from '@vue-flow/core'
+import { computed, ref } from 'vue'
+import { VueFlow, Handle, Position, type Node, type Edge } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import type { LineageGraph, LineageNode, LineageEdge } from '~/composables/useLineage'
@@ -13,15 +13,19 @@ const emit = defineEmits<{
   (e: 'select', node: LineageNode): void
 }>()
 
-const NODE_W = 200
-const NODE_H = 56
-const COL_GAP = 80
-const ROW_GAP = 24
+const selectedId = ref<string | null>(null)
 
-const NODE_KIND_COLORS: Record<string, { bg: string; border: string }> = {
-  connection: { bg: '#eff6ff', border: '#60a5fa' },
-  table:      { bg: '#ecfdf5', border: '#34d399' },
-  widget:     { bg: '#fef3c7', border: '#f59e0b' },
+const NODE_W = 220
+const NODE_H = 64
+const COL_GAP = 120
+const ROW_GAP = 36
+
+const KIND_PALETTE: Record<string, { dot: string; accent: string; label: string }> = {
+  source:    { dot: '#3b82f6', accent: '#dbeafe', label: 'SOURCE' },
+  pipeline:  { dot: '#8b5cf6', accent: '#ede9fe', label: 'PIPELINE' },
+  parquet:   { dot: '#64748b', accent: '#f1f5f9', label: 'PARQUET' },
+  transform: { dot: '#f59e0b', accent: '#fef3c7', label: 'TRANSFORM' },
+  widget:    { dot: '#0ea5e9', accent: '#e0f2fe', label: 'WIDGET' },
 }
 
 function layered(nodes: LineageNode[], edges: LineageEdge[]) {
@@ -34,7 +38,6 @@ function layered(nodes: LineageNode[], edges: LineageEdge[]) {
     adjOut[e.src].push(e.dst)
     inDeg[e.dst]++
   }
-  // Layer = longest path from any root
   const layer: Record<string, number> = {}
   const queue: string[] = []
   for (const id of Object.keys(inDeg)) if (inDeg[id] === 0) { layer[id] = 0; queue.push(id) }
@@ -65,20 +68,11 @@ const flowNodes = computed<Node[]>(() => {
     cols[+colKey].forEach((id, idx) => {
       const node = g.nodes.find(n => n.id === id)
       if (!node) return
-      const colors = NODE_KIND_COLORS[node.kind] || { bg: '#f3f4f6', border: '#9ca3af' }
       result.push({
         id: node.id,
-        type: 'default',
+        type: 'lineage',
         position: { x, y: idx * (NODE_H + ROW_GAP) },
         data: { label: node.name, kind: node.kind, meta: node.meta, lineage: node },
-        style: {
-          background: colors.bg,
-          border: `2px solid ${colors.border}`,
-          borderRadius: '6px',
-          padding: '8px 12px',
-          width: `${NODE_W}px`,
-          fontSize: '13px',
-        },
       })
     })
   }
@@ -93,25 +87,82 @@ const flowEdges = computed<Edge[]>(() => {
     source: e.src,
     target: e.dst,
     animated: false,
-    style: { stroke: '#9ca3af', strokeWidth: 1.5 },
+    style: { stroke: '#cbd5e1', strokeWidth: 1.5 },
     type: 'smoothstep',
   }))
 })
 
 function onNodeClick(_evt: any, node: Node) {
+  selectedId.value = node.id
   emit('select', node.data?.lineage as LineageNode)
 }
+
+const legendItems = Object.entries(KIND_PALETTE).map(([kind, pal]) => ({
+  kind,
+  dot: pal.dot,
+  label: pal.label,
+}))
 </script>
 
 <template>
-  <div class="lineage-graph w-full h-full">
+  <div class="lineage-graph w-full h-full relative">
     <VueFlow
       :nodes="flowNodes"
       :edges="flowEdges"
       :default-viewport="{ x: 0, y: 0, zoom: 0.85 }"
       fit-view-on-init
       @node-click="onNodeClick"
-    />
+      @pane-click="selectedId = null"
+    >
+      <!-- custom node card -->
+      <template #node-lineage="{ data }">
+        <div
+          class="rounded-xl border bg-white dark:bg-neutral-800 shadow-sm px-3 py-2 flex items-center gap-2.5 cursor-pointer transition-shadow hover:shadow-md"
+          :style="{
+            borderColor: data.selected || selectedId === data.lineage?.id
+              ? (KIND_PALETTE[data.kind]?.dot ?? '#9ca3af')
+              : 'var(--line)',
+            width: '220px',
+            boxShadow: (data.selected || selectedId === data.lineage?.id)
+              ? `0 0 0 1px ${KIND_PALETTE[data.kind]?.dot ?? '#9ca3af'}`
+              : undefined,
+          }"
+        >
+          <span
+            class="grid place-items-center h-8 w-8 rounded-lg text-[13px] font-semibold text-white shrink-0 uppercase"
+            :style="{ background: KIND_PALETTE[data.kind]?.dot ?? '#9ca3af' }"
+          >
+            {{ data.lineage?.name?.[0] ?? '?' }}
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="text-[13px] font-medium text-[var(--ink-0)] truncate leading-snug">
+              {{ data.label }}
+            </p>
+            <p
+              class="text-[9.5px] font-semibold tracking-widest uppercase text-gray-400 dark:text-neutral-500 leading-tight"
+            >
+              {{ KIND_PALETTE[data.kind]?.label ?? data.kind?.toUpperCase() }}
+            </p>
+          </div>
+          <Handle type="target" :position="Position.Left" class="!w-1.5 !h-1.5 !border-0 !bg-gray-300" />
+          <Handle type="source" :position="Position.Right" class="!w-1.5 !h-1.5 !border-0 !bg-gray-300" />
+        </div>
+      </template>
+    </VueFlow>
+
+    <!-- Legend -->
+    <div
+      class="absolute top-3 right-3 rounded-xl border border-[var(--line)] bg-white/90 dark:bg-neutral-800/90 backdrop-blur-sm px-3 py-2.5 text-xs space-y-1.5 z-10"
+    >
+      <div
+        v-for="item in legendItems"
+        :key="item.kind"
+        class="flex items-center gap-2"
+      >
+        <span class="h-2 w-2 rounded-full shrink-0" :style="{ background: item.dot }" />
+        <span class="text-gray-600 dark:text-neutral-300">{{ item.label }}</span>
+      </div>
+    </div>
   </div>
 </template>
 

@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 # Graph types
 # ---------------------------------------------------------------------------
 
-NodeKind = str  # "connection" | "table" | "widget"
-EdgeKind = str  # "source_to_table" | "table_to_table" | "table_to_widget"
+NodeKind = str  # "source" | "pipeline" | "parquet" | "transform" | "widget"
+EdgeKind = str  # "source_to_pipeline" | "pipeline_to_table" | "table_to_table" | "table_to_widget"
 
 
 @dataclass(frozen=True)
@@ -79,6 +79,10 @@ def table_node_id(table_name: str) -> str:
     return f"table:{table_name.lower()}"
 
 
+def pipeline_node_id(pipeline_id: str) -> str:
+    return f"pipeline:{pipeline_id}"
+
+
 def widget_node_id(widget_id: str) -> str:
     return f"widget:{widget_id}"
 
@@ -95,9 +99,10 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
     upstream tables (parsed from `dbt_runs.manifest_blob`). Dashboard
     widgets depend on tables they read from (parsed via sqlglot).
     """
-    from backend.models.pipeline import Pipeline
+    from backend.models.pipeline import Pipeline, PipelineRun
     from backend.models.transforms import DbtModel, DbtRun
     from backend.models.dashboard import Dashboard
+    from backend.models.database_connection import DatabaseConnection
 
     graph = LineageGraph(scope_kind=scope.kind, scope_id=scope.id)
     nodes: dict[str, Node] = {}
@@ -111,7 +116,7 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
         if src in nodes and dst in nodes:
             edges.append(Edge(src=src, dst=dst, kind=kind))
 
-    # 1. Pipeline → table edges (source connection feeds a DataPlane table)
+    # 1. Pipeline → source + parquet (5-type: source/pipeline/parquet)
     pipelines = (
         db.query(Pipeline)
         .filter(
@@ -120,12 +125,30 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
         )
         .all()
     )
+    conn_ids = list({p.source_connection_id for p in pipelines if p.source_connection_id is not None})
+    conn_names: dict[int, str] = {}
+    if conn_ids:
+        conn_names = {
+            c.id: c.name
+            for c in db.query(DatabaseConnection.id, DatabaseConnection.name)
+            .filter(DatabaseConnection.id.in_(conn_ids))
+            .all()
+        }
     for p in pipelines:
         c_id = connection_node_id(p.source_connection_id)
+        p_node_id = pipeline_node_id(p.id)
         t_id = table_node_id(p.target_table)
-        add_node(Node(id=c_id, kind="connection", name=str(p.source_connection_id),
+        c_name = conn_names.get(p.source_connection_id) or str(p.source_connection_id)
+        add_node(Node(id=c_id, kind="source", name=c_name,
                       meta={"connection_id": p.source_connection_id}))
-        add_node(Node(id=t_id, kind="table", name=p.target_table,
+        add_node(Node(id=p_node_id, kind="pipeline", name=p.name,
+                      meta={
+                          "pipeline_id": p.id,
+                          "cron": p.cron,
+                          "last_run_at": p.last_run_at.isoformat() if p.last_run_at else None,
+                          "last_run_status": p.last_run_status,
+                      }))
+        add_node(Node(id=t_id, kind="parquet", name=p.target_table,
                       meta={
                           "writer": "pipeline",
                           "pipeline_id": p.id,
@@ -133,7 +156,8 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
                           "last_run_at": p.last_run_at.isoformat() if p.last_run_at else None,
                           "last_run_status": p.last_run_status,
                       }))
-        add_edge(c_id, t_id, "source_to_table")
+        add_edge(c_id, p_node_id, "source_to_pipeline")
+        add_edge(p_node_id, t_id, "pipeline_to_table")
 
     # 2. dbt model → table edges (depends_on.nodes from latest manifest)
     models = (
@@ -146,7 +170,7 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
     )
     for m in models:
         t_id = table_node_id(m.name)
-        add_node(Node(id=t_id, kind="table", name=m.name,
+        add_node(Node(id=t_id, kind="transform", name=m.name,
                       meta={
                           "writer": "dbt",
                           "model_id": m.id,
@@ -206,7 +230,7 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
                     if t_id not in nodes:
                         # Widget references a table outside the DataPlane (e.g., live source)
                         # Still add the table as a stub so the edge is visible.
-                        add_node(Node(id=t_id, kind="table", name=tbl,
+                        add_node(Node(id=t_id, kind="parquet", name=tbl,
                                       meta={"writer": "external"}))
                     add_edge(t_id, w_node_id, "table_to_widget")
             else:
@@ -231,11 +255,13 @@ def build_graph(scope: OwnerScope, db: Session) -> LineageGraph:
             logger.warning("build_graph: failed to commit widget lineage_status updates", exc_info=True)
             db.rollback()
     else:
-        # Still commit any clean status flips
         try:
             db.commit()
         except Exception:
             db.rollback()
+
+    # 4. Attach error messages for failed nodes
+    _attach_errors(nodes, db)
 
     graph.nodes = list(nodes.values())
     graph.edges = edges
@@ -364,6 +390,58 @@ def last_write(table_name: str, scope: OwnerScope, db: Session) -> Optional[dict
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _attach_errors(nodes: dict, db: Session) -> None:
+    """For every failed pipeline/parquet/transform node, query the latest run's
+    error_message and attach it to meta."""
+    from backend.models.pipeline import PipelineRun
+    from backend.models.transforms import DbtRun
+
+    failed_pipeline_ids: set[str] = set()
+    failed_model_ids: set[str] = set()
+    for n in nodes.values():
+        if n.meta.get("last_run_status") != "failed":
+            continue
+        if n.meta.get("pipeline_id"):
+            failed_pipeline_ids.add(n.meta["pipeline_id"])
+        if n.meta.get("model_id"):
+            failed_model_ids.add(n.meta["model_id"])
+
+    if failed_pipeline_ids:
+        from sqlalchemy import tuple_
+        subs = (
+            db.query(PipelineRun.pipeline_id, PipelineRun.error_message)
+            .filter(PipelineRun.status == "failed")
+            .order_by(PipelineRun.started_at.desc())
+            .subquery()
+        )
+        rows = (
+            db.query(subs.c.pipeline_id, subs.c.error_message)
+            .distinct(subs.c.pipeline_id)
+            .all()
+        )
+        per_id = {r[0]: r[1] for r in rows if r[1]}
+        if per_id:
+            for n in nodes.values():
+                pid = n.meta.get("pipeline_id")
+                if pid in per_id:
+                    n.meta["error_message"] = per_id[pid]
+
+    if failed_model_ids:
+        run = (
+            db.query(DbtRun)
+            .filter(
+                DbtRun.status == "failed",
+                DbtRun.error_message.isnot(None),
+            )
+            .order_by(DbtRun.started_at.desc())
+            .first()
+        )
+        if run and run.error_message:
+            for n in nodes.values():
+                if n.meta.get("model_id") in failed_model_ids:
+                    n.meta["error_message"] = run.error_message
+
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.isoformat() if dt else None
