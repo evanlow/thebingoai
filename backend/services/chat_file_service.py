@@ -24,7 +24,6 @@ IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
 EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-DATASET_MIME_TYPES = {"text/csv", EXCEL_MIME_TYPE}
 
 MIME_TO_CONTENT_TYPE = {
     "image/png": "image",
@@ -340,9 +339,13 @@ def save_raw_file(
     `chat_files/{thread_id}/{file_id}{ext}` (resolved via get_default_plane,
     same mechanic as connectors). All other types keep the legacy DO Spaces path.
     Returns the storage key (plane rel_path for datasets, DO key otherwise).
+
+    Routing keys off the extension (not content_type) so it stays consistent
+    with `get_raw_file`, which resolves storage by ext — a mismatch would strand
+    the file between the plane and DO.
     """
     ext = os.path.splitext(filename)[1].lower()
-    if content_type in DATASET_MIME_TYPES:
+    if ext in (".csv", ".xlsx"):
         from backend.services.data_plane_service import get_default_plane
         rel = _chat_object_path(thread_id, file_id, ext)
         get_default_plane(scope).put_raw_object(scope, rel, file_bytes, content_type)
