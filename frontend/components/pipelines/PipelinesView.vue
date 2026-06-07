@@ -130,6 +130,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Plus, Play, Workflow } from 'lucide-vue-next'
 import { useUserPipelines, type Pipeline } from '~/composables/useUserPipelines'
 import { useConnections } from '~/composables/useConnections'
+import { avatarColor, initialFromLabel } from '~/utils/pipelineFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -162,12 +163,7 @@ function sourceLabel(id: number): string {
   return getConnectionLabel(id)
 }
 function sourceInitial(id: number): string {
-  const label = getConnectionLabel(id).replace(/^[^:]+:\s*/, '')
-  return (label.match(/[a-z0-9]/i)?.[0] ?? '#').toUpperCase()
-}
-const AVATAR_COLORS = ['bg-indigo-500', 'bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-violet-500']
-function avatarColor(id: number): string {
-  return AVATAR_COLORS[id % AVATAR_COLORS.length]
+  return initialFromLabel(getConnectionLabel(id))
 }
 
 async function handleRun(pipelineId: string) {
