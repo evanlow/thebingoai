@@ -250,3 +250,42 @@ def test_raw_object_not_listed_as_table(plane, scope):
     plane.put_raw_object(scope, "chat_files/t/f.csv", b"x", "text/csv")
     assert "chat_files" not in plane.list_tables(scope)
     assert "_raw" not in plane.list_tables(scope)
+
+
+# ── storage_bytes ─────────────────────────────────────────────────────────
+
+def test_storage_bytes_zero_for_unwritten_scope(plane, scope):
+    assert plane.storage_bytes(scope) == 0
+
+
+def test_storage_bytes_sums_parquet_files(plane, scope, sample_table):
+    plane.write_parquet(scope, "t1", sample_table)
+    plane.write_parquet(scope, "t2", sample_table)
+
+    scope_root = plane._scope_root(scope)
+    expected = 0
+    for dirpath, _dirs, files in os.walk(scope_root):
+        for f in files:
+            if f.endswith(".parquet"):
+                expected += os.path.getsize(os.path.join(dirpath, f))
+
+    assert expected > 0
+    assert plane.storage_bytes(scope) == expected
+
+
+def test_storage_bytes_ignores_non_parquet_files(plane, scope, sample_table):
+    plane.write_parquet(scope, "t1", sample_table)
+    before = plane.storage_bytes(scope)
+
+    # Drop a large non-parquet file inside the scope root.
+    stray = os.path.join(plane._scope_root(scope), "notes.txt")
+    with open(stray, "wb") as fh:
+        fh.write(b"x" * 4096)
+
+    assert plane.storage_bytes(scope) == before
+
+
+def test_storage_bytes_is_scoped(plane, scope, scope_b, sample_table):
+    plane.write_parquet(scope, "t1", sample_table)
+    assert plane.storage_bytes(scope) > 0
+    assert plane.storage_bytes(scope_b) == 0

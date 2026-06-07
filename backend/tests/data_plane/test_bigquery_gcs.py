@@ -107,6 +107,30 @@ def test_credentials_per_instance(plane):
     assert plane._project != plane2._project
 
 
+# ── storage_bytes ─────────────────────────────────────────────────────────
+
+def test_storage_bytes_sums_blob_sizes(plane, scope):
+    blobs = [MagicMock(size=100), MagicMock(size=250), MagicMock(size=None)]
+    mock_gcs = MagicMock()
+    mock_gcs.list_blobs.return_value = blobs
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        total = plane.storage_bytes(scope)
+
+    assert total == 350  # None size coerced to 0
+    # Scans only this scope's data_plane prefix.
+    _args, kwargs = mock_gcs.list_blobs.call_args
+    assert kwargs["prefix"] == f"data_plane/{scope.as_path()}/"
+
+
+def test_storage_bytes_returns_zero_on_error(plane, scope):
+    mock_gcs = MagicMock()
+    mock_gcs.list_blobs.side_effect = RuntimeError("GCS unavailable")
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        assert plane.storage_bytes(scope) == 0
+
+
 # ── Native MERGE-on-ingest path (Option A) ─────────────────────────────────
 
 def _mock_gcs():
