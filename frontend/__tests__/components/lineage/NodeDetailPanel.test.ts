@@ -62,4 +62,29 @@ describe('NodeDetailPanel', () => {
     await btn.trigger('click')
     expect(wrapper.emitted('rerun')?.[0]?.[0]).toEqual(node)
   })
+
+  describe('status badge', () => {
+    const badge = (status: string) =>
+      mountPanel({ id: 'x', kind: 'pipeline', name: 'n', meta: { last_run_status: status } })
+        .findAll('span').find(s => s.text() === status)!
+
+    it.each([
+      ['success', 'bg-emerald-100'],
+      ['succeeded', 'bg-emerald-100'],
+      ['failed', 'bg-rose-100'],
+      ['running', 'bg-blue-100'],
+    ])('applies a single status background for %s', (status, expected) => {
+      const classes = badge(status).classes()
+      expect(classes).toContain(expected)
+      // exactly one bg-* utility — no conflicting fallback alongside it
+      expect(classes.filter(c => c.startsWith('bg-'))).toHaveLength(1)
+      expect(classes).not.toContain('bg-gray-100')
+    })
+
+    it('uses only the gray fallback for an unknown status', () => {
+      const classes = badge('queued').classes()
+      expect(classes).toContain('bg-gray-100')
+      expect(classes.filter(c => c.startsWith('bg-'))).toHaveLength(1)
+    })
+  })
 })

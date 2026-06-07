@@ -57,6 +57,20 @@ const showRerun = computed(() => {
   const k = props.node?.kind
   return k === 'pipeline' || k === 'transform'
 })
+
+// One class set per status — the gray fallback applies only when no specific
+// status matches, so the badge never carries two conflicting backgrounds.
+const STATUS_CLASSES: Record<string, string> = {
+  success: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
+  succeeded: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
+  failed: 'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300',
+  running: 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300',
+}
+const STATUS_FALLBACK = 'bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-neutral-400'
+
+const statusClass = computed(() =>
+  STATUS_CLASSES[meta.value.last_run_status as string] ?? STATUS_FALLBACK,
+)
 </script>
 
 <template>
@@ -91,16 +105,7 @@ const showRerun = computed(() => {
         <div class="text-xs text-gray-500 dark:text-neutral-400">Status</div>
         <span
           class="inline-block mt-0.5 px-2 py-0.5 rounded text-xs font-medium"
-          :class="{
-            'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300':
-              meta.last_run_status === 'success' || meta.last_run_status === 'succeeded',
-            'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300':
-              meta.last_run_status === 'failed',
-            'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300':
-              meta.last_run_status === 'running',
-            'bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-neutral-400':
-              true,
-          }"
+          :class="statusClass"
         >
           {{ meta.last_run_status }}
         </span>
