@@ -289,3 +289,14 @@ def test_storage_bytes_is_scoped(plane, scope, scope_b, sample_table):
     plane.write_parquet(scope, "t1", sample_table)
     assert plane.storage_bytes(scope) > 0
     assert plane.storage_bytes(scope_b) == 0
+
+
+def test_storage_bytes_returns_zero_on_scan_error(plane, scope, sample_table, monkeypatch):
+    """Best-effort contract: a scan failure degrades to 0 rather than raising."""
+    plane.write_parquet(scope, "t1", sample_table)
+
+    def boom(*_a, **_k):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("backend.data_plane.local_filesystem.os.walk", boom)
+    assert plane.storage_bytes(scope) == 0

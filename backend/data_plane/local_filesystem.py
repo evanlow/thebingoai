@@ -257,19 +257,25 @@ class LocalFilesystemDataPlane:
         return pq.read_schema(os.path.join(latest, parquet_files[0]))
 
     def storage_bytes(self, scope: OwnerScope) -> int:
-        scope_root = self._scope_root(scope)
-        if not os.path.isdir(scope_root):
+        # Best-effort per the DataPlane contract: any scan error degrades to 0
+        # rather than propagating (matches BigQueryGCSPlane.storage_bytes).
+        try:
+            scope_root = self._scope_root(scope)
+            if not os.path.isdir(scope_root):
+                return 0
+            total = 0
+            for dirpath, _dirs, files in os.walk(scope_root):
+                for f in files:
+                    if not f.endswith(".parquet"):
+                        continue
+                    try:
+                        total += os.path.getsize(os.path.join(dirpath, f))
+                    except OSError:
+                        pass
+            return total
+        except Exception:
+            logger.warning("storage_bytes scan failed for %s", scope, exc_info=True)
             return 0
-        total = 0
-        for dirpath, _dirs, files in os.walk(scope_root):
-            for f in files:
-                if not f.endswith(".parquet"):
-                    continue
-                try:
-                    total += os.path.getsize(os.path.join(dirpath, f))
-                except OSError:
-                    pass
-        return total
 
     def read_dbt_model(self, scope: OwnerScope, model_name: str) -> pa.Table:
         """Read a dbt-materialized model out of the per-scope DuckDB store into Arrow.
