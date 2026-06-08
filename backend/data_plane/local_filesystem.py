@@ -40,6 +40,12 @@ class LocalFilesystemDataPlane:
     def _table_root(self, scope: OwnerScope, table: str) -> str:
         return os.path.join(self._scope_root(scope), table)
 
+    def _raw_path(self, scope: OwnerScope, rel_path: str) -> str:
+        # Sibling `_raw/` namespace — kept OUT of `_scope_root` so raw objects
+        # never appear in `list_tables` / `_register_scope_views` (which walk
+        # the scope root and treat every dir as a Parquet table).
+        return os.path.join(self._root, "_raw", scope.as_path(), rel_path)
+
     def _partition_dir(self, scope: OwnerScope, table: str, dt: str | None = None) -> str:
         if dt is None:
             dt = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -177,6 +183,29 @@ class LocalFilesystemDataPlane:
 
     def register_table(self, scope: OwnerScope, table: str, path: str, schema: pa.Schema) -> None:
         pass  # no-op for local: DuckDB reads files directly
+
+    def put_raw_object(
+        self,
+        scope: OwnerScope,
+        rel_path: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """Store opaque bytes at a scope-relative path (non-Parquet sidecar storage)."""
+        path = self._raw_path(scope, rel_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.rename(tmp, path)  # atomic on same FS, matches write_parquet
+
+    def get_raw_object(self, scope: OwnerScope, rel_path: str) -> bytes | None:
+        """Read opaque bytes at a scope-relative path; None if absent."""
+        path = self._raw_path(scope, rel_path)
+        if not os.path.isfile(path):
+            return None
+        with open(path, "rb") as f:
+            return f.read()
 
     def query(
         self,

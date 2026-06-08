@@ -44,6 +44,21 @@ class DataPlane(Protocol):
         """Engine-side table registration (e.g. BQ external table). No-op for local."""
         ...
 
+    def put_raw_object(
+        self,
+        scope: OwnerScope,
+        rel_path: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """Store opaque bytes at a scope-relative path (non-Parquet sidecar storage,
+        e.g. chat-attached raw CSV/XLSX). Each plane decides physical placement."""
+        ...
+
+    def get_raw_object(self, scope: OwnerScope, rel_path: str) -> bytes | None:
+        """Read opaque bytes previously written by `put_raw_object`; None if absent."""
+        ...
+
     def query(
         self,
         scope: OwnerScope,
