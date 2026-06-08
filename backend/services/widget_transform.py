@@ -493,12 +493,27 @@ def transform_table(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
     return {"columns": columns, "rows": rows}
 
 
+def transform_pivot_table(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    """Transform QueryResult into pivot-table widget config data.
+
+    Passthrough (same shape as transform_table): returns the granular
+    {columns, rows} for the referenced columns. The actual pivot — grouping
+    row/column dimensions and aggregating metrics, with subtotals/grand totals
+    and expand-collapse — is computed client-side in DashboardWidgetPivotTable.vue.
+
+    Mapping keys:
+      - columnConfig: list of {column, label?} — union of row dims, column dims,
+        and value columns the pivot references.
+    """
+    return transform_table(result, mapping)
+
+
 def transform_widget_data(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any]:
     """Dispatch to the correct transform function based on mapping.type.
 
     Args:
         result: QueryResult from connector.execute_query()
-        mapping: Mapping config dict with a 'type' key (chart | kpi | table)
+        mapping: Mapping config dict with a 'type' key (chart | kpi | table | pivot_table)
 
     Returns:
         Widget config dict ready to merge into widget.widget.config
@@ -513,7 +528,9 @@ def transform_widget_data(result: QueryResult, mapping: Dict[str, Any]) -> Dict[
         return transform_kpi(result, mapping)
     elif mapping_type == "table":
         return transform_table(result, mapping)
+    elif mapping_type == "pivot_table":
+        return transform_pivot_table(result, mapping)
     else:
         raise ValueError(
-            f"Unsupported mapping type: '{mapping_type}'. Must be one of: chart, kpi, table"
+            f"Unsupported mapping type: '{mapping_type}'. Must be one of: chart, kpi, table, pivot_table"
         )

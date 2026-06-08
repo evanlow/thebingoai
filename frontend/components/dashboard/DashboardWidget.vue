@@ -94,6 +94,10 @@
         v-else-if="widget.widget.type === 'table'"
         :config="widget.widget.config"
       />
+      <DashboardWidgetPivotTable
+        v-else-if="widget.widget.type === 'pivot_table'"
+        :config="widget.widget.config"
+      />
       <DashboardWidgetText
         v-else-if="widget.widget.type === 'text'"
         :widget-id="widget.id"
@@ -181,6 +185,7 @@ const WIDGET_TYPE_LABELS: Record<string, string> = {
   kpi: 'KPI',
   chart: 'Chart',
   table: 'Table',
+  pivot_table: 'Pivot Table',
   text: 'Text',
   filter: 'Filter',
 }

@@ -1,0 +1,53 @@
+{
+  "widget_type": "pivot_table",
+  "config": {
+    "title": { "type": "string", "required": false, "description": "Pivot table title displayed above the table" },
+    "rowDimensions": {
+      "type": "array",
+      "required": true,
+      "description": "Dimensions that break down the ROWS (left side). Order = hierarchy, outer→inner (general→specific, e.g. region then city). Up to 10.",
+      "items": {
+        "column": { "type": "string", "required": true, "description": "SQL output column name" },
+        "label":  { "type": "string", "required": false, "description": "Display header text" }
+      }
+    },
+    "columnDimensions": {
+      "type": "array",
+      "required": false,
+      "description": "Dimensions that break down the COLUMNS (top). Max 2. Each distinct value becomes a column group.",
+      "items": {
+        "column": { "type": "string", "required": true, "description": "SQL output column name" },
+        "label":  { "type": "string", "required": false, "description": "Display header text" }
+      }
+    },
+    "values": {
+      "type": "array",
+      "required": true,
+      "description": "Metrics shown in the cells (up to 20). Each is aggregated per row×column group.",
+      "items": {
+        "column":      { "type": "string", "required": true,  "description": "SQL output column name (numeric)" },
+        "label":       { "type": "string", "required": false, "description": "Display header text" },
+        "aggregation": { "type": "enum",   "required": true,  "values": ["sum", "average", "count", "countDistinct", "min", "max", "median", "stdDev", "variance"], "description": "How to aggregate the metric per cell" },
+        "format":      { "type": "enum",   "required": false, "values": ["number", "currency", "percent", "text", "date"], "description": "Cell display format" }
+      }
+    },
+    "expandCollapse":    { "type": "boolean", "required": false, "description": "Treat row dimensions as an expandable hierarchy (default: true)" },
+    "defaultExpandLevel":{ "type": "number",  "required": false, "description": "0-based row-dimension depth shown by default" },
+    "showRowTotals":     { "type": "boolean", "required": false, "description": "Show grand-total column + column-dimension subtotals (default: true)" },
+    "showColumnTotals":  { "type": "boolean", "required": false, "description": "Show grand-total row + row-dimension subtotals (default: true)" },
+    "rowLimit":          { "type": "number",  "required": false, "description": "Max number of top-level row groups" },
+    "columnLimit":       { "type": "number",  "required": false, "description": "Max number of column groups" }
+  },
+  "mapping": {
+    "columnConfig": {
+      "type": "array",
+      "required": true,
+      "description": "Union of ALL columns referenced by rowDimensions + columnDimensions + values. Feeds the granular data query; the pivot is computed client-side.",
+      "items": {
+        "column": { "type": "string", "required": true,  "description": "SQL output column name" },
+        "label":  { "type": "string", "required": false, "description": "Display header text" }
+      }
+    }
+  },
+  "position_defaults": { "w": 8, "h": 5, "minW": 4, "minH": 3 }
+}

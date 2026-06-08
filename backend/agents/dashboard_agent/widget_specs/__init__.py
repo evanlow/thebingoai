@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 _SCHEMAS_DIR = Path(__file__).parent / "schemas"
-_WIDGET_TYPES = ["kpi", "chart", "table", "filter", "text"]
+_WIDGET_TYPES = ["kpi", "chart", "table", "pivot_table", "filter", "text"]
 
 # Cache rendered specs at module load time
 _spec_cache: dict[str, str] = {}

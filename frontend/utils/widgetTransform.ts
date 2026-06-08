@@ -358,10 +358,17 @@ function transformTable(result: SqliteQueryResult, mapping: Record<string, any>)
   return { columns, rows }
 }
 
+// Pivot table — passthrough (same shape as table). The pivot grouping/aggregation
+// is computed client-side in DashboardWidgetPivotTable.vue from config + rows.
+function transformPivotTable(result: SqliteQueryResult, mapping: Record<string, any>): Record<string, any> {
+  return transformTable(result, mapping)
+}
+
 export function transformWidgetData(result: SqliteQueryResult, mapping: Record<string, any>): Record<string, any> {
   const mappingType = mapping.type
   if (mappingType === 'chart') return transformChart(result, mapping)
   if (mappingType === 'kpi') return transformKpi(result, mapping)
   if (mappingType === 'table') return transformTable(result, mapping)
-  throw new Error(`Unsupported mapping type: '${mappingType}'. Must be one of: chart, kpi, table`)
+  if (mappingType === 'pivot_table') return transformPivotTable(result, mapping)
+  throw new Error(`Unsupported mapping type: '${mappingType}'. Must be one of: chart, kpi, table, pivot_table`)
 }
