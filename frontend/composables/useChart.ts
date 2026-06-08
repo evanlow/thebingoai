@@ -7,20 +7,25 @@ import {
   ScatterController,
   CategoryScale,
   LinearScale,
+  LogarithmicScale,
+  TimeScale,
   PointElement,
   LineElement,
   BarElement,
   ArcElement,
   Legend,
   Tooltip,
+  Title,
   Filler,
   type ChartType as ChartJsType,
   type ChartOptions as ChartJsOptions,
   type ChartDataset,
 } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
+import annotationPlugin from 'chartjs-plugin-annotation'
+import 'chartjs-adapter-date-fns'
 import type { Ref } from 'vue'
-import type { ChartConfig, ChartType } from '~/types/chart'
+import type { ChartConfig, ChartType, DatasetConfig, ChartLineStyle, ChartFontFamily, ChartFontSize } from '~/types/chart'
 
 // Register all required Chart.js components once
 Chart.register(
@@ -31,14 +36,18 @@ Chart.register(
   ScatterController,
   CategoryScale,
   LinearScale,
+  LogarithmicScale,
+  TimeScale,
   PointElement,
   LineElement,
   BarElement,
   ArcElement,
   Legend,
   Tooltip,
+  Title,
   Filler,
-  ChartDataLabels
+  ChartDataLabels,
+  annotationPlugin
 )
 
 const DEFAULT_PALETTE = [
@@ -52,15 +61,112 @@ const DEFAULT_PALETTE = [
   '#06b6d4', // cyan-500
 ]
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 function resolveChartJsType(type: ChartType): ChartJsType {
   return type === 'area' ? 'line' : (type as ChartJsType)
 }
+
+function getLineDash(style?: ChartLineStyle): number[] {
+  if (style === 'dashed') return [6, 4]
+  if (style === 'dotted') return [2, 3]
+  return []
+}
+
+function getFontSizePx(size?: ChartFontSize): number {
+  const map: Record<ChartFontSize, number> = { xs: 10, sm: 11, md: 13, lg: 15, xl: 18 }
+  return size ? (map[size] ?? 12) : 12
+}
+
+function getFontFamilyStr(family?: ChartFontFamily): string {
+  const map: Record<ChartFontFamily, string> = {
+    system: 'system-ui, sans-serif',
+    sans: 'Inter, system-ui, sans-serif',
+    serif: 'Georgia, serif',
+    mono: 'JetBrains Mono, monospace',
+  }
+  return family ? (map[family] ?? 'system-ui, sans-serif') : 'system-ui, sans-serif'
+}
+
+// ── Trendline computation ─────────────────────────────────────────────────────
+
+function linearRegression(data: number[]): number[] {
+  const valid = data.map((y, i) => ({ x: i, y })).filter(p => p.y != null && !isNaN(p.y))
+  if (valid.length < 2) return data.map(() => null as any)
+  const n = valid.length
+  const sumX = valid.reduce((s, p) => s + p.x, 0)
+  const sumY = valid.reduce((s, p) => s + p.y, 0)
+  const sumXY = valid.reduce((s, p) => s + p.x * p.y, 0)
+  const sumX2 = valid.reduce((s, p) => s + p.x * p.x, 0)
+  const denom = n * sumX2 - sumX * sumX
+  if (denom === 0) return data.map(() => sumY / n)
+  const m = (n * sumXY - sumX * sumY) / denom
+  const b = (sumY - m * sumX) / n
+  return data.map((_, i) => m * i + b)
+}
+
+function movingAverage(data: number[], period: number): number[] {
+  const p = Math.max(1, period)
+  return data.map((_, i) => {
+    const start = Math.max(0, i - p + 1)
+    const window = data.slice(start, i + 1).filter((v): v is number => v != null && !isNaN(v))
+    return window.length ? window.reduce((a, b) => a + b, 0) / window.length : (null as any)
+  })
+}
+
+function expRegression(data: number[]): number[] {
+  const valid = data.map((y, i) => ({ x: i, y })).filter(p => p.y > 0)
+  if (valid.length < 2) return data.map(() => null as any)
+  const logPairs = valid.map(p => ({ x: p.x, y: Math.log(p.y) }))
+  const n = logPairs.length
+  const sumX = logPairs.reduce((s, p) => s + p.x, 0)
+  const sumY = logPairs.reduce((s, p) => s + p.y, 0)
+  const sumXY = logPairs.reduce((s, p) => s + p.x * p.y, 0)
+  const sumX2 = logPairs.reduce((s, p) => s + p.x * p.x, 0)
+  const denom = n * sumX2 - sumX * sumX
+  if (denom === 0) return data.map(() => Math.exp(sumY / n))
+  const m = (n * sumXY - sumX * sumY) / denom
+  const b = (sumY - m * sumX) / n
+  return data.map((_, i) => Math.exp(m * i + b))
+}
+
+function computeTrendlineDatasets(processedDatasets: ChartDataset[], origDatasets: DatasetConfig[]): ChartDataset[] {
+  const result: ChartDataset[] = []
+  for (let i = 0; i < origDatasets.length; i++) {
+    const orig = origDatasets[i]
+    const tl = orig.trendline
+    if (!tl || tl.type === 'none') continue
+    const baseData = (processedDatasets[i]?.data ?? orig.data) as number[]
+    let trendData: number[]
+    if (tl.type === 'linear') trendData = linearRegression(baseData)
+    else if (tl.type === 'movingAverage') trendData = movingAverage(baseData, tl.period ?? 3)
+    else if (tl.type === 'exponential') trendData = expRegression(baseData)
+    else continue // polynomial not implemented in v1
+    const color = tl.color ?? (processedDatasets[i] as any)?.borderColor ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]
+    result.push({
+      type: 'line' as any,
+      label: `Trend: ${orig.label}`,
+      data: trendData as any,
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: tl.weight ?? 2,
+      borderDash: getLineDash(tl.style ?? 'dashed'),
+      pointRadius: 0,
+      fill: false as any,
+      tension: 0,
+    } as ChartDataset)
+  }
+  return result
+}
+
+// ── Dataset color + style application ────────────────────────────────────────
 
 function applyDefaultColors(
   datasets: ChartConfig['data']['datasets'],
   type: ChartType
 ): ChartDataset[] {
   const isPieOrDoughnut = type === 'pie' || type === 'doughnut'
+  const isLineOrArea = type === 'line' || type === 'area'
 
   return datasets.map((ds, i) => {
     const color = DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]
@@ -74,16 +180,54 @@ function applyDefaultColors(
       } as ChartDataset
     }
 
-    return {
+    // Resolve per-series subtype for combo charts
+    const resolvedType = ds.seriesType === 'bars' ? 'bar'
+      : ds.seriesType === 'line' ? 'line'
+      : undefined
+
+    // Smooth: use per-ds tension, then global smooth, then type default
+    const tension = ds.tension !== undefined ? ds.tension
+      : isLineOrArea || ds.seriesType === 'line' ? 0.4
+      : undefined
+
+    // Gradient / fill
+    const useFill = ds.gradient || type === 'area'
+    const bgColor = ds.backgroundColor ?? (useFill ? `${color}33` : color)
+
+    // Points: explicit toggle wins, otherwise default pointRadius
+    const pointRadius = ds.showPoints === false ? 0
+      : ds.showPoints === true ? (ds.pointRadius ?? 3)
+      : ds.pointRadius
+
+    // Per-dataset datalabels
+    const datalabels = ds.showDataLabels !== undefined
+      ? { display: ds.showDataLabels }
+      : undefined
+
+    const processed: Record<string, any> = {
       ...ds,
-      backgroundColor: ds.backgroundColor ?? (type === 'area' ? `${color}33` : color),
+      backgroundColor: bgColor,
       borderColor: ds.borderColor ?? color,
-      borderWidth: ds.borderWidth ?? 2,
-      fill: type === 'area' ? true : ds.fill,
-      tension: ds.tension ?? (type === 'line' || type === 'area' ? 0.4 : undefined),
-    } as ChartDataset
+      borderWidth: ds.lineWeight ?? ds.borderWidth ?? 2,
+      fill: useFill ? true : ds.fill,
+      tension,
+      pointRadius,
+    }
+
+    if (resolvedType) processed.type = resolvedType
+    if (ds.lineStyle) processed.borderDash = getLineDash(ds.lineStyle)
+    if (ds.stepped) processed.stepped = true
+    if (ds.yAxisID === 'right') processed.yAxisID = 'y1'
+    else if (ds.yAxisID === 'left' || !ds.yAxisID) processed.yAxisID = 'y'
+    if (datalabels) (processed as any).datalabels = datalabels
+
+    // spanGaps for missing data (set here; overridden per chart type in options too)
+    // linearInterpolation = true, breaks = false, lineToZero = already 0-filled in transform
+    return processed as ChartDataset
   })
 }
+
+// ── Sort helper (unchanged) ───────────────────────────────────────────────────
 
 function sortChartData(config: ChartConfig): { labels: string[]; datasets: ChartConfig['data']['datasets'] } {
   if (!config.data) return { labels: [], datasets: [] }
@@ -113,6 +257,8 @@ function sortChartData(config: ChartConfig): { labels: string[]; datasets: Chart
   }
 }
 
+// ── Dark mode ─────────────────────────────────────────────────────────────────
+
 function isDarkMode(): boolean {
   if (typeof document === 'undefined') return false
   return document.documentElement.classList.contains('dark')
@@ -128,11 +274,102 @@ function getChartColors() {
   }
 }
 
+// ── Annotation builder ────────────────────────────────────────────────────────
+
+function buildAnnotations(config: ChartConfig): Record<string, any> {
+  const opts = config.options ?? {}
+  const annotations: Record<string, any> = {}
+
+  for (const [idx, rl] of (opts.referenceLines ?? []).entries()) {
+    const id = rl.id ?? `refline-${idx}`
+    const isY = (rl.axis ?? 'y') === 'y'
+    annotations[id] = {
+      type: 'line',
+      ...(isY ? { yMin: rl.value, yMax: rl.value } : { xMin: rl.value, xMax: rl.value }),
+      borderColor: rl.color ?? '#6b7280',
+      borderWidth: rl.weight ?? 1,
+      borderDash: getLineDash(rl.style ?? 'dashed'),
+      label: {
+        display: !!(rl.label),
+        content: rl.label ?? '',
+        position: 'end',
+        font: { size: 11 },
+      },
+    }
+  }
+
+  for (const [idx, rb] of (opts.referenceBands ?? []).entries()) {
+    const id = rb.id ?? `refband-${idx}`
+    const isY = (rb.axis ?? 'y') === 'y'
+    annotations[id] = {
+      type: 'box',
+      ...(isY
+        ? { yMin: rb.from, yMax: rb.to }
+        : { xMin: rb.from, xMax: rb.to }),
+      backgroundColor: rb.color ?? 'rgba(99,102,241,0.10)',
+      borderWidth: 0,
+      label: {
+        display: !!(rb.label),
+        content: rb.label ?? '',
+        position: 'center',
+        font: { size: 11 },
+      },
+    }
+  }
+
+  return annotations
+}
+
+// ── Helpers: stacked coercion + value formatting ──────────────────────────────
+
+function isStackedActive(val: any): boolean {
+  return val === true || val === 'standard' || val === 'percentage'
+}
+
+function formatTickValue(value: unknown, opts: { roundValues?: boolean; decimalPlaces?: number }): string | number {
+  if (typeof value !== 'number') return value as any
+  return opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : value
+}
+
+// ── Main options builder ──────────────────────────────────────────────────────
+
 function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): ChartJsOptions {
   const opts = config.options ?? {}
   const isPieOrDoughnut = config.type === 'pie' || config.type === 'doughnut'
-  const isHorizontal = !isPieOrDoughnut && opts.indexAxis === 'y'
+  const isScatter = config.type === 'scatter'
+  const isHorizontal = !isPieOrDoughnut && !isScatter && opts.indexAxis === 'y'
   const colors = getChartColors()
+  const stackedActive = isStackedActive(opts.stacked)
+  const isPercentage = opts.stacked === 'percentage'
+
+  // Determine if any dataset uses the right Y axis
+  const hasRightAxis = config.data.datasets.some(ds => ds.yAxisID === 'right')
+
+  // Grid line style
+  const gridDash = getLineDash(opts.gridLineStyle)
+  const gridColor = opts.gridLineColor ?? colors.gridColor
+
+  // spanGaps based on missingData
+  const spanGaps = opts.missingData === 'linearInterpolation' ? true
+    : opts.missingData === 'breaks' ? false
+    : undefined
+
+  // Tooltip callback when rounding or percentage stacking is active
+  const needsTooltipCallback = opts.roundValues || isPercentage
+  const tooltipCallbacks = needsTooltipCallback ? {
+    label: (ctx: any) => {
+      const label = ctx.dataset?.label ?? ''
+      if (isScatter) {
+        const xf = formatTickValue(ctx.parsed?.x, opts)
+        const yf = formatTickValue(ctx.parsed?.y, opts)
+        return `${label}: (${xf}, ${yf})`
+      }
+      const rawVal = isHorizontal ? ctx.parsed?.x : ctx.parsed?.y
+      const formatted = formatTickValue(rawVal, opts)
+      const suffix = isPercentage ? '%' : ''
+      return `${label}: ${formatted}${suffix}`
+    },
+  } : undefined
 
   const options: ChartJsOptions = {
     responsive: opts.responsive ?? true,
@@ -147,44 +384,198 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       legend: {
         display: opts.showLegend ?? true,
         position: opts.legendPosition ?? 'top',
-        labels: { color: colors.legendColor },
+        align: (opts.legendAlignment ?? 'center') as any,
+        labels: {
+          color: opts.legendFontColor ?? colors.legendColor,
+          font: {
+            family: getFontFamilyStr(opts.legendFontFamily),
+            size: getFontSizePx(opts.legendFontSize),
+          },
+        },
       },
       tooltip: {
         enabled: opts.showTooltips ?? true,
+        ...(tooltipCallbacks ? { callbacks: tooltipCallbacks } : {}),
       },
-      datalabels: {
-        display: opts.showValues ?? false,
-        color: isPieOrDoughnut ? '#fff' : colors.datalabelColor,
-        font: { size: 11, weight: 'bold' as const },
-        anchor: isPieOrDoughnut ? 'center' : 'end',
-        align: isPieOrDoughnut ? 'center' : isHorizontal ? 'right' : 'top',
-        ...(opts.roundValues && {
-          formatter: (value: unknown) => {
-            if (typeof value === 'number') return value.toFixed(opts.decimalPlaces ?? 2)
-            return value
+      title: {
+        display: !!(opts.showTitle),
+        text: config.title ?? '',
+        position: (opts.titlePosition ?? 'top') as any,
+        align: (opts.titleAlignment ?? 'center') as any,
+        color: opts.titleFontColor,
+        font: {
+          family: getFontFamilyStr(opts.titleFontFamily),
+          size: getFontSizePx(opts.titleFontSize),
+        },
+      },
+      datalabels: isPieOrDoughnut
+        ? (() => {
+            // Pie/doughnut slice label (Data Studio parity): none | value | percentage | label.
+            // Default to percentage; honor legacy showValues → value.
+            const mode = opts.sliceLabel ?? (opts.showValues ? 'value' : 'percentage')
+            return {
+              display: mode !== 'none',
+              color: '#fff',
+              font: { size: 11, weight: 'bold' as const },
+              anchor: 'center' as const,
+              align: 'center' as const,
+              formatter: (value: unknown, ctx: any) => {
+                if (mode === 'label') return ctx?.chart?.data?.labels?.[ctx.dataIndex] ?? ''
+                if (typeof value !== 'number') return value
+                if (mode === 'percentage') {
+                  const arr = (ctx?.dataset?.data ?? []) as unknown[]
+                  const total = arr.reduce((s: number, v) => s + (typeof v === 'number' ? v : 0), 0)
+                  if (!total) return ''
+                  return `${((value / total) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
+                }
+                // value
+                return opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+              },
+            }
+          })()
+        : {
+            display: opts.showValues ?? false,
+            color: colors.datalabelColor,
+            font: { size: 11, weight: 'bold' as const },
+            anchor: 'end' as const,
+            align: isHorizontal ? 'right' : 'top',
+            formatter: (value: unknown) => {
+              if (typeof value !== 'number') return value
+              const formatted = opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+              return isPercentage ? `${formatted}%` : formatted
+            },
           },
-        }),
+      annotation: {
+        annotations: buildAnnotations(config),
       },
-    },
+    } as any,
   }
 
   if (!isPieOrDoughnut) {
-    ;(options as any).scales = {
-      x: {
-        grid: { display: opts.showGrid ?? true, color: colors.gridColor },
-        stacked: opts.stacked ?? false,
-        grace: isHorizontal && opts.showValues ? '10%' : undefined,
-        ticks: { color: colors.tickColor },
+    const showXGrid = opts.showXGridLines ?? opts.showGrid ?? true
+    const showYGrid = opts.showYGridLines ?? opts.showGrid ?? true
+    const leftCfg = opts.yAxisLeft ?? {}
+    const rightCfg = opts.yAxisRight ?? {}
+    const xCfg = opts.xAxis ?? {}
+
+    // Tick callback for rounding
+    const tickCallback = opts.roundValues
+      ? (value: unknown) => formatTickValue(value, opts)
+      : undefined
+
+    const isDateAxis = !isScatter && opts.xAxisMode === 'date'
+
+    // Category (dimension/label) axis — physical X when vertical, Y when horizontal.
+    const categoryScale: Record<string, any> = {
+      // Scatter → linear; date mode → time (needs chartjs-adapter-date-fns); default → category
+      type: isScatter ? 'linear' : (isDateAxis ? 'time' : 'category'),
+      ...(isDateAxis ? {
+        time: {
+          tooltipFormat: 'MMM d, yyyy',
+          displayFormats: {
+            millisecond: 'HH:mm:ss.SSS',
+            second: 'HH:mm:ss',
+            minute: 'HH:mm',
+            hour: 'MMM d, HH:mm',
+            day: 'MMM d',
+            week: 'MMM d',
+            month: 'MMM yyyy',
+            quarter: 'qqq yyyy',
+            year: 'yyyy',
+          },
+        },
+      } : {}),
+      grid: {
+        display: showXGrid,
+        color: gridColor,
+        borderDash: gridDash.length ? gridDash : undefined,
       },
-      y: {
-        grid: { display: opts.showGrid ?? true, color: colors.gridColor },
-        stacked: opts.stacked ?? false,
-        grace: !isHorizontal && opts.showValues ? '20%' : undefined,
-        ticks: { color: colors.tickColor },
+      stacked: stackedActive,
+      ticks: {
+        color: colors.tickColor,
+        maxRotation: xCfg.labelRotation ?? undefined,
+        display: xCfg.showLabels !== false,
       },
+      title: {
+        display: !!(xCfg.showTitle && xCfg.title),
+        text: xCfg.title ?? '',
+        color: colors.tickColor,
+      },
+      border: { display: xCfg.showLine !== false },
     }
-    if (opts.indexAxis) {
+
+    // Value (metric) axis — physical Y when vertical, X when horizontal.
+    const valueScale: Record<string, any> = {
+      type: (leftCfg.logScale ? 'logarithmic' : 'linear') as any,
+      grid: {
+        display: showYGrid,
+        color: gridColor,
+        borderDash: gridDash.length ? gridDash : undefined,
+      },
+      stacked: stackedActive,
+      ticks: {
+        color: colors.tickColor,
+        maxRotation: leftCfg.labelRotation ?? undefined,
+        display: leftCfg.showLabels !== false,
+        stepSize: leftCfg.tickInterval ?? undefined,
+        ...(tickCallback ? { callback: tickCallback } : {}),
+      },
+      title: {
+        display: !!(leftCfg.showTitle && leftCfg.title),
+        text: leftCfg.title ?? '',
+        color: colors.tickColor,
+      },
+      border: { display: leftCfg.showLine !== false },
+      min: isPercentage ? (leftCfg.min ?? 0) : leftCfg.min,
+      max: isPercentage ? (leftCfg.max ?? 100) : leftCfg.max,
+      grace: opts.showValues ? '10%' : undefined,
+    }
+
+    // Horizontal bars (indexAxis:'y') need the value scale on X and category on Y.
+    const scales: Record<string, any> = isHorizontal
+      ? {
+          x: { ...valueScale, position: 'bottom', reverse: opts.reverseXAxis ?? false },
+          y: { ...categoryScale, position: 'left', reverse: opts.reverseYAxis ?? false },
+        }
+      : {
+          x: { ...categoryScale, position: 'bottom', reverse: opts.reverseXAxis ?? false },
+          y: { ...valueScale, position: 'left', reverse: opts.reverseYAxis ?? false },
+        }
+
+    if (hasRightAxis) {
+      scales.y1 = {
+        type: (rightCfg.logScale ? 'logarithmic' : 'linear') as any,
+        position: 'right',
+        grid: { display: false },
+        ticks: {
+          color: colors.tickColor,
+          maxRotation: rightCfg.labelRotation ?? undefined,
+          display: rightCfg.showLabels !== false,
+          stepSize: rightCfg.tickInterval ?? undefined,
+          ...(tickCallback ? { callback: tickCallback } : {}),
+        },
+        title: {
+          display: !!(rightCfg.showTitle && rightCfg.title),
+          text: rightCfg.title ?? '',
+          color: colors.tickColor,
+        },
+        border: { display: rightCfg.showLine !== false },
+        min: rightCfg.min,
+        max: rightCfg.max,
+      }
+      if (opts.alignBothAxesToZero) {
+        scales.y.min = scales.y.min ?? 0
+        scales.y1.min = 0
+      }
+    }
+
+    ;(options as any).scales = scales
+    if (opts.indexAxis && !isScatter) {
       ;(options as any).indexAxis = opts.indexAxis
+    }
+
+    if (spanGaps !== undefined) {
+      ;(options as any).spanGaps = spanGaps
     }
   }
 
@@ -194,6 +585,8 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
 
   return options
 }
+
+// ── Composable ────────────────────────────────────────────────────────────────
 
 export function useChart(canvasRef: Ref<HTMLCanvasElement | null>, configRef: Ref<ChartConfig>) {
   let chartInstance: Chart | null = null
@@ -210,13 +603,14 @@ export function useChart(canvasRef: Ref<HTMLCanvasElement | null>, configRef: Re
     const chartJsType = resolveChartJsType(config.type)
     const sorted = sortChartData(config)
     const datasets = applyDefaultColors(sorted.datasets, config.type)
+    const trendlineDatasets = computeTrendlineDatasets(datasets, sorted.datasets)
     const options = buildChartJsOptions(config, enableAnimation)
 
     chartInstance = new Chart(canvas, {
       type: chartJsType,
       data: {
         labels: sorted.labels,
-        datasets,
+        datasets: [...datasets, ...trendlineDatasets],
       },
       options,
     })
@@ -232,11 +626,12 @@ export function useChart(canvasRef: Ref<HTMLCanvasElement | null>, configRef: Re
     const config = configRef.value
     const sorted = sortChartData(config)
     const datasets = applyDefaultColors(sorted.datasets, config.type)
+    const trendlineDatasets = computeTrendlineDatasets(datasets, sorted.datasets)
     const enableAnimation = config.animation?.chartAnimation ?? true
     const options = buildChartJsOptions(config, enableAnimation)
 
     chartInstance.data.labels = sorted.labels
-    chartInstance.data.datasets = datasets as any
+    chartInstance.data.datasets = [...datasets, ...trendlineDatasets] as any
     chartInstance.options = options as any
     chartInstance.update()
   }
@@ -261,7 +656,6 @@ export function useChart(canvasRef: Ref<HTMLCanvasElement | null>, configRef: Re
   })
 
   watch(configRef, () => {
-    // If chart type changed, recreate; otherwise just update data
     const newType = resolveChartJsType(configRef.value.type)
     if (chartInstance && currentChartJsType !== newType) {
       destroyChart()

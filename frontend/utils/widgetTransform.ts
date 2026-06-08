@@ -67,7 +67,13 @@ function aggregateValues(values: any[], aggregation: string): number | null {
   if (aggregation === 'countDistinct') return new Set(values).size
   if (aggregation === 'first') return values[0]
   if (aggregation === 'last') return values[values.length - 1]
-  const nums = values.filter((v): v is number => typeof v === 'number')
+  const nums = values
+    .map(v => {
+      if (typeof v === 'number') return v
+      if (typeof v === 'string' && v.trim() !== '') { const n = Number(v); return isNaN(n) ? NaN : n }
+      return NaN
+    })
+    .filter(n => !isNaN(n))
   if (!nums.length) return null
   if (aggregation === 'sum') return nums.reduce((a, b) => a + b, 0)
   if (aggregation === 'avg') return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100
@@ -82,28 +88,133 @@ function dateInRange(d: Date, start: Date, end: Date): boolean {
 }
 
 function transformChart(result: SqliteQueryResult, mapping: Record<string, any>): Record<string, any> {
-  const labelCol = mapping.labelColumn as string
-  const datasetCols = (mapping.datasetColumns || []) as Array<{ column: string; label?: string; [key: string]: any }>
+  const labelCol = mapping.labelColumn as string | undefined
+  const datasetCols = (mapping.datasetColumns || []) as Array<{ column: string; label?: string; aggregation?: string; [key: string]: any }>
+  const opts = (mapping.options ?? {}) as Record<string, any>
 
+  const PASSTHROUGH_KEYS = new Set([
+    'backgroundColor', 'borderColor', 'borderWidth', 'fill', 'tension', 'pointRadius',
+    'seriesType', 'lineWeight', 'lineStyle', 'showPoints', 'stepped', 'gradient',
+    'cumulative', 'showDataLabels', 'yAxisID', 'trendline',
+  ])
+
+  const empty = { data: { labels: [], datasets: [] } }
+
+  // Guard: no rows → return empty structure with correct dataset labels
+  if (!result.rows.length) {
+    if (mapping.xMetricColumn && mapping.yMetricColumn) {
+      return { data: { labels: [], datasets: [{ label: 'Scatter', data: [] }] } }
+    }
+    return { data: { labels: [], datasets: datasetCols.map(ds => ({ label: ds.label || ds.column, data: [] })) } }
+  }
+
+  // ── SCATTER: x+y metric columns → {x, y} point objects ────────────────────
+  if (mapping.xMetricColumn && mapping.yMetricColumn) {
+    const xIdx = result.columns.indexOf(mapping.xMetricColumn as string)
+    const yIdx = result.columns.indexOf(mapping.yMetricColumn as string)
+    if (xIdx === -1 || yIdx === -1) return { data: { labels: [], datasets: [{ label: 'Scatter', data: [] }] } }
+
+    const yAgg = (mapping.yAggregation as string) || 'none'
+    let points: { x: any; y: any }[]
+
+    if (yAgg && yAgg !== 'none') {
+      // Group by X, aggregate Y per group
+      const order: any[] = []
+      const groups = new Map<any, any[]>()
+      for (const row of result.rows) {
+        const xVal = toJsonSafe(row[xIdx])
+        const yVal = toJsonSafe(row[yIdx])
+        if (!groups.has(xVal)) { groups.set(xVal, []); order.push(xVal) }
+        groups.get(xVal)!.push(yVal)
+      }
+      points = order.map(x => ({ x, y: aggregateValues(groups.get(x)!, yAgg) ?? null }))
+    } else {
+      points = result.rows.map(row => ({ x: toJsonSafe(row[xIdx]), y: toJsonSafe(row[yIdx]) }))
+    }
+    return { data: { labels: [], datasets: [{ label: 'Scatter', data: points }] } }
+  }
+
+  // ── STANDARD: dimension + metric columns ──────────────────────────────────
+  if (!labelCol) return empty
   const labelIdx = result.columns.indexOf(labelCol)
-  if (labelIdx === -1) throw new Error(`Column '${labelCol}' not found in query results`)
+  if (labelIdx === -1) return empty
+  if (!datasetCols.length) return { data: { labels: [], datasets: [] } }
 
-  const labels = result.rows.map(row => toJsonSafe(row[labelIdx]))
+  const hasAggregation = datasetCols.some(ds => ds.aggregation && ds.aggregation !== 'none')
+  const missingData = opts.missingData as string | undefined
 
-  const PASSTHROUGH_KEYS = new Set(['backgroundColor', 'borderColor', 'borderWidth', 'fill', 'tension', 'pointRadius'])
+  let labels: any[]
+  let datasets: any[]
 
-  const datasets = datasetCols.map(ds => {
-    const colIdx = result.columns.indexOf(ds.column)
-    if (colIdx === -1) throw new Error(`Column '${ds.column}' not found in query results`)
-    const dataset: Record<string, any> = {
-      label: ds.label || ds.column,
-      data: result.rows.map(row => toJsonSafe(row[colIdx])),
+  if (hasAggregation) {
+    // Group rows by labelColumn, aggregate per group
+    const labelOrder: any[] = []
+    const groups = new Map<any, any[][]>()
+    for (const row of result.rows) {
+      const lv = toJsonSafe(row[labelIdx])
+      if (!groups.has(lv)) { groups.set(lv, []); labelOrder.push(lv) }
+      groups.get(lv)!.push(row)
     }
-    for (const key of PASSTHROUGH_KEYS) {
-      if (key in ds) dataset[key] = ds[key]
+    labels = labelOrder
+
+    datasets = datasetCols.map(ds => {
+      const colIdx = result.columns.indexOf(ds.column)
+      if (colIdx === -1) throw new Error(`Column '${ds.column}' not found in query results`)
+      const agg = ds.aggregation || 'sum'
+      let data: any[] = labels.map(lv => {
+        const rows = groups.get(lv) ?? []
+        const vals = rows.map(row => toJsonSafe(row[colIdx]))
+        return agg === 'none' ? (vals[0] ?? null) : (aggregateValues(vals, agg) ?? null)
+      })
+      if (missingData === 'lineToZero') data = data.map((v: any) => v == null ? 0 : v)
+      const dataset: Record<string, any> = { label: ds.label || ds.column, data }
+      for (const key of PASSTHROUGH_KEYS) { if (key in ds) dataset[key] = ds[key] }
+      if (ds.cumulative) {
+        let running = 0
+        dataset.data = dataset.data.map((v: any) => { running += (typeof v === 'number' ? v : 0); return running })
+      }
+      return dataset
+    })
+  } else {
+    // Original 1:1 row mapping
+    labels = result.rows.map(row => toJsonSafe(row[labelIdx]))
+    datasets = datasetCols.map(ds => {
+      const colIdx = result.columns.indexOf(ds.column)
+      if (colIdx === -1) throw new Error(`Column '${ds.column}' not found in query results`)
+      const rawData = result.rows.map(row => toJsonSafe(row[colIdx]))
+      const data = missingData === 'lineToZero' ? rawData.map((v: any) => (v == null ? 0 : v)) : rawData
+      const dataset: Record<string, any> = { label: ds.label || ds.column, data }
+      for (const key of PASSTHROUGH_KEYS) { if (key in ds) dataset[key] = ds[key] }
+      if (ds.cumulative) {
+        let running = 0
+        dataset.data = dataset.data.map((v: any) => { running += (typeof v === 'number' ? v : 0); return running })
+      }
+      return dataset
+    })
+  }
+
+  // Limit to last N points (after aggregation, before percentage)
+  const numberOfPoints = opts.numberOfPoints as number | undefined
+  if (numberOfPoints && numberOfPoints > 0 && datasets.length > 0) {
+    labels = labels.slice(-numberOfPoints)
+    datasets = datasets.map(ds => ({ ...ds, data: ds.data.slice(-numberOfPoints) }))
+  }
+
+  // 100% stacked normalization
+  if (opts.stacked === 'percentage') {
+    for (let i = 0; i < labels.length; i++) {
+      const total = datasets.reduce((sum: number, ds: any) => {
+        const v = ds.data[i]
+        return sum + (typeof v === 'number' ? v : 0)
+      }, 0)
+      if (total > 0) {
+        for (const ds of datasets) {
+          const v = ds.data[i]
+          ds.data[i] = typeof v === 'number' ? Math.round((v / total) * 10000) / 100 : 0
+        }
+      }
     }
-    return dataset
-  })
+  }
 
   return { data: { labels, datasets } }
 }

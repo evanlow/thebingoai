@@ -27,8 +27,9 @@ def _dimension_applies_to_sources(
             dim_sources = dim_data.get("sources", [])
             # Check if any of the widget's sources overlap with the dimension's sources
             return bool(set(dim_sources) & set(widget_sources))
-    # Dimension not found in context — apply anyway (backward compat)
-    return True
+    # Context provided but column not found → filter doesn't apply to this widget.
+    # Only fall back to True when no data_context at all (backward compat).
+    return data_context is None
 
 
 _OP_MAP = {
@@ -40,6 +41,23 @@ _OP_MAP = {
     'lte': '<=',
     'ilike': 'ILIKE',
 }
+
+
+def _resolve_inject_dialect(connection) -> str:
+    """sqlglot dialect for filter injection, matching the engine that runs the SQL.
+
+    Dataset / bigquery_ga4 connections are DataPlane-backed; their stored SQL
+    dialect tracks settings.disable_local_data_plane (BigQuery in lockdown,
+    DuckDB in dev) — mirror that so the injected WHERE parses + binds correctly.
+    Passing the raw db_type (e.g. 'dataset') makes sqlglot raise 'Unknown dialect'
+    and fall back to a naive subquery wrap that mis-scopes the filter.
+    """
+    db_type = (getattr(connection, "db_type", "") or "bigquery").lower()
+    if db_type in ("dataset", "bigquery_ga4"):
+        from backend.config import settings
+        return "bigquery" if getattr(settings, "disable_local_data_plane", False) else "duckdb"
+    return {"postgres": "postgres", "postgresql": "postgres",
+            "mysql": "mysql", "bigquery": "bigquery"}.get(db_type, db_type)
 
 # psycopg2-style placeholders (`%(name)s`) aren't valid SQL, so sqlglot can't
 # parse them as expressions. We build conditions via the AST instead, using
@@ -215,7 +233,10 @@ def _inject_via_sqlglot(
     filter_columns = {f.column for f in filters}
     target_scope = _pick_target_scope(candidate_scopes, filter_columns, data_context)
     if target_scope is None:
-        target_scope = root_scope
+        # No inner scope covers all filter columns. Appending to root_scope risks
+        # referencing columns that aren't in the outer projection (BigQuery 400).
+        # Raise so inject_filters routes to the subquery-wrap fallback instead.
+        raise ValueError("no covering scope for filter columns — routing to subquery wrap")
 
     target_select = target_scope.expression
     if not isinstance(target_select, exp.Select):
@@ -615,7 +636,7 @@ async def refresh_widget(
                 base_sql, request.filters,
                 data_context=data_context,
                 widget_sources=request.widget_sources,
-                dialect=connection.db_type or "bigquery",
+                dialect=_resolve_inject_dialect(connection),
             )
 
         # Route bigquery_ga4 widget SQL through the data plane (managed
@@ -837,7 +858,7 @@ async def refresh_dashboard_widgets(
                         base_sql, filters,
                         data_context=data_context,
                         widget_sources=widget.get("sources"),
-                        dialect=connection.db_type or "bigquery",
+                        dialect=_resolve_inject_dialect(connection),
                     )
 
                 served_from = "source"

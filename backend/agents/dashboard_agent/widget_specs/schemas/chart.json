@@ -9,17 +9,23 @@
       "required": false,
       "description": "Chart rendering options",
       "fields": {
-        "stacked":         { "type": "boolean", "description": "Stack bars/areas for composition view" },
-        "indexAxis":        { "type": "enum",    "values": ["x", "y"], "description": "Set to 'y' for horizontal bar charts (use for 8+ categories or long labels)" },
-        "showValues":       { "type": "boolean", "description": "Show data labels on bars/slices" },
-        "showLegend":       { "type": "boolean", "description": "Show chart legend (hide on single-dataset charts)" },
-        "legendPosition":   { "type": "enum",    "values": ["top", "bottom", "left", "right"], "description": "Legend placement" },
-        "showGrid":         { "type": "boolean", "description": "Show grid lines" },
-        "showTooltips":     { "type": "boolean", "description": "Show hover tooltips" },
-        "sortBy":           { "type": "enum",    "values": ["none", "label", "value"], "description": "Sort bars by label or value (skip for time-series)" },
-        "sortDirection":    { "type": "enum",    "values": ["asc", "desc"], "description": "Sort direction" },
-        "roundValues":      { "type": "boolean", "description": "Round displayed data labels to fixed decimal places" },
-        "decimalPlaces":    { "type": "number",  "description": "Decimal places for rounding displayed values (default: 2)" }
+        "stacked":         { "type": "enum",    "values": ["none", "standard", "percentage"], "description": "Stack mode: 'standard' stacks bars/areas; 'percentage' normalises each column to 100%; omit or 'none' for grouped" },
+        "xAxisMode":       { "type": "enum",    "values": ["category", "date"], "description": "X-axis scale: 'date' for time-series data with date/datetime columns (enables proper time axis spacing); 'category' (default) for categorical labels" },
+        "missingData":     { "type": "enum",    "values": ["lineToZero", "breaks", "linearInterpolation"], "description": "How to handle missing data points on time-series: 'lineToZero' (default, null→0), 'breaks' (gap in line), 'linearInterpolation' (connect across gap)" },
+        "numberOfPoints":  { "type": "number",  "description": "Cap the chart to the last N data points (useful to limit dense time-series to e.g. last 30 days)" },
+        "indexAxis":       { "type": "enum",    "values": ["x", "y"], "description": "Set to 'y' for horizontal bar charts (use for 8+ categories or long labels)" },
+        "showValues":      { "type": "boolean", "description": "Show data labels on bars/slices" },
+        "showLegend":      { "type": "boolean", "description": "Show chart legend (hide on single-dataset charts)" },
+        "legendPosition":  { "type": "enum",    "values": ["top", "bottom", "left", "right"], "description": "Legend placement" },
+        "showGrid":        { "type": "boolean", "description": "Show grid lines" },
+        "showTooltips":    { "type": "boolean", "description": "Show hover tooltips" },
+        "sortBy":          { "type": "enum",    "values": ["none", "label", "value"], "description": "Sort bars by label or value (always 'none' for time-series / date axis)" },
+        "sortDirection":   { "type": "enum",    "values": ["asc", "desc"], "description": "Sort direction" },
+        "roundValues":     { "type": "boolean", "description": "Round displayed data labels to fixed decimal places" },
+        "decimalPlaces":   { "type": "number",  "description": "Decimal places for rounding displayed values (default: 2)" },
+        "yAxisLeft":       { "type": "object",  "description": "Left Y-axis overrides", "fields": { "title": { "type": "string" }, "showTitle": { "type": "boolean" }, "min": { "type": "number" }, "max": { "type": "number" }, "logScale": { "type": "boolean" } } },
+        "yAxisRight":      { "type": "object",  "description": "Right Y-axis overrides — only needed for dual-axis combo charts where a second series uses yAxisID 'right'", "fields": { "title": { "type": "string" }, "showTitle": { "type": "boolean" }, "min": { "type": "number" }, "max": { "type": "number" }, "logScale": { "type": "boolean" } } },
+        "alignBothAxesToZero": { "type": "boolean", "description": "Force both Y-axes to start at 0 (dual-axis only)" }
       }
     },
     "animation": {
@@ -35,9 +41,13 @@
     }
   },
   "mapping": {
-    "labelColumn":    { "type": "string", "required": true,  "description": "Column for x-axis labels or pie slice names (for scatter: grouping column)" },
-    "datasetColumns": { "type": "array",  "required": true,  "description": "Array of {column, label} objects — each becomes a dataset series. For scatter: first = X axis, second = Y axis", "items": { "column": "string", "label": "string" } },
-    "chartType":      { "type": "string", "required": false, "description": "Must match config.type (e.g. 'scatter') — required for scatter charts so the backend produces {x,y} point data" }
+    "labelColumn":    { "type": "string", "required": false, "description": "Column for x-axis labels or pie slice names. Required for all chart types except scatter with xMetricColumn/yMetricColumn" },
+    "datasetColumns": { "type": "array",  "required": false, "description": "Array of dataset series objects. Required for non-scatter charts. Each item: {column, label, aggregation?, seriesType?, yAxisID?}", "items": { "column": "string", "label": "string", "aggregation": "enum:sum|avg|count|countDistinct|min|max|first|last|none", "seriesType": "enum:line|bars", "yAxisID": "enum:left|right" } },
+    "xMetricColumn":  { "type": "string", "required": false, "description": "Scatter only: column for the X-axis metric. Use this instead of datasetColumns for scatter charts" },
+    "yMetricColumn":  { "type": "string", "required": false, "description": "Scatter only: column for the Y-axis metric" },
+    "xAggregation":   { "type": "enum",   "required": false, "values": ["sum", "avg", "count", "countDistinct", "min", "max", "first", "last", "none"], "description": "Scatter only: aggregation for xMetricColumn" },
+    "yAggregation":   { "type": "enum",   "required": false, "values": ["sum", "avg", "count", "countDistinct", "min", "max", "first", "last", "none"], "description": "Scatter only: aggregation for yMetricColumn" },
+    "chartType":      { "type": "string", "required": false, "description": "Must match config.type (e.g. 'scatter') — required when using legacy (X)/(Y) scatter via datasetColumns" }
   },
   "position_defaults": { "w": 6, "h": 5, "minW": 3, "minH": 3 }
 }
