@@ -48,60 +48,68 @@
       </template>
     </UiEmptyState>
 
-    <!-- Transform list -->
-    <div v-else class="space-y-3">
-      <UiCard
-        v-for="transform in transforms"
-        :key="transform.id"
-        class="px-5 py-4 cursor-pointer hover:shadow-lg transition-shadow"
-        @click="openDetail(transform.id)"
-      >
-        <div class="flex items-start justify-between gap-4">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-sm font-medium text-gray-900 dark:text-neutral-100 truncate">
-                {{ transform.name }}
-              </span>
+    <!-- Transform table -->
+    <div v-else class="rounded-xl border border-[var(--line)] overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-[var(--line)] bg-[var(--paper-1)]">
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Transform</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Type</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">SQL</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Schedule</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Status</th>
+            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Last run</th>
+            <th class="px-4 py-2.5"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="transform in transforms"
+            :key="transform.id"
+            class="border-b border-[var(--line)] last:border-b-0 hover:bg-[var(--paper-1)] cursor-pointer transition-colors"
+            @click="openDetail(transform.id)"
+          >
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-[var(--ink-0)] truncate">{{ transform.name }}</span>
+                <UiBadge v-if="!transform.enabled" variant="default" size="sm">disabled</UiBadge>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <UiBadge :variant="materializationVariant(transform.materialization)" size="sm" class="capitalize">
+                {{ transform.materialization }}
+              </UiBadge>
+            </td>
+            <td class="px-4 py-3 max-w-xs">
+              <span class="font-mono text-xs text-[var(--ink-2)] truncate block">{{ sqlPreview(transform.sql) }}</span>
+            </td>
+            <td class="px-4 py-3">
+              <span v-if="transform.cron" class="font-mono text-xs text-[var(--ink-2)]">{{ transform.cron }}</span>
+              <span v-else class="text-xs italic text-[var(--ink-3)]">Manual only</span>
+            </td>
+            <td class="px-4 py-3">
               <UiBadge :variant="statusVariant(transform.last_run_status)" size="sm" :dot="true">
                 {{ statusLabel(transform.last_run_status) }}
               </UiBadge>
-              <UiBadge variant="default" size="sm" class="capitalize">{{ transform.materialization }}</UiBadge>
-              <UiBadge v-if="!transform.enabled" variant="warning" size="sm">Disabled</UiBadge>
-            </div>
-
-            <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-neutral-400">
-              <span v-if="transform.cron" class="flex items-center gap-1">
-                <Clock class="h-3 w-3" />
-                {{ transform.cron }}
-              </span>
-              <span v-else class="flex items-center gap-1 italic">
-                <Clock class="h-3 w-3" />
-                Manual only
-              </span>
-            </div>
-
-            <div v-if="transform.last_run_at" class="mt-1 text-xs text-gray-400 dark:text-neutral-500">
-              Last run {{ formatRelative(transform.last_run_at) }}
-              <template v-if="transform.next_run_at">
-                · Next {{ formatRelative(transform.next_run_at) }}
-              </template>
-            </div>
-          </div>
-
-          <div class="shrink-0 flex items-center gap-2">
-            <UiButton
-              size="sm"
-              variant="outline"
-              :loading="runningTransforms.has(transform.id)"
-              :disabled="runningTransforms.has(transform.id)"
-              @click.stop="handleRun(transform.id)"
-            >
-              <Play class="h-3.5 w-3.5" />
-              Run
-            </UiButton>
-          </div>
-        </div>
-      </UiCard>
+            </td>
+            <td class="px-4 py-3 text-xs text-[var(--ink-3)] whitespace-nowrap">
+              {{ transform.last_run_at ? formatRelative(transform.last_run_at) : '—' }}
+            </td>
+            <td class="px-4 py-3 text-right">
+              <UiButton
+                size="sm"
+                variant="outline"
+                :loading="runningTransforms.has(transform.id)"
+                :disabled="runningTransforms.has(transform.id)"
+                @click.stop="handleRun(transform.id)"
+              >
+                <Play class="h-3.5 w-3.5" />
+                Run
+              </UiButton>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- Create modal -->
@@ -116,7 +124,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Plus, Play, Clock, GitBranch } from 'lucide-vue-next'
+import { Plus, Play, GitBranch } from 'lucide-vue-next'
 import { useUserTransforms } from '~/composables/useUserTransforms'
 
 const route = useRoute()
@@ -169,6 +177,17 @@ function statusLabel(status: string | null): string {
   if (status === 'failed') return 'Failed'
   if (status === 'running') return 'Running'
   return 'Never run'
+}
+
+function materializationVariant(mat: string): 'info' | 'primary' | 'warning' | 'default' {
+  if (mat === 'view') return 'info'
+  if (mat === 'incremental') return 'warning'
+  if (mat === 'table') return 'primary'
+  return 'default'
+}
+
+function sqlPreview(sql: string): string {
+  return sql.replace(/\s+/g, ' ').trim().slice(0, 80)
 }
 
 function formatRelative(isoString: string): string {

@@ -4,6 +4,7 @@ from __future__ import annotations
 import gzip
 import json
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,10 +23,11 @@ class _FakeQuery:
     def all(self): return list(self._rows)
 
 
-def _make_db(*, pipelines=(), models=(), dbt_runs=(), dashboards=(), pipeline_runs=()):
+def _make_db(*, pipelines=(), models=(), dbt_runs=(), dashboards=(), pipeline_runs=(), connections=()):
     from backend.models.pipeline import Pipeline, PipelineRun
     from backend.models.transforms import DbtModel, DbtRun
     from backend.models.dashboard import Dashboard
+    from backend.models.database_connection import DatabaseConnection
 
     table_to_rows = {
         Pipeline: pipelines,
@@ -36,7 +38,11 @@ def _make_db(*, pipelines=(), models=(), dbt_runs=(), dashboards=(), pipeline_ru
     }
 
     db = MagicMock()
-    def query(model):
+    def query(model, *rest):
+        # build_graph resolves connection names via db.query(DatabaseConnection.id,
+        # DatabaseConnection.name) — keyed on a column, not the model class.
+        if model is DatabaseConnection.id:
+            return _FakeQuery(connections)
         return _FakeQuery(table_to_rows.get(model, ()))
     db.query.side_effect = query
     db.commit = MagicMock()
@@ -54,6 +60,7 @@ def _pipeline(*, id="p1", target="t_orders", source_conn=10, owner="u1"):
     p.source_connection_id = source_conn
     p.target_table = target
     p.name = id
+    p.cron = "0 */6 * * *"
     p.last_run_at = datetime(2026, 5, 6, 12, 0, 0)
     p.last_run_status = "success"
     return p
@@ -99,7 +106,7 @@ def _dashboard(*, id=1, user_id="u1", widgets=()):
 # ---------------------------------------------------------------------------
 
 def test_build_graph_simple_chain():
-    """source connection → pipeline output → dbt model → widget."""
+    """source → pipeline → parquet table → transform table → widget (5-type graph)."""
     from backend.data_plane.scope import OwnerScope
     from backend.lineage import service
 
@@ -120,25 +127,37 @@ def test_build_graph_simple_chain():
             "sql": "SELECT * FROM orders_summary LIMIT 10",
         },
     }
+    pipe = _pipeline(id="p1", target="t_orders", source_conn=10)
     db = _make_db(
-        pipelines=[_pipeline(target="t_orders", source_conn=10)],
+        pipelines=[pipe],
         models=[_dbt_model(name="orders_summary")],
         dbt_runs=[_dbt_run(manifest)],
         dashboards=[_dashboard(widgets=[widget])],
+        connections=[SimpleNamespace(id=10, name="Prod Postgres")],
     )
 
     g = service.build_graph(OwnerScope("user", "u1"), db)
 
-    node_ids = {n.id for n in g.nodes}
-    assert service.connection_node_id(10) in node_ids
-    assert service.table_node_id("t_orders") in node_ids
-    assert service.table_node_id("orders_summary") in node_ids
-    assert service.widget_node_id("w1") in node_ids
+    nodes_by_id = {n.id: n for n in g.nodes}
+    conn_id = service.connection_node_id(10)
+    pipe_id = service.pipeline_node_id("p1")
+    orders_tbl = service.table_node_id("t_orders")
+    summary_tbl = service.table_node_id("orders_summary")
+    widget_id = service.widget_node_id("w1")
 
-    edges = [(e.src, e.dst, e.kind) for e in g.edges]
-    assert (service.connection_node_id(10), service.table_node_id("t_orders"), "source_to_table") in edges
-    assert (service.table_node_id("t_orders"), service.table_node_id("orders_summary"), "table_to_table") in edges
-    assert (service.table_node_id("orders_summary"), service.widget_node_id("w1"), "table_to_widget") in edges
+    # All five node kinds are present with the expected ids.
+    assert nodes_by_id[conn_id].kind == "source"
+    assert nodes_by_id[conn_id].name == "Prod Postgres"   # resolved from connections
+    assert nodes_by_id[pipe_id].kind == "pipeline"
+    assert nodes_by_id[orders_tbl].kind == "parquet"      # pipeline output
+    assert nodes_by_id[summary_tbl].kind == "transform"   # dbt model output
+    assert nodes_by_id[widget_id].kind == "widget"
+
+    edges = {(e.src, e.dst, e.kind) for e in g.edges}
+    assert (conn_id, pipe_id, "source_to_pipeline") in edges
+    assert (pipe_id, orders_tbl, "pipeline_to_table") in edges
+    assert (orders_tbl, summary_tbl, "table_to_table") in edges
+    assert (summary_tbl, widget_id, "table_to_widget") in edges
 
 
 def test_build_graph_unparseable_widget_is_incomplete():

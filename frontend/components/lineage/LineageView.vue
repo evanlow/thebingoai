@@ -56,17 +56,22 @@ function onClose() {
 
     <div class="flex flex-col flex-1 min-h-0">
       <!-- Toolbar -->
-      <div class="px-7 py-3 border-b border-gray-200 dark:border-neutral-800 flex items-center gap-3">
+      <div class="px-7 py-3 border-b border-[var(--line)] flex items-center gap-3">
         <div class="flex-1 max-w-sm">
           <input
             v-model="filter"
             type="text"
             placeholder="Filter by name…"
-            class="w-full text-sm px-3 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-neutral-100"
+            class="w-full text-sm px-3 py-1.5 rounded-md border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-0)] placeholder:text-[var(--ink-3)] focus:outline-none focus:border-[var(--line-2)]"
           />
         </div>
-        <div v-if="incompleteCount > 0" class="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300">
-          {{ incompleteCount }} widget(s) with incomplete lineage
+        <div
+          v-if="incompleteCount > 0"
+          class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium"
+          style="background: var(--ember-wash); color: var(--warn)"
+        >
+          <span class="h-1.5 w-1.5 rounded-full" style="background: var(--warn)" />
+          {{ incompleteCount }} widget(s) · incomplete lineage
         </div>
       </div>
 

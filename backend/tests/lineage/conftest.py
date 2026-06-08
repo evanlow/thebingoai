@@ -58,6 +58,7 @@ def _stub_models():
         def __eq__(self, _): return True
         def __ne__(self, _): return False
         def isnot(self, _): return True
+        def in_(self, _): return True
         def desc(self): return self
         def asc(self): return self
 
@@ -84,6 +85,12 @@ def _stub_models():
         owner_scope_id = _Field()
         started_at = _Field()
         manifest_blob = _Field()
+        status = _Field()
+        error_message = _Field()
+    class DatabaseConnection(_Base, _TimestampMixin):
+        __tablename__ = "database_connections"
+        id = _Field()
+        name = _Field()
     class Dashboard(_Base, _TimestampMixin):
         __tablename__ = "dashboards"
         widgets = []
@@ -107,6 +114,10 @@ def _stub_models():
     dash_mod = ModuleType("backend.models.dashboard")
     dash_mod.Dashboard = Dashboard
     sys.modules["backend.models.dashboard"] = dash_mod
+
+    conn_mod = ModuleType("backend.models.database_connection")
+    conn_mod.DatabaseConnection = DatabaseConnection
+    sys.modules["backend.models.database_connection"] = conn_mod
 
     sub_mod = ModuleType("backend.migration.substrate")
     sub_mod.WidgetPendingManualRewrite = WidgetPendingManualRewrite
