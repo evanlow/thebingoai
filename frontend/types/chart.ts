@@ -143,6 +143,11 @@ export interface ChartOptions {
   titleFontSize?: ChartFontSize
   titleFontColor?: string
 
+  // Base font (applies to legend / axis labels / title as a fallback; per-element wins)
+  fontFamily?: ChartFontFamily
+  fontSize?: ChartFontSize
+  fontColor?: string
+
   // Background & border (widget wrapper)
   backgroundColor?: string
   opacity?: number

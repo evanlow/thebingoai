@@ -454,6 +454,17 @@ function normalizeWidget(raw: any): DashboardWidget {
     config = { ...rest, ...(resolvedType ? { type: resolvedType } : {}), ...(resolvedData ? { data: resolvedData } : {}) }
   }
 
+  // Step 3: ensure pivot_table arrays exist (generated configs may omit empties)
+  if (w.type === 'pivot_table') {
+    config = {
+      ...config,
+      rowDimensions: config.rowDimensions ?? [],
+      columnDimensions: config.columnDimensions ?? [],
+      values: config.values ?? [],
+      rows: config.rows ?? [],
+    }
+  }
+
   return { ...raw, widget: { type: w.type, config }, dataSource: raw.dataSource } as DashboardWidget
 }
 
@@ -479,6 +490,19 @@ function getDefaultWidgetConfig(type: WidgetType): DashboardWidget['widget'] {
         config: {
           columns: [{ key: 'name', label: 'Name' }, { key: 'value', label: 'Value' }],
           rows: [],
+        },
+      }
+    case 'pivot_table':
+      return {
+        type: 'pivot_table',
+        config: {
+          rowDimensions: [],
+          columnDimensions: [],
+          values: [],
+          rows: [],
+          expandCollapse: true,
+          showRowTotals: true,
+          showColumnTotals: true,
         },
       }
     case 'text':

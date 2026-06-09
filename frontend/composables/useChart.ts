@@ -386,10 +386,10 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
         position: opts.legendPosition ?? 'top',
         align: (opts.legendAlignment ?? 'center') as any,
         labels: {
-          color: opts.legendFontColor ?? colors.legendColor,
+          color: opts.legendFontColor ?? opts.fontColor ?? colors.legendColor,
           font: {
-            family: getFontFamilyStr(opts.legendFontFamily),
-            size: getFontSizePx(opts.legendFontSize),
+            family: getFontFamilyStr(opts.legendFontFamily ?? opts.fontFamily),
+            size: getFontSizePx(opts.legendFontSize ?? opts.fontSize),
           },
         },
       },
@@ -402,10 +402,10 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
         text: config.title ?? '',
         position: (opts.titlePosition ?? 'top') as any,
         align: (opts.titleAlignment ?? 'center') as any,
-        color: opts.titleFontColor,
+        color: opts.titleFontColor ?? opts.fontColor,
         font: {
-          family: getFontFamilyStr(opts.titleFontFamily),
-          size: getFontSizePx(opts.titleFontSize),
+          family: getFontFamilyStr(opts.titleFontFamily ?? opts.fontFamily),
+          size: getFontSizePx(opts.titleFontSize ?? opts.fontSize),
         },
       },
       datalabels: isPieOrDoughnut
@@ -463,6 +463,10 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       ? (value: unknown) => formatTickValue(value, opts)
       : undefined
 
+    // Base font (from the Style → Font section) applied to axis labels.
+    const baseTickFont = { family: getFontFamilyStr(opts.fontFamily), size: getFontSizePx(opts.fontSize) }
+    const baseTickColor = opts.fontColor ?? colors.tickColor
+
     const isDateAxis = !isScatter && opts.xAxisMode === 'date'
 
     // Category (dimension/label) axis — physical X when vertical, Y when horizontal.
@@ -492,14 +496,16 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       },
       stacked: stackedActive,
       ticks: {
-        color: colors.tickColor,
+        color: baseTickColor,
+        font: baseTickFont,
         maxRotation: xCfg.labelRotation ?? undefined,
         display: xCfg.showLabels !== false,
       },
       title: {
         display: !!(xCfg.showTitle && xCfg.title),
         text: xCfg.title ?? '',
-        color: colors.tickColor,
+        color: baseTickColor,
+        font: baseTickFont,
       },
       border: { display: xCfg.showLine !== false },
     }
@@ -514,7 +520,8 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       },
       stacked: stackedActive,
       ticks: {
-        color: colors.tickColor,
+        color: baseTickColor,
+        font: baseTickFont,
         maxRotation: leftCfg.labelRotation ?? undefined,
         display: leftCfg.showLabels !== false,
         stepSize: leftCfg.tickInterval ?? undefined,
@@ -523,7 +530,8 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       title: {
         display: !!(leftCfg.showTitle && leftCfg.title),
         text: leftCfg.title ?? '',
-        color: colors.tickColor,
+        color: baseTickColor,
+        font: baseTickFont,
       },
       border: { display: leftCfg.showLine !== false },
       min: isPercentage ? (leftCfg.min ?? 0) : leftCfg.min,

@@ -11,9 +11,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_VALID_WIDGET_TYPES = {"kpi", "chart", "table", "text", "filter"}
-_DATA_WIDGET_TYPES = {"kpi", "chart", "table"}
-_VALID_MAPPING_TYPES = {"kpi", "chart", "table"}
+_VALID_WIDGET_TYPES = {"kpi", "chart", "table", "text", "filter", "pivot_table"}
+_DATA_WIDGET_TYPES = {"kpi", "chart", "table", "pivot_table"}
+_VALID_MAPPING_TYPES = {"kpi", "chart", "table", "pivot_table"}
 
 
 def _run_widget_query(connection, sql: str, db, connector):

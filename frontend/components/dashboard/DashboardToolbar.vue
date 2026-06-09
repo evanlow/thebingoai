@@ -46,6 +46,17 @@
         Table
       </button>
 
+      <!-- Pivot Table -->
+      <button class="type-pill" @click="emit('add-widget', 'pivot_table')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <line x1="3" y1="9" x2="21" y2="9"/>
+          <line x1="9" y1="3" x2="9" y2="21"/>
+          <line x1="3" y1="9" x2="9" y2="9" stroke-width="2.6"/>
+        </svg>
+        Pivot Table
+      </button>
+
       <!-- Text -->
       <button class="type-pill" @click="emit('add-widget', 'text')">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">

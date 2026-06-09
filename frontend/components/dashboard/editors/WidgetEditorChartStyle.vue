@@ -45,33 +45,35 @@
           </div>
         </div>
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-gray-700">Font color</span>
-          <ColorPickerPopover v-model="localOpts.titleFontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
+          <span class="text-xs text-gray-700">Family</span>
+          <select v-model="localOpts.titleFontFamily" :disabled="!editMode"
+            class="rounded border border-gray-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+            @change="emitUpdate()">
+            <option value="system">System</option>
+            <option value="sans">Sans-serif</option>
+            <option value="serif">Serif</option>
+            <option value="mono">Monospace</option>
+          </select>
         </div>
-        <div class="flex gap-3">
-          <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700">Font family</label>
-            <select v-model="localOpts.titleFontFamily" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
-              @change="emitUpdate()">
-              <option value="system">System</option>
-              <option value="sans">Sans</option>
-              <option value="serif">Serif</option>
-              <option value="mono">Mono</option>
-            </select>
+        <div class="space-y-1.5">
+          <label class="text-xs text-gray-700">Size</label>
+          <div class="flex rounded border border-gray-200 overflow-hidden">
+            <button
+              v-for="opt in fontSizeOptions"
+              :key="opt.value"
+              type="button"
+              :disabled="!editMode"
+              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              :class="(localOpts.titleFontSize ?? 'sm') === opt.value
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white text-gray-500 hover:bg-gray-50'"
+              @click="editMode && setOpt('titleFontSize', opt.value)"
+            >{{ opt.label }}</button>
           </div>
-          <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700">Font size</label>
-            <select v-model="localOpts.titleFontSize" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
-              @change="emitUpdate()">
-              <option value="xs">XS</option>
-              <option value="sm">SM</option>
-              <option value="md">MD</option>
-              <option value="lg">LG</option>
-              <option value="xl">XL</option>
-            </select>
-          </div>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-gray-700">Color</span>
+          <ColorPickerPopover v-model="localOpts.titleFontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
         </div>
       </template>
     </div>
@@ -553,35 +555,73 @@
           </div>
         </div>
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-gray-700">Font color</span>
+          <span class="text-xs text-gray-700">Family</span>
+          <select v-model="localOpts.legendFontFamily" :disabled="!editMode"
+            class="rounded border border-gray-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+            @change="emitUpdate()">
+            <option value="system">System</option>
+            <option value="sans">Sans-serif</option>
+            <option value="serif">Serif</option>
+            <option value="mono">Monospace</option>
+          </select>
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-xs text-gray-700">Size</label>
+          <div class="flex rounded border border-gray-200 overflow-hidden">
+            <button
+              v-for="opt in fontSizeOptions"
+              :key="opt.value"
+              type="button"
+              :disabled="!editMode"
+              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              :class="(localOpts.legendFontSize ?? 'sm') === opt.value
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white text-gray-500 hover:bg-gray-50'"
+              @click="editMode && setOpt('legendFontSize', opt.value)"
+            >{{ opt.label }}</button>
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-gray-700">Color</span>
           <ColorPickerPopover v-model="localOpts.legendFontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
         </div>
-        <div class="flex gap-3">
-          <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700">Font family</label>
-            <select v-model="localOpts.legendFontFamily" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
-              @change="emitUpdate()">
-              <option value="system">System</option>
-              <option value="sans">Sans</option>
-              <option value="serif">Serif</option>
-              <option value="mono">Mono</option>
-            </select>
-          </div>
-          <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700">Font size</label>
-            <select v-model="localOpts.legendFontSize" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
-              @change="emitUpdate()">
-              <option value="xs">XS</option>
-              <option value="sm">SM</option>
-              <option value="md">MD</option>
-              <option value="lg">LG</option>
-              <option value="xl">XL</option>
-            </select>
-          </div>
-        </div>
       </template>
+    </div>
+
+    <!-- Font (base — applies to legend, axis labels & title unless overridden per-element) -->
+    <div class="space-y-3">
+      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Font</h3>
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs text-gray-700">Family</span>
+        <select v-model="localOpts.fontFamily" :disabled="!editMode"
+          class="rounded border border-gray-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+          @change="emitUpdate()">
+          <option value="system">System</option>
+          <option value="sans">Sans-serif</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Monospace</option>
+        </select>
+      </div>
+      <div class="space-y-1.5">
+        <label class="text-xs text-gray-700">Size</label>
+        <div class="flex rounded border border-gray-200 overflow-hidden">
+          <button
+            v-for="opt in fontSizeOptions"
+            :key="opt.value"
+            type="button"
+            :disabled="!editMode"
+            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            :class="(localOpts.fontSize ?? 'sm') === opt.value
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white text-gray-500 hover:bg-gray-50'"
+            @click="editMode && setOpt('fontSize', opt.value)"
+          >{{ opt.label }}</button>
+        </div>
+      </div>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-gray-700">Color</span>
+        <ColorPickerPopover v-model="localOpts.fontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
+      </div>
     </div>
 
     <!-- 10. Background & border -->
@@ -662,7 +702,13 @@ const emit = defineEmits<{
 
 const chartConfig = computed(() => props.modelValue.config as ChartWidgetConfig)
 
-const localOpts = ref<ChartOptions>(JSON.parse(JSON.stringify(chartConfig.value.options ?? {})))
+const _rawOpts: ChartOptions = JSON.parse(JSON.stringify(chartConfig.value.options ?? {}))
+// Normalize xl → lg for the three font-size fields (no segmented button for xl)
+const _normFontSize = (v?: string) => (v === 'xl' ? 'lg' : v) as ChartOptions['fontSize']
+if (_rawOpts.fontSize === 'xl') _rawOpts.fontSize = _normFontSize('xl')
+if ((_rawOpts as any).titleFontSize === 'xl') (_rawOpts as any).titleFontSize = 'lg'
+if ((_rawOpts as any).legendFontSize === 'xl') (_rawOpts as any).legendFontSize = 'lg'
+const localOpts = ref<ChartOptions>(_rawOpts)
 const localDatasets = ref<DatasetConfig[]>(JSON.parse(JSON.stringify(chartConfig.value.data?.datasets ?? [])))
 const localTitle = ref(chartConfig.value.title ?? '')
 
@@ -750,6 +796,13 @@ const borderStyleOptions = [
   { value: 'solid', label: 'Solid' },
   { value: 'dashed', label: 'Dashed' },
   { value: 'dotted', label: 'Dotted' },
+]
+
+const fontSizeOptions = [
+  { value: 'xs' as const, label: 'XS' },
+  { value: 'sm' as const, label: 'S' },
+  { value: 'md' as const, label: 'M' },
+  { value: 'lg' as const, label: 'L' },
 ]
 
 // ── Mutation helpers ──────────────────────────────────────────────────────────
