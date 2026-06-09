@@ -25,14 +25,19 @@
             @click="addDim('row')">+ Add</button>
         </div>
         <p v-if="!localRowDims.length" class="text-xs text-gray-400">Add a dimension to break down the rows.</p>
-        <div v-for="(d, i) in localRowDims" :key="'r'+i" class="flex gap-2">
-          <select :value="d.column" :disabled="!editMode"
-            class="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
-            @change="setDimColumn('row', i, ($event.target as HTMLSelectElement).value)">
-            <option value="" disabled>Column…</option>
-            <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-          </select>
-          <button v-if="editMode" type="button" class="px-2 text-gray-400 hover:text-rose-500" @click="removeDim('row', i)">✕</button>
+        <div v-for="(d, i) in localRowDims" :key="'r'+i" class="rounded-lg border border-gray-200 p-2 space-y-1.5">
+          <div class="flex gap-2">
+            <select :value="d.column" :disabled="!editMode"
+              class="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
+              @change="setDimColumn('row', i, ($event.target as HTMLSelectElement).value)">
+              <option value="" disabled>Column…</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+            <button v-if="editMode" type="button" class="px-2 text-gray-400 hover:text-rose-500" @click="removeDim('row', i)">✕</button>
+          </div>
+          <input :value="d.label || ''" type="text" placeholder="Label (optional)" :readonly="!editMode"
+            class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"
+            @input="setDimLabel('row', i, ($event.target as HTMLInputElement).value)" />
         </div>
         <div v-if="localRowDims.length" class="space-y-2 pt-1">
           <div class="flex items-center justify-between py-0.5">
@@ -64,14 +69,19 @@
             @click="addDim('col')">+ Add</button>
         </div>
         <p v-if="!localColDims.length" class="text-xs text-gray-400">Optional. Each distinct value becomes a column group (max 2).</p>
-        <div v-for="(d, i) in localColDims" :key="'c'+i" class="flex gap-2">
-          <select :value="d.column" :disabled="!editMode"
-            class="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
-            @change="setDimColumn('col', i, ($event.target as HTMLSelectElement).value)">
-            <option value="" disabled>Column…</option>
-            <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-          </select>
-          <button v-if="editMode" type="button" class="px-2 text-gray-400 hover:text-rose-500" @click="removeDim('col', i)">✕</button>
+        <div v-for="(d, i) in localColDims" :key="'c'+i" class="rounded-lg border border-gray-200 p-2 space-y-1.5">
+          <div class="flex gap-2">
+            <select :value="d.column" :disabled="!editMode"
+              class="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
+              @change="setDimColumn('col', i, ($event.target as HTMLSelectElement).value)">
+              <option value="" disabled>Column…</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+            <button v-if="editMode" type="button" class="px-2 text-gray-400 hover:text-rose-500" @click="removeDim('col', i)">✕</button>
+          </div>
+          <input :value="d.label || ''" type="text" placeholder="Label (optional)" :readonly="!editMode"
+            class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"
+            @input="setDimLabel('col', i, ($event.target as HTMLInputElement).value)" />
         </div>
       </div>
 
@@ -276,6 +286,11 @@ function setDimColumn(kind: 'row' | 'col', i: number, column: string) {
   const arr = kind === 'row' ? localRowDims : localColDims
   arr.value[i] = { ...arr.value[i], column }
   emitBoth()
+}
+function setDimLabel(kind: 'row' | 'col', i: number, label: string) {
+  const arr = kind === 'row' ? localRowDims : localColDims
+  arr.value[i] = { ...arr.value[i], label }
+  emitConfig()
 }
 function removeDim(kind: 'row' | 'col', i: number) {
   const arr = kind === 'row' ? localRowDims : localColDims

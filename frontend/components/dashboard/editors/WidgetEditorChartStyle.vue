@@ -584,6 +584,40 @@
       </template>
     </div>
 
+    <!-- Font (base — applies to legend, axis labels & title unless overridden per-element) -->
+    <div class="space-y-3">
+      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Font</h3>
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs text-gray-700">Color</span>
+        <ColorPickerPopover v-model="localOpts.fontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
+      </div>
+      <div class="flex gap-3">
+        <div class="flex-1 space-y-1">
+          <label class="text-xs text-gray-700">Family</label>
+          <select v-model="localOpts.fontFamily" :disabled="!editMode"
+            class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
+            @change="emitUpdate()">
+            <option value="system">System</option>
+            <option value="sans">Sans</option>
+            <option value="serif">Serif</option>
+            <option value="mono">Mono</option>
+          </select>
+        </div>
+        <div class="flex-1 space-y-1">
+          <label class="text-xs text-gray-700">Size</label>
+          <select v-model="localOpts.fontSize" :disabled="!editMode"
+            class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
+            @change="emitUpdate()">
+            <option value="xs">XS</option>
+            <option value="sm">SM</option>
+            <option value="md">MD</option>
+            <option value="lg">LG</option>
+            <option value="xl">XL</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <!-- 10. Background & border -->
     <div class="space-y-3">
       <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Background & Border</h3>

@@ -178,6 +178,9 @@ export interface PivotTableWidgetConfig {
   sortBy?: string                      // value column to sort row groups by ('' = first row dim)
   sortDir?: 'asc' | 'desc'
   // Style (mirrors TableWidgetConfig)
+  wrapText?: boolean
+  stripedRows?: boolean
+  horizontalScrolling?: boolean
   headerBackground?: string
   cellBorderColor?: string
   oddRowColor?: string

@@ -22,6 +22,21 @@
       </div>
     </div>
 
+    <!-- Table Body -->
+    <div class="space-y-1">
+      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">Table Body</h3>
+      <div v-for="opt in bodyOptions" :key="opt.key" class="flex items-center justify-between py-1">
+        <span class="text-sm text-gray-700">{{ opt.label }}</span>
+        <button type="button" role="switch" :aria-checked="localFlags[opt.key]" :disabled="!editMode"
+          class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors disabled:opacity-40"
+          :class="localFlags[opt.key] ? 'bg-indigo-600' : 'bg-gray-200'"
+          @click="editMode && (localFlags[opt.key] = !localFlags[opt.key], emitUpdate())">
+          <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition mt-0.5"
+            :class="localFlags[opt.key] ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
+        </button>
+      </div>
+    </div>
+
     <!-- Table Colors -->
     <div class="space-y-3">
       <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Table Colors</h3>
@@ -47,9 +62,10 @@
       </div>
     </div>
 
-    <!-- Missing data -->
+    <!-- Data -->
     <div class="space-y-1.5">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Missing Data</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Data</h3>
+      <label class="text-xs text-gray-700">Missing data display</label>
       <div class="flex rounded border border-gray-200 overflow-hidden">
         <button v-for="opt in missingOptions" :key="opt.value" type="button" :disabled="!editMode"
           class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40"
@@ -137,6 +153,17 @@ const cfg = computed(() => props.modelValue.config as PivotTableWidgetConfig)
 const localShowTitle = ref(!!cfg.value.showTitle)
 const localTitle = ref(cfg.value.title ?? '')
 
+const bodyOptions = [
+  { key: 'wrapText' as const, label: 'Wrap text' },
+  { key: 'stripedRows' as const, label: 'Striped rows' },
+  { key: 'horizontalScrolling' as const, label: 'Horizontal scrolling' },
+]
+const localFlags = ref({
+  wrapText: !!cfg.value.wrapText,
+  stripedRows: !!cfg.value.stripedRows,
+  horizontalScrolling: !!cfg.value.horizontalScrolling,
+})
+
 type ColorKey = 'headerBackground' | 'cellBorderColor' | 'oddRowColor' | 'evenRowColor'
 const tableColorOptions: { key: ColorKey; label: string }[] = [
   { key: 'headerBackground', label: 'Header background' },
@@ -190,6 +217,9 @@ function emitUpdate() {
       ...cfg.value,
       title: localTitle.value || undefined,
       showTitle: localShowTitle.value || undefined,
+      wrapText: localFlags.value.wrapText || undefined,
+      stripedRows: localFlags.value.stripedRows || undefined,
+      horizontalScrolling: localFlags.value.horizontalScrolling || undefined,
       headerBackground: localTableColors.value.headerBackground || undefined,
       cellBorderColor: localTableColors.value.cellBorderColor || undefined,
       oddRowColor: localTableColors.value.oddRowColor || undefined,
