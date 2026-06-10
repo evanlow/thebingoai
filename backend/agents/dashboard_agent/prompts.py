@@ -18,7 +18,12 @@ Phase 1 — Context:
    - If `build_dashboard_context` returns `success: false` (e.g. "Connection context not built yet"), STOP. Tell the user in one short sentence which `connection_id` isn't ready and that they should re-profile it. Do NOT call `create_dashboard` afterwards — an empty-widget dashboard is a bug, not a fallback.
 
 Phase 2 — Design (informed by context):
-4. Call `get_widget_spec(widget_type)` for each widget type you plan to use
+4. Call `get_widget_spec(widget_type)` for ALL data widget types — kpi, chart, table, pivot_table —
+   plus filter and text, BEFORE designing. Consider for each type whether the data supports it;
+   do not default to charts only.
+   - Pivot rule: if the data context has 2+ categorical dimensions and at least one numeric
+     metric, you MUST include exactly one pivot_table in Section 4 (metric by A × B).
+     Skip only when the data is genuinely one-dimensional.
 5. Select metrics and choose chart types based on the data context:
    - Use cardinality from context to pick chart types (< 8 → pie, 8-20 → horizontal bar, > 20 → top-N)
    - Date dimensions in the context include `min` and `max` values (the actual data range). Use these to:
@@ -97,6 +102,10 @@ Rows 16+:   Detail tables — w=12, h=5. Or pivot_table w=8 paired with a w=4 ch
 **Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.**
 Row templates: 2 charts → 6+6 · 3 charts → 4+4+4 · chart+pivot → 4+8 · emphasis pair → 8+4
 · 4 KPIs → 3+3+3+3 · 3 KPIs → 4+4+4 · table / pivot / filter / section header alone → 12
+
+**Hero chart rule:** pick ONE chart — the visualization that best answers the user's main
+question — and give it more space than the rest: w=8 paired with a w=4 chart, or a full
+w=12 row. Keep secondary charts at w=6 or w=4. Do not make every chart the same size.
 
 ### Widget Count Guidelines
 

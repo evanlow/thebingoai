@@ -32,8 +32,14 @@ _TYPE_CONSTRAINTS: dict[str, dict[str, int]] = {
 _FALLBACK_CONSTRAINTS = {"min_w": 2, "max_w": 12, "default_w": 6, "default_h": 4}
 
 # Pie/doughnut charts are unreadable at full width — frontend guidance caps
-# them at half the grid.
+# them at half the grid. The cap is waived for a widget alone in its row:
+# filling the row beats the readability guideline there.
 _ROUND_CHART_MAX_W = 6
+
+# Types eligible for the pair-up pass (two stacked lone rows merged into one
+# side-by-side row). Tables/filters/text are designed full-width; KPIs are
+# grouped into rows by the prompt.
+_PAIRABLE_TYPES = {"chart", "pivot_table"}
 
 
 def _constraints_for(widget: dict) -> dict[str, int]:
@@ -120,15 +126,58 @@ def _detect_bands(widgets: list[dict]) -> list[list[dict]]:
     return bands
 
 
+def _widget_type(widget: dict) -> str:
+    return (widget.get("widget") or {}).get("type") or ""
+
+
+def _pair_up_lone_bands(bands: list[list[dict]]) -> list[list[dict]]:
+    """Merge adjacent single-widget bands into one side-by-side row.
+
+    Two consecutive rows that each hold one chart/pivot of the same height
+    read better side-by-side than stacked with half the grid empty. Greedy:
+    a merged pair never absorbs a third widget (two charts is the readable
+    max per row). An odd widget left without a partner stays lone and is
+    widened to full width by _normalize_band_widths.
+    """
+    merged: list[list[dict]] = []
+    i = 0
+    while i < len(bands):
+        band = bands[i]
+        nxt = bands[i + 1] if i + 1 < len(bands) else None
+        if (
+            nxt is not None
+            and len(band) == 1
+            and len(nxt) == 1
+            and _widget_type(band[0]) in _PAIRABLE_TYPES
+            and _widget_type(nxt[0]) in _PAIRABLE_TYPES
+            and band[0]["position"]["h"] == nxt[0]["position"]["h"]
+        ):
+            a, b = band[0]["position"], nxt[0]["position"]
+            a.update(x=0, w=GRID_COLUMNS // 2)
+            b.update(x=GRID_COLUMNS // 2, y=a["y"], w=GRID_COLUMNS // 2)
+            merged.append([band[0], nxt[0]])
+            i += 2
+        else:
+            merged.append(band)
+            i += 1
+    return merged
+
+
 def _normalize_band_widths(band: list[dict]) -> None:
     """Widen a uniform band (same y and h) so widths sum to GRID_COLUMNS.
 
     Deficit is distributed proportionally to current widths (largest-remainder
     rounding), respecting each widget's max width. Mixed-height bands are left
-    alone — they may be intentional mosaics.
+    alone — they may be intentional mosaics. A widget alone in its row is
+    stretched to full width regardless of its per-type max (except KPI cards,
+    which stay capped — a full-width KPI looks broken).
     """
     first = band[0]["position"]
     if any(w["position"]["y"] != first["y"] or w["position"]["h"] != first["h"] for w in band):
+        return
+
+    if len(band) == 1 and _widget_type(band[0]) != "kpi":
+        band[0]["position"].update(x=0, w=GRID_COLUMNS)
         return
 
     band.sort(key=lambda w: w["position"]["x"])
@@ -195,7 +244,7 @@ def normalize_dashboard_layout(widgets: list[dict]) -> list[dict]:
     try:
         _sanitize(widgets)
         _resolve_overlaps(widgets)
-        bands = _detect_bands(widgets)
+        bands = _pair_up_lone_bands(_detect_bands(widgets))
         for band in bands:
             _normalize_band_widths(band)
         _compact_vertical(bands)

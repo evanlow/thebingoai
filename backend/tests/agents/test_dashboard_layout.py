@@ -98,10 +98,11 @@ class TestRowWidthNormalization:
         normalize_dashboard_layout(widgets)
         assert _pos(widgets, "h")["w"] == 12
 
-    def test_lone_pie_capped_at_6(self):
+    def test_lone_pie_widens_to_full_width(self):
+        # Per-type pie cap is waived when the widget is alone in its row.
         widgets = [_w("p", "chart", 0, 0, 4, 5, "pie")]
         normalize_dashboard_layout(widgets)
-        assert _pos(widgets, "p")["w"] == 6
+        assert _pos(widgets, "p")["w"] == 12
         assert _pos(widgets, "p")["x"] == 0
 
     def test_pie_plus_bar_pie_capped_bar_takes_rest(self):
@@ -128,6 +129,68 @@ class TestRowWidthNormalization:
         assert [_pos(widgets, f"k{i}")["w"] for i in (1, 2, 3)] == [4, 4, 4]
 
 
+class TestPairUp:
+    def test_two_stacked_lone_charts_merge_side_by_side(self):
+        widgets = [
+            _w("a", "chart", 0, 0, 6, 5, "bar"),
+            _w("b", "chart", 0, 5, 6, 5, "line"),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "a") == {"x": 0, "y": 0, "w": 6, "h": 5}
+        assert _pos(widgets, "b") == {"x": 6, "y": 0, "w": 6, "h": 5}
+
+    def test_three_stacked_lone_charts_pair_plus_full_width(self):
+        widgets = [
+            _w("a", "chart", 0, 0, 6, 5, "bar"),
+            _w("b", "chart", 0, 5, 6, 5, "line"),
+            _w("c", "chart", 0, 10, 6, 5, "area"),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "a")["y"] == _pos(widgets, "b")["y"] == 0
+        assert _pos(widgets, "a")["w"] + _pos(widgets, "b")["w"] == 12
+        # Odd one out: full width on the next row.
+        assert _pos(widgets, "c") == {"x": 0, "y": 5, "w": 12, "h": 5}
+
+    def test_chart_and_pivot_pair(self):
+        widgets = [
+            _w("c", "chart", 0, 0, 6, 5, "bar"),
+            _w("p", "pivot_table", 0, 5, 8, 5),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "c")["y"] == _pos(widgets, "p")["y"] == 0
+        assert _pos(widgets, "c")["w"] + _pos(widgets, "p")["w"] == 12
+
+    def test_chart_and_table_not_paired(self):
+        widgets = [
+            _w("c", "chart", 0, 0, 6, 5, "bar"),
+            _w("t", "table", 0, 5, 12, 5),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "c") == {"x": 0, "y": 0, "w": 12, "h": 5}
+        assert _pos(widgets, "t") == {"x": 0, "y": 5, "w": 12, "h": 5}
+
+    def test_different_heights_not_paired(self):
+        widgets = [
+            _w("a", "chart", 0, 0, 6, 5, "bar"),
+            _w("b", "chart", 0, 5, 6, 7, "line"),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "a")["y"] != _pos(widgets, "b")["y"]
+        assert _pos(widgets, "a")["w"] == 12
+        assert _pos(widgets, "b")["w"] == 12
+
+    def test_paired_row_stable_on_second_run(self):
+        widgets = [
+            _w("a", "chart", 0, 0, 6, 5, "bar"),
+            _w("b", "chart", 0, 5, 6, 5, "line"),
+            _w("c", "chart", 0, 10, 6, 5, "area"),
+        ]
+        normalize_dashboard_layout(widgets)
+        once = copy.deepcopy([w["position"] for w in widgets])
+        normalize_dashboard_layout(widgets)
+        assert [w["position"] for w in widgets] == once
+
+
 class TestOverlapResolution:
     def test_two_full_width_same_y_stack(self):
         widgets = [
@@ -138,15 +201,18 @@ class TestOverlapResolution:
         ys = sorted(p["y"] for p in (_pos(widgets, "a"), _pos(widgets, "b")))
         assert ys == [0, 5]
 
-    def test_partial_overlap_pushed_down(self):
+    def test_partial_overlap_resolved(self):
+        # Overlapping charts get pushed apart, then the pair-up pass merges
+        # them into a clean side-by-side row.
         widgets = [
             _w("a", "chart", 0, 0, 8, 5, "bar"),
             _w("b", "chart", 4, 2, 8, 5, "line"),
         ]
         normalize_dashboard_layout(widgets)
         a, b = _pos(widgets, "a"), _pos(widgets, "b")
-        # No overlap remains
-        assert a["y"] + a["h"] <= b["y"] or b["y"] + b["h"] <= a["y"]
+        no_y_overlap = a["y"] + a["h"] <= b["y"] or b["y"] + b["h"] <= a["y"]
+        no_x_overlap = a["x"] + a["w"] <= b["x"] or b["x"] + b["w"] <= a["x"]
+        assert no_y_overlap or no_x_overlap
 
 
 class TestVerticalCompaction:
