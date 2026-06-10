@@ -15,7 +15,7 @@ def get_widget_spec(widget_type: str) -> str:
     dataSource mapping structure, SQL patterns, and best practices.
 
     Args:
-        widget_type: One of "kpi", "chart", "table", "filter", "text"
+        widget_type: One of "kpi", "chart", "table", "pivot_table", "filter", "text"
 
     Returns:
         Complete configuration spec for the widget type

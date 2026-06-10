@@ -5,6 +5,7 @@ Kept as a standalone module to avoid circular imports between graph.py and tool_
 """
 from typing import List, Callable
 from backend.agents.context import AgentContext
+from backend.agents.dashboard_layout import normalize_dashboard_layout
 from backend.connectors.factory import get_connector_for_connection, get_connector_registration
 import json
 import logging
@@ -574,10 +575,13 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     options (optional): {stacked, indexAxis, showValues, showLegend, legendPosition,
                     showGrid, sortBy, sortDirection}
                 - table: columns: [{key, label, sortable?}] (defines headers; rows are auto-populated)
+                - pivot_table: title, rowDimensions: [{column, label}], columnDimensions (max 2),
+                    values: [{column, label, aggregation}] (SQL returns granular rows; pivot is computed client-side)
                 - text: content (markdown string), alignment (optional)
                 - filter: controls: [{type, label, key, column (required), optionsSource: {connectionId, sql} for dropdown}]
 
                 Layout guidelines (12-column grid, storytelling structure):
+                  Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.
                   Section 1 — KPI row (y=0):
                     3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
                   Section 2 — Filter bar (y=2):
@@ -589,13 +593,15 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     w=12 h=6 ONLY for time-series line/area. Pie/doughnut: w=4 or w=6 only.
                     Use 2+ different chart types. Aim for 3-5 charts.
                   Section 4 — Detail table (y=16+):
-                    w=12, h=5.
+                    w=12, h=5. A pivot_table here is w=12 alone, or w=8 paired with a w=4 chart.
                   Target 9-13 widgets total (min 7, max 14).
 
                 Mapping types:
                 - chart:  { type, labelColumn, datasetColumns: [{column, label}] }
                 - kpi:    { type, valueColumn, trendValueColumn? (optional), sparklineXColumn? (optional), sparklineYColumn? (optional) }
                 - table:  { type, columnConfig: [{column, label, sortable?, format?}] }
+                - pivot_table: { type, columnConfig: [{column, label}] } (union of ALL columns referenced
+                    by rowDimensions + columnDimensions + values)
 
             data_context: Optional dict from build_dashboard_context. If provided,
                 stored on the dashboard for dimension-aware filtering.
@@ -630,6 +636,12 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     "widgets and call create_dashboard again."
                 ),
             })
+
+        # Deterministic layout pass: fill each grid row to 12 columns,
+        # resolve overlaps, compact vertical gaps. Runs after the verifier
+        # (positions guaranteed present) and before SQL/persistence so every
+        # downstream step sees final positions.
+        widgets = normalize_dashboard_layout(widgets)
 
         # Verify connection access for any SQL-backed widgets
         for w in widgets:
@@ -767,6 +779,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     "widgets and call update_dashboard again."
                 ),
             })
+
+        # Same deterministic layout pass as create_dashboard. Only positions
+        # change, so the widget-id-keyed SQL diff below is unaffected.
+        widgets = normalize_dashboard_layout(widgets)
 
         # Verify connection access for any SQL-backed widgets
         for w in widgets:

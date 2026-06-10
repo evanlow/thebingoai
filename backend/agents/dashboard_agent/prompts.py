@@ -78,6 +78,7 @@ Structure every dashboard as a top-to-bottom data story:
 **Section 3 — Analysis & Trends (y=4 to y=14):** Text section header, then 3-5 charts with varied types, placed side-by-side.
 
 **Section 4 — Detail & Drill-Down (y=15+):** One Text section header (e.g. "## Detail & Records"), then 1-2 detail tables. Use `config.title` on each table widget for its specific title — do NOT add extra Text widgets just to title individual tables.
+  - When the question is "metric by A × B" (two categorical breakdowns at once, e.g. revenue by region × quarter), use ONE `pivot_table` here instead of a flat table — w=12 alone, or w=8 paired with a w=4 chart at the same y.
 
 ### Layout Patterns (12-column grid)
 
@@ -90,13 +91,17 @@ Rows 5-9:   Primary charts SIDE-BY-SIDE:
               Emphasis:      x=0 w=8 | x=8 w=4  (or reversed)
 Rows 10-14: Secondary charts (another pair, or single w=12 ONLY for time-series, h=6)
 Row 15:     Text section header — w=12, h=1 (e.g. "## Detailed Records")
-Rows 16+:   Detail tables — w=12, h=5
+Rows 16+:   Detail tables — w=12, h=5. Or pivot_table w=8 paired with a w=4 chart.
 ```
+
+**Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.**
+Row templates: 2 charts → 6+6 · 3 charts → 4+4+4 · chart+pivot → 4+8 · emphasis pair → 8+4
+· 4 KPIs → 3+3+3+3 · 3 KPIs → 4+4+4 · table / pivot / filter / section header alone → 12
 
 ### Widget Count Guidelines
 
 - Target **9-13 widgets** total (min 7, max 14)
-- 3-4 KPIs + 1 filter bar + 2 text section headers + 3-5 charts + 1-2 tables
+- 3-4 KPIs + 1 filter bar + 2 text section headers + 3-5 charts + 1-2 tables (a pivot_table counts as a table)
 - Text widgets are section headers only (one before charts, one before tables) — tables use `config.title` for their own title
 
 ### Chart Type Selection Guide
@@ -127,10 +132,10 @@ Rules:
 Before configuring widgets, call `get_widget_spec(widget_type)` to get the complete
 field definitions, mapping structure, SQL patterns, and best practices.
 
-Available types: kpi, chart, table, filter, text.
+Available types: kpi, chart, table, pivot_table, filter, text.
 
 Every widget MUST have: `id`, `position` {x, y, w, h}, `widget.type`, `widget.config`.
-Data widgets (kpi, chart, table) also need: `dataSource` {connectionId, sql, mapping}.
+Data widgets (kpi, chart, table, pivot_table) also need: `dataSource` {connectionId, sql, mapping}.
 
 ### SQL Semantic Verification Checklist (before calling create_dashboard)
 

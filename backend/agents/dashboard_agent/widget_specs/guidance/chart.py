@@ -26,11 +26,15 @@ CHART_GUIDANCE = """### Chart Type Selection
 
 - **Bar charts**: set `sortBy: "value", sortDirection: "desc"` unless x-axis is temporal
 - **Horizontal bars**: use `indexAxis: "y"` for long category labels or 8+ categories
-- **Pie/doughnut**: always set `showValues: true` so slice values are visible
+- **Pie/doughnut**: always set `sliceLabel: "percentage"` so each slice shows its share (preferred over `showValues`)
 - **Single-dataset charts**: hide legend with `showLegend: false` to reduce clutter
 - **Stacked composition**: use `stacked: "standard"` — NOT `stacked: true`
 - **100% stacked**: use `stacked: "percentage"` to normalise each bar/area to 100%
 - **Time-series**: always set `xAxisMode: "date"` when the x-axis is a date/datetime column
+- **Noisy daily time-series**: add a trendline on the main series — `{"trendline": {"type": "movingAverage", "period": 7}}` in its datasetColumns entry
+- **Known target/threshold** (quota, SLA, goal mentioned by the user): add ONE entry to `options.referenceLines`, e.g. `{"value": 10000, "label": "Target"}`
+- **Cumulative questions** ("running total", "growth to date"): set `cumulative: true` on the dataset column instead of writing window-function SQL
+- **Data labels**: `showDataLabels: true` on at most the single headline series — labels on every series clutter the chart
 - Skip animation config unless specifically requested — defaults are sensible
 
 ### Per-Series Aggregation (datasetColumns.aggregation)
