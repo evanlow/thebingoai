@@ -128,7 +128,7 @@ export default defineNuxtConfig({
   app: {
     pageTransition: { name: 'page-fade-slide', mode: 'out-in' },
     head: {
-      title: 'TheBingo.ai',
+      title: 'Bingo',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
