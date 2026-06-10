@@ -3,7 +3,7 @@ import { useApi } from './useApi'
 
 export interface LineageNode {
   id: string
-  kind: 'connection' | 'table' | 'widget'
+  kind: 'source' | 'pipeline' | 'parquet' | 'transform' | 'widget'
   name: string
   meta: Record<string, any>
 }
@@ -11,7 +11,7 @@ export interface LineageNode {
 export interface LineageEdge {
   src: string
   dst: string
-  kind: 'source_to_table' | 'table_to_table' | 'table_to_widget'
+  kind: 'source_to_pipeline' | 'pipeline_to_table' | 'table_to_table' | 'table_to_widget'
 }
 
 export interface LineageGraph {

@@ -40,6 +40,12 @@ class LocalFilesystemDataPlane:
     def _table_root(self, scope: OwnerScope, table: str) -> str:
         return os.path.join(self._scope_root(scope), table)
 
+    def _raw_path(self, scope: OwnerScope, rel_path: str) -> str:
+        # Sibling `_raw/` namespace — kept OUT of `_scope_root` so raw objects
+        # never appear in `list_tables` / `_register_scope_views` (which walk
+        # the scope root and treat every dir as a Parquet table).
+        return os.path.join(self._root, "_raw", scope.as_path(), rel_path)
+
     def _partition_dir(self, scope: OwnerScope, table: str, dt: str | None = None) -> str:
         if dt is None:
             dt = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -178,6 +184,29 @@ class LocalFilesystemDataPlane:
     def register_table(self, scope: OwnerScope, table: str, path: str, schema: pa.Schema) -> None:
         pass  # no-op for local: DuckDB reads files directly
 
+    def put_raw_object(
+        self,
+        scope: OwnerScope,
+        rel_path: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """Store opaque bytes at a scope-relative path (non-Parquet sidecar storage)."""
+        path = self._raw_path(scope, rel_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.rename(tmp, path)  # atomic on same FS, matches write_parquet
+
+    def get_raw_object(self, scope: OwnerScope, rel_path: str) -> bytes | None:
+        """Read opaque bytes at a scope-relative path; None if absent."""
+        path = self._raw_path(scope, rel_path)
+        if not os.path.isfile(path):
+            return None
+        with open(path, "rb") as f:
+            return f.read()
+
     def query(
         self,
         scope: OwnerScope,
@@ -226,6 +255,27 @@ class LocalFilesystemDataPlane:
         if not parquet_files:
             raise FileNotFoundError(f"No parquet files in {latest}")
         return pq.read_schema(os.path.join(latest, parquet_files[0]))
+
+    def storage_bytes(self, scope: OwnerScope) -> int:
+        # Best-effort per the DataPlane contract: any scan error degrades to 0
+        # rather than propagating (matches BigQueryGCSPlane.storage_bytes).
+        try:
+            scope_root = self._scope_root(scope)
+            if not os.path.isdir(scope_root):
+                return 0
+            total = 0
+            for dirpath, _dirs, files in os.walk(scope_root):
+                for f in files:
+                    if not f.endswith(".parquet"):
+                        continue
+                    try:
+                        total += os.path.getsize(os.path.join(dirpath, f))
+                    except OSError:
+                        pass
+            return total
+        except Exception:
+            logger.warning("storage_bytes scan failed for %s", scope, exc_info=True)
+            return 0
 
     def read_dbt_model(self, scope: OwnerScope, model_name: str) -> pa.Table:
         """Read a dbt-materialized model out of the per-scope DuckDB store into Arrow.

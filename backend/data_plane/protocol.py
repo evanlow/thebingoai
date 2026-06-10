@@ -44,6 +44,21 @@ class DataPlane(Protocol):
         """Engine-side table registration (e.g. BQ external table). No-op for local."""
         ...
 
+    def put_raw_object(
+        self,
+        scope: OwnerScope,
+        rel_path: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """Store opaque bytes at a scope-relative path (non-Parquet sidecar storage,
+        e.g. chat-attached raw CSV/XLSX). Each plane decides physical placement."""
+        ...
+
+    def get_raw_object(self, scope: OwnerScope, rel_path: str) -> bytes | None:
+        """Read opaque bytes previously written by `put_raw_object`; None if absent."""
+        ...
+
     def query(
         self,
         scope: OwnerScope,
@@ -68,6 +83,11 @@ class DataPlane(Protocol):
     def table_exists(self, scope: OwnerScope, table: str) -> bool: ...
 
     def get_schema(self, scope: OwnerScope, table: str) -> pa.Schema: ...
+
+    def storage_bytes(self, scope: OwnerScope) -> int:
+        """Total bytes of stored Parquet data for *scope*. Best-effort: returns 0
+        on a scan error rather than raising, so callers can degrade gracefully."""
+        ...
 
     def to_dbt_profile(self) -> dict:
         """Return a dbt profiles.yml target config dict for this DataPlane.

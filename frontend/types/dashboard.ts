@@ -1,6 +1,6 @@
 import type { ChartConfig, ChartType } from './chart'
 
-export type WidgetType = 'kpi' | 'chart' | 'table' | 'text' | 'filter'
+export type WidgetType = 'kpi' | 'chart' | 'table' | 'text' | 'filter' | 'pivot_table'
 
 // 12-column grid position
 export interface GridPosition {
@@ -142,6 +142,61 @@ export interface TableWidgetConfig {
   defaultSortDir?: 'asc' | 'desc'
 }
 
+// Pivot table widget
+export type PivotAggregation = 'sum' | 'average' | 'count' | 'countDistinct' | 'min' | 'max' | 'median' | 'stdDev' | 'variance'
+
+export interface PivotDimension {
+  column: string
+  label?: string
+}
+
+export interface PivotValue {
+  column: string
+  label?: string
+  aggregation: PivotAggregation
+  format?: 'number' | 'currency' | 'percent' | 'text' | 'date'
+  roundValue?: boolean
+  decimalPlaces?: number
+}
+
+export interface PivotTableWidgetConfig {
+  title?: string
+  showTitle?: boolean
+  // Setup
+  rowDimensions: PivotDimension[]      // hierarchy order = outer → inner
+  columnDimensions: PivotDimension[]   // max 2
+  values: PivotValue[]                 // metrics
+  rows: Record<string, any>[]          // granular data from passthrough transform
+  columns?: { key: string; label: string }[]
+  // Behaviour
+  expandCollapse?: boolean
+  defaultExpandLevel?: number          // 0-based row-dim depth shown by default
+  showRowTotals?: boolean              // grand-total column + column-dim subtotals
+  showColumnTotals?: boolean           // grand-total row + row-dim subtotals
+  rowLimit?: number
+  columnLimit?: number
+  sortBy?: string                      // value column to sort row groups by ('' = first row dim)
+  sortDir?: 'asc' | 'desc'
+  // Style (mirrors TableWidgetConfig)
+  wrapText?: boolean
+  stripedRows?: boolean
+  horizontalScrolling?: boolean
+  headerBackground?: string
+  cellBorderColor?: string
+  oddRowColor?: string
+  evenRowColor?: string
+  borderColor?: string
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'none'
+  borderWidth?: number
+  borderRadius?: number
+  fontFamily?: 'system' | 'sans' | 'serif' | 'mono'
+  fontSize?: 'xs' | 'sm' | 'md' | 'lg'
+  fontColor?: string
+  missingDataDisplay?: 'dash' | 'blank' | 'noData' | 'zero' | 'null'
+  subtotalLabel?: string
+  grandTotalLabel?: string
+}
+
 // Text/markdown widget
 export interface TextWidgetConfig {
   content: string
@@ -172,10 +227,29 @@ export interface FilterWidgetConfig {
 }
 
 // DataSource mapping types — one per refreshable widget type
+export type ChartAggregation = 'sum' | 'avg' | 'count' | 'countDistinct' | 'min' | 'max' | 'none'
+
+export interface ChartDatasetColumn {
+  column: string
+  label: string
+  aggregation?: ChartAggregation
+  seriesType?: 'line' | 'bars'
+  yAxisID?: 'left' | 'right'
+  [key: string]: any
+}
+
 export interface ChartDataSourceMapping {
   type: 'chart'
-  labelColumn: string
-  datasetColumns: { column: string; label: string }[]
+  labelColumn?: string              // dimension; optional for scatter
+  datasetColumns: ChartDatasetColumn[]
+  // Scatter-only
+  xMetricColumn?: string
+  xAggregation?: ChartAggregation
+  yMetricColumn?: string
+  yAggregation?: ChartAggregation
+  // Reserved for future stacked-bar breakdown (not in v1)
+  breakdownColumn?: string
+  options?: Record<string, any>
 }
 
 export interface KpiDataSourceMapping {
@@ -201,7 +275,14 @@ export interface TableDataSourceMapping {
   columnConfig: { column: string; label: string; sortable?: boolean; format?: string }[]
 }
 
-export type DataSourceMapping = ChartDataSourceMapping | KpiDataSourceMapping | TableDataSourceMapping
+export interface PivotTableDataSourceMapping {
+  type: 'pivot_table'
+  // Union of all referenced columns (row dims + column dims + value columns).
+  // Feeds the passthrough transform; the pivot itself is computed client-side.
+  columnConfig: { column: string; label?: string }[]
+}
+
+export type DataSourceMapping = ChartDataSourceMapping | KpiDataSourceMapping | TableDataSourceMapping | PivotTableDataSourceMapping
 
 // Links a widget to a live SQL query for on-demand refresh
 export interface WidgetDataSource {
@@ -222,6 +303,7 @@ export type WidgetConfig =
   | { type: 'kpi'; config: KpiWidgetConfig }
   | { type: 'chart'; config: ChartWidgetConfig }
   | { type: 'table'; config: TableWidgetConfig }
+  | { type: 'pivot_table'; config: PivotTableWidgetConfig }
   | { type: 'text'; config: TextWidgetConfig }
   | { type: 'filter'; config: FilterWidgetConfig }
 
@@ -293,6 +375,7 @@ export const WIDGET_DEFAULTS: Record<WidgetType, GridPosition> = {
   kpi:    { x: 0, y: 0, w: 3,  h: 2, minW: 2, minH: 2 },
   chart:  { x: 0, y: 0, w: 6,  h: 5, minW: 3, minH: 3 },
   table:  { x: 0, y: 0, w: 12, h: 5, minW: 4, minH: 3 },
+  pivot_table: { x: 0, y: 0, w: 8, h: 5, minW: 4, minH: 3 },
   text:   { x: 0, y: 0, w: 4,  h: 3, minW: 2, minH: 2 },
   filter: { x: 0, y: 0, w: 12, h: 2, minW: 4, minH: 2 },
 }

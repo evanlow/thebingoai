@@ -1,17 +1,25 @@
 <template>
   <div class="space-y-2">
     <!-- Chart mapping -->
-    <template v-if="mapping.type === 'chart' && (mapping.labelColumn || mapping.datasetColumns.length > 0)">
+    <template v-if="mapping.type === 'chart' && (mapping.labelColumn || mapping.datasetColumns.length > 0 || mapping.xMetricColumn)">
       <div class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
       <table class="w-full text-xs">
         <tbody class="divide-y divide-gray-100">
+          <tr v-if="mapping.xMetricColumn">
+            <td class="py-1 pr-3 text-gray-500 w-24">X Metric</td>
+            <td class="py-1 font-mono text-gray-800">{{ mapping.xMetricColumn }}<span v-if="mapping.xAggregation && mapping.xAggregation !== 'none'" class="ml-1 text-gray-400">({{ mapping.xAggregation }})</span></td>
+          </tr>
+          <tr v-if="mapping.yMetricColumn">
+            <td class="py-1 pr-3 text-gray-500">Y Metric</td>
+            <td class="py-1 font-mono text-gray-800">{{ mapping.yMetricColumn }}<span v-if="mapping.yAggregation && mapping.yAggregation !== 'none'" class="ml-1 text-gray-400">({{ mapping.yAggregation }})</span></td>
+          </tr>
           <tr v-if="mapping.labelColumn">
-            <td class="py-1 pr-3 text-gray-500 w-24">X-axis labels</td>
+            <td class="py-1 pr-3 text-gray-500 w-24">Dimension</td>
             <td class="py-1 font-mono text-gray-800">{{ mapping.labelColumn }}</td>
           </tr>
           <tr v-for="ds in mapping.datasetColumns" :key="ds.column">
-            <td class="py-1 pr-3 text-gray-500">Dataset "{{ ds.label }}"</td>
-            <td class="py-1 font-mono text-gray-800">{{ ds.column }}</td>
+            <td class="py-1 pr-3 text-gray-500">Metric "{{ ds.label || ds.column }}"</td>
+            <td class="py-1 font-mono text-gray-800">{{ ds.column }}<span v-if="ds.aggregation && ds.aggregation !== 'none'" class="ml-1 text-gray-400">({{ ds.aggregation }})</span></td>
           </tr>
         </tbody>
       </table>

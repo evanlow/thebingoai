@@ -195,3 +195,28 @@ async def test_redis_file_data_contains_thread_id(chat_db, stub_user):
     stored_data = mocks["store_file"].call_args[0][0]
     assert "thread_id" in stored_data
     assert stored_data["thread_id"] == result["thread_id"]
+
+
+@pytest.mark.asyncio
+async def test_upload_passes_scope_and_thread_to_save_raw_file(chat_db, stub_user):
+    from backend.api.chat_files import upload_chat_files
+    from backend.data_plane.scope import OwnerScope
+
+    patches, _ = _mock_file_service()
+    mocks = {k: p.start() for k, p in patches.items()}
+    try:
+        result = await upload_chat_files(
+            files=[_mock_upload_file()],
+            thread_id=None,
+            current_user=stub_user,
+            db=chat_db,
+        )
+        save_mock = mocks["save_raw_file"]
+        assert save_mock.called
+        args = save_mock.call_args[0]
+        assert isinstance(args[0], OwnerScope)
+        assert args[0].kind == "user"
+        assert args[1] == result["thread_id"]  # thread_id is 2nd positional
+    finally:
+        for p in patches.values():
+            p.stop()

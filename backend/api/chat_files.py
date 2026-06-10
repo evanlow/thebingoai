@@ -113,9 +113,16 @@ async def upload_chat_files(
                 mime_type=mime_type,
             )
             file_data["thread_id"] = thread_id
+            file_data["user_id"] = current_user.id
             chat_file_service.store_file(file_data)
+            from backend.data_plane.scope import OwnerScope
             storage_key = chat_file_service.save_raw_file(
-                current_user.id, file_data["file_id"], upload_file.filename or "", file_bytes, mime_type
+                OwnerScope("user", current_user.id),
+                thread_id,
+                file_data["file_id"],
+                upload_file.filename or "",
+                file_bytes,
+                mime_type,
             )
             chat_file_service.update_file_storage_key(file_data["file_id"], storage_key)
 

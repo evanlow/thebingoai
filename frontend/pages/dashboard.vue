@@ -6,7 +6,7 @@
       <!-- List view -->
       <template v-if="!store.currentDashboard">
 
-        <div class="flex-1 overflow-y-auto px-3 md:px-6 pt-4 pb-6">
+        <div class="flex flex-1 flex-col overflow-y-auto px-3 md:px-6 pt-4 pb-6">
           <div v-if="store.loading" class="flex items-center justify-center py-16 text-sm text-gray-400">
             Loading dashboards...
           </div>
@@ -32,8 +32,10 @@
               </p>
 
               <ChatComposer @send="handleEmptyStateSend" />
+            </div>
 
-              <!-- Heads up tip box -->
+            <!-- Heads up tip box — pinned footer -->
+            <div class="dashboard-empty-footer">
               <div class="dashboard-empty-tip">
                 <Info class="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-[var(--ink-2)]" />
                 <p>
@@ -441,7 +443,8 @@ definePageMeta({
 .dashboard-empty {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .dashboard-empty-header {
@@ -462,6 +465,7 @@ definePageMeta({
 
 .dashboard-empty-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   max-width: 760px;
   width: 100%;
@@ -497,10 +501,17 @@ definePageMeta({
   margin-bottom: 0;
 }
 
+.dashboard-empty-footer {
+  flex-shrink: 0;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px 0 24px;
+}
+
 .dashboard-empty-tip {
   display: flex;
   gap: 10px;
-  margin-top: 36px;
   padding: 14px 18px;
   border: 1px dashed var(--line);
   border-radius: 12px;

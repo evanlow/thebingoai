@@ -41,6 +41,36 @@ export function formatDateLabel(date: string | Date): string {
 export { isSameDay }
 
 /**
+ * Formats a byte count as a human-readable size using binary units (e.g., "38.2 GB").
+ */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let value = bytes
+  let i = 0
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024
+    i++
+  }
+  const rounded = i === 0 ? value : Math.round(value * 10) / 10
+  return `${rounded} ${units[i]}`
+}
+
+/**
+ * Formats a duration in seconds as a short string (e.g., "8.4s", "5m 8s", "1h 3m").
+ */
+export function formatDurationShort(seconds: number | null | undefined): string {
+  if (seconds == null || seconds < 0) return '—'
+  if (seconds < 60) return `${Math.round(seconds * 10) / 10}s`
+  const total = Math.round(seconds)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m ${s}s`
+}
+
+/**
  * Truncates a string to a maximum length with ellipsis
  */
 export function truncate(str: string, maxLength: number): string {

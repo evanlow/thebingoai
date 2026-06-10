@@ -24,7 +24,6 @@ IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
 EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-DATASET_MIME_TYPES = {"text/csv", EXCEL_MIME_TYPE}
 
 MIME_TO_CONTENT_TYPE = {
     "image/png": "image",
@@ -322,13 +321,41 @@ def get_full_content(file_id: str) -> str:
     return file_data.get("extracted_text", "")
 
 
-def save_raw_file(user_id: str, file_id: str, filename: str, file_bytes: bytes, content_type: str = "application/octet-stream") -> str:
-    """Upload raw file to DO Spaces. Returns the storage key."""
-    from backend.services import object_storage
+def _chat_object_path(thread_id: str, file_id: str, ext: str) -> str:
+    return f"chat_files/{thread_id}/{file_id}{ext}"
+
+
+def save_raw_file(
+    scope,
+    thread_id: str,
+    file_id: str,
+    filename: str,
+    file_bytes: bytes,
+    content_type: str = "application/octet-stream",
+) -> str:
+    """Persist the raw upload.
+
+    Dataset files (CSV/XLSX) go to the per-user DataPlane bucket under
+    `chat_files/{thread_id}/{file_id}{ext}` (resolved via get_default_plane,
+    same mechanic as connectors). All other types keep the legacy DO Spaces path.
+    Returns the storage key (plane rel_path for datasets, DO key otherwise).
+
+    Routing keys off the extension (not content_type) so it stays consistent
+    with `get_raw_file`, which resolves storage by ext — a mismatch would strand
+    the file between the plane and DO.
+    """
     ext = os.path.splitext(filename)[1].lower()
-    key = f"{settings.do_spaces_base_path}/{user_id}/raw/{file_id}{ext}"
+    if ext in (".csv", ".xlsx"):
+        from backend.services.data_plane_service import get_default_plane
+        rel = _chat_object_path(thread_id, file_id, ext)
+        get_default_plane(scope).put_raw_object(scope, rel, file_bytes, content_type)
+        logger.debug("Saved dataset raw file %s to plane key %s", file_id, rel)
+        return rel
+    # Legacy DO Spaces path — images / pdf / docx (unchanged behavior)
+    from backend.services import object_storage
+    key = f"{settings.do_spaces_base_path}/{scope.id}/raw/{file_id}{ext}"
     object_storage.upload_bytes(key, file_bytes, content_type)
-    logger.debug("Saved raw file %s to key %s", file_id, key)
+    logger.debug("Saved raw file %s to DO key %s", file_id, key)
     return key
 
 
@@ -344,15 +371,23 @@ def update_file_storage_key(file_id: str, storage_key: str) -> None:
 
 
 def get_raw_file(user_id: str, file_id: str) -> Optional[tuple]:
-    """
-    Download raw file from DO Spaces.
+    """Download a chat dataset (CSV/XLSX) raw file from the per-user DataPlane.
 
-    Returns (file_bytes, ext) where ext is '.csv' or '.xlsx', or None if not found.
+    Resolves thread_id from the Redis record so the caller signature stays
+    (user_id, file_id). Returns (file_bytes, ext) where ext is '.csv'/'.xlsx',
+    or None if the record, thread_id, or object is missing.
     """
-    from backend.services import object_storage
-    for ext in (".csv", ".xlsx"):
-        key = f"{settings.do_spaces_base_path}/{user_id}/raw/{file_id}{ext}"
-        data = object_storage.download_bytes(key)
-        if data is not None:
-            return data, ext
-    return None
+    file_data = get_file(file_id)
+    if not file_data:
+        return None
+    thread_id = file_data.get("thread_id")
+    ext = os.path.splitext(file_data.get("original_name", ""))[1].lower()
+    if thread_id is None or ext not in (".csv", ".xlsx"):
+        return None
+    from backend.data_plane.scope import OwnerScope
+    from backend.services.data_plane_service import get_default_plane
+    scope = OwnerScope("user", user_id)
+    data = get_default_plane(scope).get_raw_object(
+        scope, _chat_object_path(thread_id, file_id, ext)
+    )
+    return (data, ext) if data is not None else None

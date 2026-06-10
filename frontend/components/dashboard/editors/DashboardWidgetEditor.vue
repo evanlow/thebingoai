@@ -30,7 +30,7 @@
         Configure
       </button>
       <button
-        v-if="props.widget.widget.type === 'table' || props.widget.widget.type === 'kpi'"
+        v-if="props.widget.widget.type === 'table' || props.widget.widget.type === 'kpi' || props.widget.widget.type === 'chart' || props.widget.widget.type === 'pivot_table'"
         class="px-3 py-2 text-sm font-medium border-b-2 transition-colors"
         :class="activeTab === 'style'
           ? 'border-indigo-500 text-indigo-600'
@@ -68,7 +68,11 @@
             ? { dataSource: props.widget.dataSource, sourceColumns, sourceRows: previewRows }
             : props.widget.widget.type === 'table'
               ? { sourceColumns }
-              : {}"
+              : props.widget.widget.type === 'chart'
+                ? { dataSource: props.widget.dataSource, sourceColumns }
+                : props.widget.widget.type === 'pivot_table'
+                  ? { dataSource: props.widget.dataSource, sourceColumns }
+                  : {}"
           class="h-full"
           @update:model-value="onConfigUpdate"
           @update:mapping="onMappingUpdate"
@@ -98,6 +102,34 @@
         class="h-full overflow-hidden"
       >
         <WidgetEditorKpiStyle
+          :key="props.widget.id"
+          :model-value="currentConfig"
+          :edit-mode="editMode"
+          class="h-full"
+          @update:model-value="onConfigUpdate"
+        />
+      </div>
+
+      <!-- Style tab (chart) -->
+      <div
+        v-else-if="activeTab === 'style' && props.widget.widget.type === 'chart'"
+        class="h-full overflow-hidden"
+      >
+        <WidgetEditorChartStyle
+          :key="props.widget.id"
+          :model-value="currentConfig"
+          :edit-mode="editMode"
+          class="h-full"
+          @update:model-value="onConfigUpdate"
+        />
+      </div>
+
+      <!-- Style tab (pivot_table) -->
+      <div
+        v-else-if="activeTab === 'style' && props.widget.widget.type === 'pivot_table'"
+        class="h-full overflow-hidden"
+      >
+        <WidgetEditorPivotTableStyle
           :key="props.widget.id"
           :model-value="currentConfig"
           :edit-mode="editMode"
@@ -271,12 +303,15 @@
 import { defineAsyncComponent } from 'vue'
 import WidgetEditorTableStyle from './WidgetEditorTableStyle.vue'
 import WidgetEditorKpiStyle from './WidgetEditorKpiStyle.vue'
+import WidgetEditorChartStyle from './WidgetEditorChartStyle.vue'
+import WidgetEditorPivotTableStyle from './WidgetEditorPivotTableStyle.vue'
 
 // Defined at module level so they're singletons, not re-created on each setup call
 const editorComponents: Record<string, ReturnType<typeof defineAsyncComponent>> = {
   text: defineAsyncComponent(() => import('./WidgetEditorText.vue')),
   kpi: defineAsyncComponent(() => import('./WidgetEditorKpi.vue')),
   table: defineAsyncComponent(() => import('./WidgetEditorTable.vue')),
+  pivot_table: defineAsyncComponent(() => import('./WidgetEditorPivotTable.vue')),
   chart: defineAsyncComponent(() => import('./WidgetEditorChart.vue')),
   filter: defineAsyncComponent(() => import('./WidgetEditorFilter.vue')),
 }
@@ -292,7 +327,7 @@ import DashboardMappingDisplay from '~/components/dashboard/DashboardMappingDisp
 import { useShikiHighlighter } from '~/composables/useShikiHighlighter'
 import { format as formatSql } from 'sql-formatter'
 
-const DATA_WIDGET_TYPES = new Set(['chart', 'kpi', 'table'])
+const DATA_WIDGET_TYPES = new Set(['chart', 'kpi', 'table', 'pivot_table'])
 
 const props = defineProps<{
   widget: DashboardWidget
@@ -382,6 +417,7 @@ const WIDGET_TYPE_LABELS: Record<string, string> = {
   kpi: 'Score Chart',
   chart: 'Chart',
   table: 'Table',
+  pivot_table: 'Pivot Table',
   text: 'Text',
   filter: 'Filter',
 }
@@ -438,7 +474,7 @@ function onMappingUpdate(patch: Record<string, any>) {
     ...ds,
     mapping: newMapping,
   })
-  // Re-transform cached data so sparkline updates instantly (no server round-trip)
+  // Re-transform cached data so chart/sparkline updates instantly (no server round-trip)
   if (ds.mapping.type === 'kpi' && sourceColumns.value.length && previewRows.value.length) {
     import('~/utils/widgetTransform').then(({ transformWidgetData }) => {
       const config = transformWidgetData(
@@ -454,21 +490,51 @@ function onMappingUpdate(patch: Record<string, any>) {
         config: { ...existingConfig, ...config } as any,
       })
     })
+  } else if (ds.mapping.type === 'chart' && sourceColumns.value.length && previewRows.value.length) {
+    import('~/utils/widgetTransform').then(({ transformWidgetData }) => {
+      const transformed = transformWidgetData(
+        { columns: sourceColumns.value, rows: previewRows.value },
+        newMapping,
+      )
+      const current = props.widget.widget
+      const existingConfig = current.type === 'chart' ? (current.config as Record<string, any>) : {}
+      store.updateWidgetConfig(props.widget.id, {
+        type: 'chart',
+        config: { ...existingConfig, ...transformed } as any,
+      })
+    })
+  } else if (ds.mapping.type === 'pivot_table' && sourceColumns.value.length && previewRows.value.length) {
+    import('~/utils/widgetTransform').then(({ transformWidgetData }) => {
+      const transformed = transformWidgetData(
+        { columns: sourceColumns.value, rows: previewRows.value },
+        newMapping,
+      )
+      // Preserve the pivot structure (row/column dims, values, style); refresh
+      // only the granular rows/columns the pivot computes from.
+      const current = props.widget.widget
+      const existingConfig = current.type === 'pivot_table' ? (current.config as Record<string, any>) : {}
+      store.updateWidgetConfig(props.widget.id, {
+        type: 'pivot_table',
+        config: { ...existingConfig, ...transformed } as any,
+      })
+    })
   }
 }
 
 function getDefaultMapping(type: string): WidgetDataSource['mapping'] {
   if (type === 'chart') return { type: 'chart', labelColumn: '', datasetColumns: [] }
   if (type === 'kpi') return { type: 'kpi', valueColumn: '' }
+  if (type === 'pivot_table') return { type: 'pivot_table', columnConfig: [] }
   return { type: 'table', columnConfig: [] }
 }
 
-function onSqlBlur() {
+async function onSqlBlur() {
   if (!props.editMode) return
   const ds = props.widget.dataSource
   if (ds) {
     if (localSql.value !== ds.sql) {
       store.updateWidgetSql(props.widget.id, localSql.value)
+      await fetchSourceColumns()
     }
   } else if (selectedConnectionId.value !== null && localSql.value.trim()) {
     // Create dataSource for the first time
@@ -477,10 +543,11 @@ function onSqlBlur() {
       sql: localSql.value,
       mapping: getDefaultMapping(props.widget.widget.type),
     })
+    await fetchSourceColumns()
   }
 }
 
-function onConnectionChange() {
+async function onConnectionChange() {
   if (!props.editMode) return
   const ds = props.widget.dataSource
   if (ds && selectedConnectionId.value !== null) {
@@ -488,6 +555,7 @@ function onConnectionChange() {
       ...ds,
       connectionId: selectedConnectionId.value,
     })
+    await fetchSourceColumns()
   }
 }
 
@@ -510,22 +578,41 @@ async function testQuery() {
     sourceColumns.value = response.source_columns ?? []
     const config = response.config
     if (ds.mapping.type === 'chart' && config.data) {
-      previewColumns.value = ['Label', ...config.data.datasets.map((d: any) => d.label)]
-      previewRows.value = config.data.labels.map((label: any, i: number) => [
-        label,
-        ...config.data.datasets.map((d: any) => d.data[i]),
-      ])
+      previewColumns.value = response.source_columns ?? []
+      previewRows.value = response.source_rows ?? []
+      const current = props.widget.widget
+      const existingConfig = current.type === 'chart' ? (current.config as Record<string, any>) : {}
+      store.updateWidgetConfig(props.widget.id, {
+        type: 'chart',
+        config: { ...existingConfig, ...config } as any,
+      })
     } else if (ds.mapping.type === 'kpi') {
       // Use raw SQL columns and rows so the user sees all available data
       previewColumns.value = response.source_columns ?? Object.keys(config)
       previewRows.value = response.source_rows ?? [Object.values(config)]
-      // Sync backend-computed config (sparkline, trend, value) into the widget store
-      store.updateWidgetConfig(props.widget.id, { type: 'kpi', config })
+      const current = props.widget.widget
+      const existingConfig = current.type === 'kpi' ? (current.config as Record<string, any>) : {}
+      store.updateWidgetConfig(props.widget.id, {
+        type: 'kpi',
+        config: { ...existingConfig, ...config } as any,
+      })
     } else if (ds.mapping.type === 'table' && config.columns) {
       previewColumns.value = config.columns.map((c: any) => c.label)
       previewRows.value = config.rows.slice(0, 10).map((row: any) =>
         config.columns.map((c: any) => row[c.key]),
       )
+    } else if (ds.mapping.type === 'pivot_table' && config.rows) {
+      previewColumns.value = (config.columns ?? []).map((c: any) => c.label ?? c.key)
+      previewRows.value = (config.rows ?? []).slice(0, 10).map((row: any) =>
+        (config.columns ?? []).map((c: any) => row[c.key]),
+      )
+      // Merge the granular {columns, rows} into the pivot config so it renders.
+      const current = props.widget.widget
+      const existingConfig = current.type === 'pivot_table' ? (current.config as Record<string, any>) : {}
+      store.updateWidgetConfig(props.widget.id, {
+        type: 'pivot_table',
+        config: { ...existingConfig, ...config } as any,
+      })
     }
   } catch (err: any) {
     previewError.value = err?.data?.detail ?? err?.message ?? 'Query failed'

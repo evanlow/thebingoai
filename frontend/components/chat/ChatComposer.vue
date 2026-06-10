@@ -23,16 +23,14 @@
     </Transition>
 
     <div class="home-composer">
-      <!-- File attachment preview strip -->
-      <div v-if="attachedFiles.some(f => !f.sent) && !chatStore.isStreaming" class="flex flex-wrap gap-2 mb-2">
-        <div v-for="(file, index) in attachedFiles" :key="index" class="group">
+      <!-- Attachment preview strip -->
+      <div v-if="attachedFiles.some(f => !f.sent) && !chatStore.isStreaming" class="composer-attachments">
+        <div v-for="(file, index) in attachedFiles" :key="index">
           <ChatFilePreview v-if="!file.sent" :file="file" :index="index" @remove="removeFile" />
         </div>
       </div>
-      <div v-if="fileErrors.length > 0" class="mb-1">
-        <p v-for="(err, i) in fileErrors" :key="i" class="text-[11px] text-[var(--bad)]">
-          {{ err.name }}: {{ err.error }}
-        </p>
+      <div v-if="fileErrors.length > 0" class="composer-file-errors">
+        <p v-for="(err, i) in fileErrors" :key="i">{{ err.name }}: {{ err.error }}</p>
       </div>
       <!-- Contenteditable replaces textarea for inline pill support -->
       <div
@@ -87,6 +85,7 @@
 <script setup lang="ts">
 import { AtSign, Paperclip, Send } from 'lucide-vue-next'
 import { useChatFileUpload } from '~/composables/useChatFileUpload'
+import ChatFilePreview from '~/components/chat/ChatFilePreview.vue'
 import { useMentions, type MentionItem } from '~/composables/useMentions'
 import pillDataset from '~/assets/icons/pill/dataset.svg?raw'
 import pillNotion from '~/assets/icons/pill/notion.svg?raw'
@@ -326,12 +325,29 @@ const handleFileChange = async (e: Event) => {
   if (input.files) {
     const rejections = await addFiles(Array.from(input.files))
     fileErrors.value = rejections
+    if (rejections.length > 0) setTimeout(() => { fileErrors.value = [] }, 4000)
   }
   input.value = ''
 }
 </script>
 
 <style scoped>
+/* ── Attachment preview strip ── */
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.composer-file-errors {
+  margin-bottom: 6px;
+}
+.composer-file-errors p {
+  font-size: 11px;
+  color: var(--bad);
+  margin: 0;
+}
+
 /* ── Composer wrapper (anchors floating mention panel) ── */
 .home-composer-wrap {
   position: relative;
