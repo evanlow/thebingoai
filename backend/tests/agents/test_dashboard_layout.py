@@ -170,15 +170,37 @@ class TestPairUp:
         assert _pos(widgets, "c") == {"x": 0, "y": 0, "w": 12, "h": 5}
         assert _pos(widgets, "t") == {"x": 0, "y": 5, "w": 12, "h": 5}
 
-    def test_different_heights_not_paired(self):
+    def test_different_heights_paired_with_uniform_height(self):
+        # Reflow gives every row a uniform height (max of members), so two
+        # stacked charts of different heights still pair cleanly.
         widgets = [
             _w("a", "chart", 0, 0, 6, 5, "bar"),
             _w("b", "chart", 0, 5, 6, 7, "line"),
         ]
         normalize_dashboard_layout(widgets)
-        assert _pos(widgets, "a")["y"] != _pos(widgets, "b")["y"]
-        assert _pos(widgets, "a")["w"] == 12
-        assert _pos(widgets, "b")["w"] == 12
+        assert _pos(widgets, "a")["y"] == _pos(widgets, "b")["y"] == 0
+        assert _pos(widgets, "a")["h"] == _pos(widgets, "b")["h"] == 7
+        assert _pos(widgets, "a")["w"] + _pos(widgets, "b")["w"] == 12
+
+    def test_oversized_pair_squeezed_to_fit(self):
+        # Two stacked charts wanting 8+8 shrink to 6+6 rather than stacking.
+        widgets = [
+            _w("a", "chart", 0, 0, 8, 5, "bar"),
+            _w("b", "chart", 0, 5, 8, 5, "line"),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "a")["y"] == _pos(widgets, "b")["y"] == 0
+        assert _pos(widgets, "a")["w"] + _pos(widgets, "b")["w"] == 12
+
+    def test_full_width_chart_not_squeezed(self):
+        # A w=12 chart (hero time-series) keeps its own row.
+        widgets = [
+            _w("a", "chart", 0, 0, 12, 6, "line"),
+            _w("b", "chart", 0, 6, 6, 5, "bar"),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "a") == {"x": 0, "y": 0, "w": 12, "h": 6}
+        assert _pos(widgets, "b") == {"x": 0, "y": 6, "w": 12, "h": 5}
 
     def test_paired_row_stable_on_second_run(self):
         widgets = [
@@ -233,16 +255,21 @@ class TestVerticalCompaction:
 
 
 class TestMixedHeightBand:
-    def test_mosaic_widths_untouched(self):
-        # Tall pivot beside two stacked charts — intentional mosaic.
+    def test_mosaic_reflowed_without_gaps(self):
+        # Tall pivot beside two stacked charts — reflowed into uniform rows
+        # with no horizontal gaps.
         widgets = [
             _w("c1", "chart", 0, 0, 8, 5, "bar"),
             _w("c2", "chart", 0, 5, 8, 5, "line"),
             _w("p", "pivot_table", 8, 0, 4, 10),
         ]
-        before = {w["id"]: copy.deepcopy(w["position"]) for w in widgets}
         normalize_dashboard_layout(widgets)
-        assert {w["id"]: w["position"] for w in widgets} == before
+        rows = {}
+        for w in widgets:
+            rows.setdefault(w["position"]["y"], []).append(w["position"])
+        for members in rows.values():
+            assert sum(p["w"] for p in members) == 12
+            assert len({p["h"] for p in members}) == 1
 
 
 class TestSanitize:

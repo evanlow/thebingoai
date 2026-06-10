@@ -1,9 +1,19 @@
-"""Deterministic layout normalizer for agent-generated dashboard widgets.
+"""Deterministic layout reflow for agent-generated dashboard widgets.
 
 The dashboard agent decides widget positions on a 12-column grid, but LLM
-output often leaves rows underfilled (e.g. a lone w=8 chart with 4 empty
-columns). This module post-processes the widget list so every row packs the
-full grid width, overlaps are resolved, and vertical gaps are compacted.
+output often leaves rows underfilled or ragged. Instead of patching the
+agent's layout, this module rebuilds it: widgets are taken in reading order,
+grouped into rows by type, and every row is stretched to span the full grid
+width — so horizontal gaps are impossible by construction.
+
+Row rules:
+- filter / text / table: always a full-width row (w=12).
+- kpi: consecutive KPI cards are chunked up to 4 per row, equal widths.
+- chart / pivot_table: greedily packed side-by-side while their preferred
+  widths fit in 12 columns; each closed row is stretched proportionally to
+  exactly 12 and all members get the row's max height.
+
+Section order is enforced: filter bands first, then KPI rows, then the rest.
 
 Pure functions — no DB, no LLM. Mutates the `position` dicts and re-sorts
 the list in place into reading order (y, then x) so the persisted array
@@ -38,14 +48,21 @@ _FALLBACK_CONSTRAINTS = {"min_w": 2, "max_w": 12, "default_w": 6, "default_h": 4
 # filling the row beats the readability guideline there.
 _ROUND_CHART_MAX_W = 6
 
-# Types eligible for the pair-up pass (two stacked lone rows merged into one
-# side-by-side row). Tables/filters/text are designed full-width; KPIs are
-# grouped into rows by the prompt.
-_PAIRABLE_TYPES = {"chart", "pivot_table"}
+# Types that always get their own full-width row.
+_FULL_ROW_TYPES = {"filter", "text", "table"}
+
+# Types packed side-by-side into shared rows.
+_PACKABLE_TYPES = {"chart", "pivot_table"}
+
+_MAX_KPIS_PER_ROW = 4
+
+
+def _widget_type(widget: dict) -> str:
+    return (widget.get("widget") or {}).get("type") or ""
 
 
 def _constraints_for(widget: dict) -> dict[str, int]:
-    wtype = (widget.get("widget") or {}).get("type")
+    wtype = _widget_type(widget)
     constraints = dict(_TYPE_CONSTRAINTS.get(wtype, _FALLBACK_CONSTRAINTS))
     if wtype == "chart":
         chart_type = ((widget.get("widget") or {}).get("config") or {}).get("type")
@@ -80,195 +97,181 @@ def _sanitize(widgets: list[dict]) -> None:
         pos["x"], pos["y"], pos["w"], pos["h"] = x, y, width, height
 
 
-def _intersects(a: dict, b: dict) -> bool:
-    return (
-        a["x"] < b["x"] + b["w"]
-        and b["x"] < a["x"] + a["w"]
-        and a["y"] < b["y"] + b["h"]
-        and b["y"] < a["y"] + a["h"]
-    )
+def _section_key(widget: dict) -> int:
+    wtype = _widget_type(widget)
+    if wtype == "filter":
+        return 0
+    if wtype == "kpi":
+        return 1
+    return 2
 
 
-def _resolve_overlaps(widgets: list[dict]) -> None:
-    """Push overlapping widgets down, GridStack float:false style.
+def _build_rows(ordered: list[dict]) -> list[list[dict]]:
+    """Group widgets into rows: full-width singles, KPI chunks, packed charts."""
+    rows: list[list[dict]] = []
+    current: list[dict] = []  # open chart/pivot row
+    current_width = 0
 
-    Iterates in reading order (y, x, original index — stable) and moves each
-    widget below any already-placed widget it collides with.
-    """
-    order = sorted(range(len(widgets)), key=lambda i: (widgets[i]["position"]["y"], widgets[i]["position"]["x"], i))
-    placed: list[dict] = []
-    for i in order:
-        pos = widgets[i]["position"]
-        moved = True
-        while moved:
-            moved = False
-            for other in placed:
-                if _intersects(pos, other):
-                    pos["y"] = other["y"] + other["h"]
-                    moved = True
-        placed.append(pos)
+    def close_current():
+        nonlocal current, current_width
+        if current:
+            rows.append(current)
+            current = []
+            current_width = 0
 
+    kpi_run: list[dict] = []
 
-def _detect_bands(widgets: list[dict]) -> list[list[dict]]:
-    """Group widgets into horizontal bands of transitively overlapping y-intervals."""
-    items = sorted(widgets, key=lambda w: (w["position"]["y"], w["position"]["x"]))
-    bands: list[list[dict]] = []
-    band: list[dict] = []
-    band_bottom = -1
-    for w in items:
-        pos = w["position"]
-        if band and pos["y"] >= band_bottom:
-            bands.append(band)
-            band = []
-            band_bottom = -1
-        band.append(w)
-        band_bottom = max(band_bottom, pos["y"] + pos["h"])
-    if band:
-        bands.append(band)
-    return bands
+    def close_kpis():
+        nonlocal kpi_run
+        for i in range(0, len(kpi_run), _MAX_KPIS_PER_ROW):
+            rows.append(kpi_run[i:i + _MAX_KPIS_PER_ROW])
+        kpi_run = []
 
-
-def _widget_type(widget: dict) -> str:
-    return (widget.get("widget") or {}).get("type") or ""
-
-
-def _pair_up_lone_bands(bands: list[list[dict]]) -> list[list[dict]]:
-    """Merge adjacent single-widget bands into one side-by-side row.
-
-    Two consecutive rows that each hold one chart/pivot of the same height
-    read better side-by-side than stacked with half the grid empty. Greedy:
-    a merged pair never absorbs a third widget (two charts is the readable
-    max per row). An odd widget left without a partner stays lone and is
-    widened to full width by _normalize_band_widths.
-    """
-    merged: list[list[dict]] = []
-    i = 0
-    while i < len(bands):
-        band = bands[i]
-        nxt = bands[i + 1] if i + 1 < len(bands) else None
-        if (
-            nxt is not None
-            and len(band) == 1
-            and len(nxt) == 1
-            and _widget_type(band[0]) in _PAIRABLE_TYPES
-            and _widget_type(nxt[0]) in _PAIRABLE_TYPES
-            and band[0]["position"]["h"] == nxt[0]["position"]["h"]
-        ):
-            a, b = band[0]["position"], nxt[0]["position"]
-            a.update(x=0, w=GRID_COLUMNS // 2)
-            b.update(x=GRID_COLUMNS // 2, y=a["y"], w=GRID_COLUMNS // 2)
-            merged.append([band[0], nxt[0]])
-            i += 2
+    for w in ordered:
+        wtype = _widget_type(w)
+        if wtype == "kpi":
+            close_current()
+            kpi_run.append(w)
+            continue
+        close_kpis()
+        if wtype in _PACKABLE_TYPES:
+            width = w["position"]["w"]
+            if current and current_width + width > GRID_COLUMNS:
+                # Squeeze a pair: two charts that each wanted less than the
+                # full grid read better side-by-side (shrunk to fit) than
+                # stacked as two underfilled rows. Full-width widgets (w=12,
+                # e.g. hero time-series) keep their own row.
+                can_squeeze = (
+                    len(current) == 1
+                    and current_width < GRID_COLUMNS
+                    and width < GRID_COLUMNS
+                )
+                if not can_squeeze:
+                    close_current()
+            current.append(w)
+            current_width += width
         else:
-            merged.append(band)
-            i += 1
-    return merged
+            # filter / text / table / unknown → own full-width row
+            close_current()
+            rows.append([w])
+    close_current()
+    close_kpis()
+    return rows
 
 
-def _order_sections(bands: list[list[dict]]) -> list[list[dict]]:
-    """Pull filter bands to the top, KPI bands right after, rest follows.
+def _layout_row(row: list[dict], y: int) -> int:
+    """Assign x/w/h for one row starting at y; return the row height."""
+    types = {_widget_type(w) for w in row}
 
-    Stable within each group, so the agent's ordering of charts/tables is
-    preserved. Vertical compaction afterwards assigns y top-down, which
-    makes the reorder stick.
-    """
-    def group(band: list[dict]) -> int:
-        types = {_widget_type(w) for w in band}
-        if types == {"filter"}:
-            return 0
-        if types == {"kpi"}:
-            return 1
-        return 2
-
-    return sorted(bands, key=group)
-
-
-def _normalize_band_widths(band: list[dict]) -> None:
-    """Widen a uniform band (same y and h) so widths sum to GRID_COLUMNS.
-
-    Deficit is distributed proportionally to current widths (largest-remainder
-    rounding), respecting each widget's max width. Mixed-height bands are left
-    alone — they may be intentional mosaics. A widget alone in its row is
-    stretched to full width regardless of its per-type max (except KPI cards,
-    which stay capped — a full-width KPI looks broken).
-    """
-    first = band[0]["position"]
-    if any(w["position"]["y"] != first["y"] or w["position"]["h"] != first["h"] for w in band):
-        return
-
-    if len(band) == 1 and _widget_type(band[0]) != "kpi":
-        band[0]["position"].update(x=0, w=GRID_COLUMNS)
-        return
-
-    band.sort(key=lambda w: w["position"]["x"])
-    total = sum(w["position"]["w"] for w in band)
-    if total < GRID_COLUMNS:
+    if types <= {"kpi"}:
+        n = len(row)
+        if n == 1:
+            row[0]["position"].update(x=0, w=min(6, _constraints_for(row[0])["max_w"]))
+        else:
+            base, extra = divmod(GRID_COLUMNS, n)
+            cursor = 0
+            for i, w in enumerate(row):
+                width = base + (1 if i < extra else 0)
+                w["position"].update(x=cursor, w=width)
+                cursor += width
+    elif len(row) == 1:
+        w = row[0]
+        if _widget_type(w) in _FULL_ROW_TYPES or _widget_type(w) in _PACKABLE_TYPES:
+            w["position"].update(x=0, w=GRID_COLUMNS)
+        else:
+            w["position"].update(x=0)
+    else:
+        # Packed chart/pivot row: stretch or shrink proportionally so widths
+        # sum to exactly 12 columns, clamping each widget at its max width
+        # (pie cap) / min width and handing any clamped leftover to the others.
+        total = sum(w["position"]["w"] for w in row)
         deficit = GRID_COLUMNS - total
-        maxes = [min(_constraints_for(w)["max_w"], GRID_COLUMNS) for w in band]
-        # Proportional shares with largest-remainder rounding.
-        shares = [deficit * w["position"]["w"] / total for w in band]
-        extras = [int(s) for s in shares]
-        remainder = deficit - sum(extras)
-        by_frac = sorted(range(len(band)), key=lambda i: shares[i] - extras[i], reverse=True)
-        for i in by_frac[:remainder]:
-            extras[i] += 1
-        # Apply, clamping at max_w; pool any clamped leftover.
-        leftover = 0
-        for i, w in enumerate(band):
-            new_w = w["position"]["w"] + extras[i]
-            if new_w > maxes[i]:
-                leftover += new_w - maxes[i]
-                new_w = maxes[i]
-            w["position"]["w"] = new_w
-        # Redistribute leftover to widgets still under their max.
-        while leftover > 0:
-            grew = False
-            for i, w in enumerate(band):
-                if leftover <= 0:
-                    break
-                if w["position"]["w"] < maxes[i]:
-                    w["position"]["w"] += 1
-                    leftover -= 1
-                    grew = True
-            if not grew:
-                break  # every widget capped (e.g. lone pie) — leave the gap
+        if deficit < 0:
+            overflow = -deficit
+            mins = [_constraints_for(w)["min_w"] for w in row]
+            shares = [overflow * w["position"]["w"] / total for w in row]
+            cuts = [int(s) for s in shares]
+            remainder = overflow - sum(cuts)
+            by_frac = sorted(range(len(row)), key=lambda i: shares[i] - cuts[i], reverse=True)
+            for i in by_frac[:remainder]:
+                cuts[i] += 1
+            shortfall = 0
+            for i, w in enumerate(row):
+                new_w = w["position"]["w"] - cuts[i]
+                if new_w < mins[i]:
+                    shortfall += mins[i] - new_w
+                    new_w = mins[i]
+                w["position"]["w"] = new_w
+            while shortfall > 0:
+                shrunk = False
+                for i, w in enumerate(row):
+                    if shortfall <= 0:
+                        break
+                    if w["position"]["w"] > mins[i]:
+                        w["position"]["w"] -= 1
+                        shortfall -= 1
+                        shrunk = True
+                if not shrunk:
+                    break  # every widget at min — row stays slightly over
+        elif deficit > 0:
+            maxes = [min(_constraints_for(w)["max_w"], GRID_COLUMNS) for w in row]
+            shares = [deficit * w["position"]["w"] / total for w in row]
+            extras = [int(s) for s in shares]
+            remainder = deficit - sum(extras)
+            by_frac = sorted(range(len(row)), key=lambda i: shares[i] - extras[i], reverse=True)
+            for i in by_frac[:remainder]:
+                extras[i] += 1
+            leftover = 0
+            for i, w in enumerate(row):
+                new_w = w["position"]["w"] + extras[i]
+                if new_w > maxes[i]:
+                    leftover += new_w - maxes[i]
+                    new_w = maxes[i]
+                w["position"]["w"] = new_w
+            while leftover > 0:
+                grew = False
+                for i, w in enumerate(row):
+                    if leftover <= 0:
+                        break
+                    if w["position"]["w"] < maxes[i]:
+                        w["position"]["w"] += 1
+                        leftover -= 1
+                        grew = True
+                if not grew:
+                    break  # every widget capped — leave the residual gap
+        cursor = 0
+        for w in row:
+            w["position"]["x"] = cursor
+            cursor += w["position"]["w"]
 
-    # Re-pack x contiguously from 0 in left-to-right order.
-    cursor = 0
-    for w in band:
-        w["position"]["x"] = cursor
-        cursor += w["position"]["w"]
-
-
-def _compact_vertical(bands: list[list[dict]]) -> None:
-    """Shift each band up as a unit so bands stack with no empty rows."""
-    cursor = 0
-    for band in bands:
-        top = min(w["position"]["y"] for w in band)
-        bottom = max(w["position"]["y"] + w["position"]["h"] for w in band)
-        dy = top - cursor
-        if dy:
-            for w in band:
-                w["position"]["y"] -= dy
-        cursor += bottom - top
+    height = max(w["position"]["h"] for w in row)
+    for w in row:
+        w["position"]["y"] = y
+        w["position"]["h"] = height
+    return height
 
 
 def normalize_dashboard_layout(widgets: list[dict]) -> list[dict]:
-    """Normalize agent-generated widget positions in place and return the list.
+    """Reflow agent-generated widget positions in place and return the list.
 
-    Passes: sanitize → resolve overlaps → pair up lone rows → order sections
-    (filter → KPIs → rest) → fill row widths to 12 → compact vertical gaps →
-    sort the list into reading order. Non-position fields are untouched.
+    Passes: sanitize → reading-order sort → section order (filter → KPIs →
+    rest) → rebuild rows (full grid width, uniform row height) → assign y
+    top-down → sort the list into reading order. Non-position fields are
+    untouched.
     """
     if not widgets:
         return widgets
     try:
         _sanitize(widgets)
-        _resolve_overlaps(widgets)
-        bands = _order_sections(_pair_up_lone_bands(_detect_bands(widgets)))
-        for band in bands:
-            _normalize_band_widths(band)
-        _compact_vertical(bands)
+        order = sorted(
+            range(len(widgets)),
+            key=lambda i: (widgets[i]["position"]["y"], widgets[i]["position"]["x"], i),
+        )
+        ordered = sorted((widgets[i] for i in order), key=_section_key)
+        rows = _build_rows(ordered)
+        y = 0
+        for row in rows:
+            y += _layout_row(row, y)
         # Reading-order array: the frontend grid adds widgets sequentially and
         # float:false gravity scrambles saved positions when the array order
         # disagrees with the visual order.

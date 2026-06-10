@@ -7,6 +7,7 @@ from typing import List, Callable
 from backend.agents.context import AgentContext
 from backend.agents.dashboard_layout import normalize_dashboard_layout
 from backend.connectors.factory import get_connector_for_connection, get_connector_registration
+import asyncio
 import json
 import logging
 
@@ -423,7 +424,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         connector = get_connector_for_connection(connection)
 
         try:
-            result = _run_widget_query(connection, sql, db, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, sql, db, connector)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             logger.info(f"Widget '{widget_id}': SQL executed, config populated with {result.row_count} rows")
@@ -439,8 +440,8 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
             tables = extract_table_names(sql)
             for tbl in list(tables)[:2]:
                 try:
-                    sample_result = _run_widget_query(
-                        connection, f'SELECT * FROM "{tbl}" LIMIT 3', db, connector,
+                    sample_result = await asyncio.to_thread(
+                        _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db, connector,
                     )
                     sample_data += f"\nTable '{tbl}' sample:\n"
                     sample_data += f"  Columns: {sample_result.columns}\n"
@@ -469,7 +470,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         logger.info(f"Widget '{widget_id}': SQL fix attempted, retrying with corrected SQL")
         try:
-            result = _run_widget_query(connection, fixed_sql, db, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, fixed_sql, db, connector)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             # Persist the fixed SQL back to the widget's dataSource
@@ -682,10 +683,16 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
         if schema_warnings:
             logger.warning("Schema validation warnings for '%s': %s", title, "; ".join(schema_warnings))
 
-        # Auto-execute SQL for SQL-backed widgets and populate config
-        for w in widgets:
-            if "dataSource" in w:
+        # Auto-execute SQL for SQL-backed widgets and populate config.
+        # Widgets are independent (each gets its own DB session + connector),
+        # so run them concurrently — bounded to avoid hammering the source DB.
+        sem = asyncio.Semaphore(5)
+
+        async def _exec_bounded(w):
+            async with sem:
                 await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+
+        await asyncio.gather(*[_exec_bounded(w) for w in widgets if "dataSource" in w])
 
         db = db_session_factory()
         try:
@@ -818,6 +825,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
 
         # Only execute SQL for widgets whose SQL changed or that are new
         sql_changed = False
+        to_execute = []
         for w in widgets:
             if "dataSource" not in w:
                 continue
@@ -837,7 +845,17 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 logger.info(f"Skipping SQL execution for unchanged widget '{w.get('id')}'")
             else:
                 sql_changed = True
-                await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+                to_execute.append(w)
+
+        if to_execute:
+            # Independent per-widget sessions/connectors — run concurrently, bounded.
+            sem = asyncio.Semaphore(5)
+
+            async def _exec_bounded(w):
+                async with sem:
+                    await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+
+            await asyncio.gather(*[_exec_bounded(w) for w in to_execute])
 
         db = db_session_factory()
         try:

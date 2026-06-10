@@ -18,9 +18,9 @@ Phase 1 — Context:
    - If `build_dashboard_context` returns `success: false` (e.g. "Connection context not built yet"), STOP. Tell the user in one short sentence which `connection_id` isn't ready and that they should re-profile it. Do NOT call `create_dashboard` afterwards — an empty-widget dashboard is a bug, not a fallback.
 
 Phase 2 — Design (informed by context):
-4. Call `get_widget_spec(widget_type)` for ALL data widget types — kpi, chart, table, pivot_table —
-   plus filter and text, BEFORE designing. Consider for each type whether the data supports it;
-   do not default to charts only.
+4. Call `get_widget_spec("all")` ONCE to fetch the specs for every widget type
+   (kpi, chart, table, pivot_table, filter, text) in a single call BEFORE designing.
+   Consider for each type whether the data supports it; do not default to charts only.
    - Pivot rule: if the data context has 2+ categorical dimensions and at least one numeric
      metric, you MUST include exactly one pivot_table in Section 4 (metric by A × B).
      Skip only when the data is genuinely one-dimensional.

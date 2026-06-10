@@ -48,3 +48,25 @@ def test_pivot_spec_includes_sorting():
     spec = get_widget_spec("pivot_table")
     assert "sortBy" in spec
     assert "sortDir" in spec
+
+
+def test_tool_accepts_all():
+    from backend.agents.dashboard_agent.tools import get_widget_spec as tool
+    combined = tool.func("all")
+    for widget_type in ALL_TYPES:
+        assert f'"{widget_type}"' in combined or widget_type in combined
+    assert combined.count("\n\n---\n\n") == len(ALL_TYPES) - 1
+
+
+def test_tool_accepts_comma_list():
+    from backend.agents.dashboard_agent.tools import get_widget_spec as tool
+    combined = tool.func("kpi, chart")
+    assert "valueColumn" in combined  # kpi mapping
+    assert "datasetColumns" in combined  # chart mapping
+    assert combined.count("\n\n---\n\n") == 1
+
+
+def test_tool_reports_unknown_type():
+    from backend.agents.dashboard_agent.tools import get_widget_spec as tool
+    out = tool.func("bogus")
+    assert "Unknown widget type" in out

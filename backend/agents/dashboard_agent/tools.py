@@ -9,27 +9,44 @@ from backend.config import settings
 
 @tool
 def get_widget_spec(widget_type: str) -> str:
-    """Get the complete configuration spec for a widget type.
+    """Get the complete configuration spec for one or more widget types.
 
-    Call this BEFORE configuring a widget to get the authoritative field definitions,
-    dataSource mapping structure, SQL patterns, and best practices.
+    Call this ONCE with "all" BEFORE designing to get the authoritative field
+    definitions, dataSource mapping structure, SQL patterns, and best
+    practices for every widget type in a single call.
 
     Args:
-        widget_type: One of "kpi", "chart", "table", "pivot_table", "filter", "text"
+        widget_type: "all" (preferred — returns every spec in one call), a
+            single type ("kpi", "chart", "table", "pivot_table", "filter",
+            "text"), or a comma-separated list ("kpi,chart,pivot_table")
 
     Returns:
-        Complete configuration spec for the widget type
+        Complete configuration spec(s), separated by "---" when multiple
     """
     from backend.agents.dashboard_agent.widget_specs import (
         get_widget_spec as _get_spec,
         get_available_types,
     )
 
-    spec = _get_spec(widget_type)
-    if spec is None:
+    requested = widget_type.strip().lower()
+    if requested == "all":
+        types = list(get_available_types())
+    else:
+        types = [t.strip() for t in requested.split(",") if t.strip()]
+
+    specs = []
+    unknown = []
+    for t in types:
+        spec = _get_spec(t)
+        if spec is None:
+            unknown.append(t)
+        else:
+            specs.append(spec)
+
+    if unknown:
         available = ", ".join(get_available_types())
-        return f"Unknown widget type '{widget_type}'. Valid types: {available}"
-    return spec
+        return f"Unknown widget type(s) {', '.join(unknown)}. Valid types: {available} (or 'all')"
+    return "\n\n---\n\n".join(specs)
 
 
 def _build_dashboard_context_tool(context: AgentContext, db_session_factory: Callable):
