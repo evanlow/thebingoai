@@ -582,10 +582,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
 
                 Layout guidelines (12-column grid, storytelling structure):
                   Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.
-                  Section 1 — KPI row (y=0):
-                    3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
-                  Section 2 — Filter bar (y=2):
+                  Section 1 — Filter bar (y=0, the very top row):
                     w=12, h=2. Add dropdowns for key categories, date_range for time columns.
+                  Section 2 — KPI row (y=2):
+                    3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
                   Section headers (text widgets):
                     w=12, h=1. Place at y=4, y=10, or y=15 as dividers between sections.
                   Section 3 — Analysis charts (y=5 to y=14):

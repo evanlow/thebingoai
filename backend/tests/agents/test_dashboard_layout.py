@@ -20,12 +20,13 @@ def _pos(widgets, wid):
 
 
 def _well_formed():
+    # Canonical section order: filter → KPI row → sections.
     return [
-        _w("kpi1", "kpi", 0, 0, 3, 2),
-        _w("kpi2", "kpi", 3, 0, 3, 2),
-        _w("kpi3", "kpi", 6, 0, 3, 2),
-        _w("kpi4", "kpi", 9, 0, 3, 2),
-        _w("filter", "filter", 0, 2, 12, 2),
+        _w("filter", "filter", 0, 0, 12, 2),
+        _w("kpi1", "kpi", 0, 2, 3, 2),
+        _w("kpi2", "kpi", 3, 2, 3, 2),
+        _w("kpi3", "kpi", 6, 2, 3, 2),
+        _w("kpi4", "kpi", 9, 2, 3, 2),
         _w("header1", "text", 0, 4, 12, 1),
         _w("chart1", "chart", 0, 5, 6, 5, "bar"),
         _w("chart2", "chart", 6, 5, 6, 5, "line"),
@@ -239,9 +240,9 @@ class TestMixedHeightBand:
             _w("c2", "chart", 0, 5, 8, 5, "line"),
             _w("p", "pivot_table", 8, 0, 4, 10),
         ]
-        before = copy.deepcopy([w["position"] for w in widgets])
+        before = {w["id"]: copy.deepcopy(w["position"]) for w in widgets}
         normalize_dashboard_layout(widgets)
-        assert [w["position"] for w in widgets] == before
+        assert {w["id"]: w["position"] for w in widgets} == before
 
 
 class TestSanitize:
@@ -271,7 +272,7 @@ class TestSanitize:
 
 
 class TestPreservation:
-    def test_order_ids_and_non_position_fields_untouched(self):
+    def test_non_position_fields_untouched(self):
         widgets = [
             _w("a", "chart", 0, 0, 5, 5, "bar"),
             _w("b", "chart", 5, 0, 5, 5, "line"),
@@ -279,4 +280,38 @@ class TestPreservation:
         widgets[0]["dataSource"] = {"connectionId": 1, "sql": "SELECT 1"}
         normalize_dashboard_layout(widgets)
         assert [w["id"] for w in widgets] == ["a", "b"]
-        assert widgets[0]["dataSource"] == {"connectionId": 1, "sql": "SELECT 1"}
+        a = next(w for w in widgets if w["id"] == "a")
+        assert a["dataSource"] == {"connectionId": 1, "sql": "SELECT 1"}
+
+
+class TestSectionOrdering:
+    def test_filter_pulled_to_top_kpis_second(self):
+        # Agent emitted filter at the bottom and KPIs in the middle.
+        widgets = [
+            _w("c1", "chart", 0, 0, 6, 5, "bar"),
+            _w("c2", "chart", 6, 0, 6, 5, "line"),
+            _w("k1", "kpi", 0, 5, 6, 2),
+            _w("k2", "kpi", 6, 5, 6, 2),
+            _w("f", "filter", 0, 7, 12, 2),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "f")["y"] == 0
+        assert _pos(widgets, "k1")["y"] == _pos(widgets, "k2")["y"] == 2
+        assert _pos(widgets, "c1")["y"] == _pos(widgets, "c2")["y"] == 4
+
+    def test_canonical_order_stable(self):
+        widgets = _well_formed()
+        before = copy.deepcopy([(w["id"], w["position"]) for w in widgets])
+        normalize_dashboard_layout(widgets)
+        assert [(w["id"], w["position"]) for w in widgets] == before
+
+    def test_array_sorted_into_reading_order(self):
+        widgets = [
+            _w("table", "table", 0, 10, 12, 5),
+            _w("c2", "chart", 6, 0, 6, 5, "line"),
+            _w("c1", "chart", 0, 0, 6, 5, "bar"),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert [w["id"] for w in widgets] == ["c1", "c2", "table"]
+        positions = [(w["position"]["y"], w["position"]["x"]) for w in widgets]
+        assert positions == sorted(positions)

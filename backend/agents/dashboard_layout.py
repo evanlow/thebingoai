@@ -5,10 +5,12 @@ output often leaves rows underfilled (e.g. a lone w=8 chart with 4 empty
 columns). This module post-processes the widget list so every row packs the
 full grid width, overlaps are resolved, and vertical gaps are compacted.
 
-Pure functions — no DB, no LLM, no side effects beyond mutating the
-`position` dicts in the list passed in. Idempotent: a well-formed layout
-passes through unchanged. Must never raise — a failure here would block
-dashboard creation, and any layout is better than no dashboard.
+Pure functions — no DB, no LLM. Mutates the `position` dicts and re-sorts
+the list in place into reading order (y, then x) so the persisted array
+order matches the visual order — the frontend grid adds widgets
+sequentially and depends on it. Idempotent: a well-formed layout passes
+through unchanged. Must never raise — a failure here would block dashboard
+creation, and any layout is better than no dashboard.
 """
 from __future__ import annotations
 
@@ -163,6 +165,24 @@ def _pair_up_lone_bands(bands: list[list[dict]]) -> list[list[dict]]:
     return merged
 
 
+def _order_sections(bands: list[list[dict]]) -> list[list[dict]]:
+    """Pull filter bands to the top, KPI bands right after, rest follows.
+
+    Stable within each group, so the agent's ordering of charts/tables is
+    preserved. Vertical compaction afterwards assigns y top-down, which
+    makes the reorder stick.
+    """
+    def group(band: list[dict]) -> int:
+        types = {_widget_type(w) for w in band}
+        if types == {"filter"}:
+            return 0
+        if types == {"kpi"}:
+            return 1
+        return 2
+
+    return sorted(bands, key=group)
+
+
 def _normalize_band_widths(band: list[dict]) -> None:
     """Widen a uniform band (same y and h) so widths sum to GRID_COLUMNS.
 
@@ -236,18 +256,23 @@ def _compact_vertical(bands: list[list[dict]]) -> None:
 def normalize_dashboard_layout(widgets: list[dict]) -> list[dict]:
     """Normalize agent-generated widget positions in place and return the list.
 
-    Passes: sanitize → resolve overlaps → fill row widths to 12 → compact
-    vertical gaps. Array order and all non-position fields are untouched.
+    Passes: sanitize → resolve overlaps → pair up lone rows → order sections
+    (filter → KPIs → rest) → fill row widths to 12 → compact vertical gaps →
+    sort the list into reading order. Non-position fields are untouched.
     """
     if not widgets:
         return widgets
     try:
         _sanitize(widgets)
         _resolve_overlaps(widgets)
-        bands = _pair_up_lone_bands(_detect_bands(widgets))
+        bands = _order_sections(_pair_up_lone_bands(_detect_bands(widgets)))
         for band in bands:
             _normalize_band_widths(band)
         _compact_vertical(bands)
+        # Reading-order array: the frontend grid adds widgets sequentially and
+        # float:false gravity scrambles saved positions when the array order
+        # disagrees with the visual order.
+        widgets.sort(key=lambda w: (w["position"]["y"], w["position"]["x"]))
     except Exception:
         # Layout normalization is best-effort — never block dashboard creation.
         logger.warning("normalize_dashboard_layout failed; keeping agent layout", exc_info=True)

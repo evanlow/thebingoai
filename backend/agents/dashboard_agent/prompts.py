@@ -56,20 +56,7 @@ The user asked for a **built dashboard**, not source code. Your reply text must 
 
 Structure every dashboard as a top-to-bottom data story:
 
-**Section 1 — Executive Summary (y=0):** 3-4 KPI cards answering "how are we doing at a glance?"
-
-**Section 1 KPI Rules (HARD CONSTRAINTS — violations are bugs):**
-- EXACTLY 3-4 KPIs total. ONE row, all at y=0. No second KPI row.
-- Each underlying metric appears AT MOST ONCE. Never create two KPIs for the same metric scoped to different time windows (e.g. one "Spend (Last 7 Days)" KPI and one "Spend (7D)" KPI). Pick ONE time window for each KPI.
-- Time-window switching is a FILTER BAR concern, not a widget concern. If the user wants to compare windows, set `dateRangeDefault` on the filter bar's `date_range` control and let widgets re-query.
-- Trend-over-period is expressed via the KPI's own `periodLabel` + `trendDateColumn` (see KPI widget spec), NOT by creating a second KPI for the previous period.
-- Label canonicalization — these refer to the same window, never use both:
-  - `(7D)` ≡ `(Last 7 Days)` — pick one form, prefer `(Last 7 Days)`.
-  - `(30D)` ≡ `(Last 30 Days)` — pick one form, prefer `(Last 30 Days)`.
-  - `(YTD)` ≡ `(Year to Date)` — pick one form, prefer `(Year to Date)`.
-- If the user's request says "show me spend for yesterday, last 7 days, and last 30 days", you must NOT generate three "Spend" KPIs. Pick the most useful window (typically Last 30 Days), put it in the KPI, and let the filter bar drive the window.
-
-**Section 2 — Filters (y=2):** A filter bar with dropdown, date_range, or search controls for the key dimensions.
+**Section 1 — Filters (y=0):** A filter bar at the VERY TOP of the dashboard (w=12, h=2) with dropdown, date_range, or search controls for the key dimensions.
   - Every `date_range` control MUST include `dateRangeSource` (SQL returning `min_date`/`max_date`) and `dateRangeDefault`.
   - Without `dateRangeSource`, the filter defaults to "last 7 days from today" — empty charts on historical data.
   - `dateRangeDefault` values: `"full"` (min→max, safe default for historical data), `"7d"`, `"30d"`, `"90d"` (last N days from max), `"ytd"` (year-to-date).
@@ -80,6 +67,19 @@ Structure every dashboard as a top-to-bottom data story:
      "dateRangeDefault": "full"}
     ```
 
+**Section 2 — Executive Summary (y=2):** 3-4 KPI cards answering "how are we doing at a glance?"
+
+**Section 2 KPI Rules (HARD CONSTRAINTS — violations are bugs):**
+- EXACTLY 3-4 KPIs total. ONE row, all at y=2 (directly below the filter bar). No second KPI row.
+- Each underlying metric appears AT MOST ONCE. Never create two KPIs for the same metric scoped to different time windows (e.g. one "Spend (Last 7 Days)" KPI and one "Spend (7D)" KPI). Pick ONE time window for each KPI.
+- Time-window switching is a FILTER BAR concern, not a widget concern. If the user wants to compare windows, set `dateRangeDefault` on the filter bar's `date_range` control and let widgets re-query.
+- Trend-over-period is expressed via the KPI's own `periodLabel` + `trendDateColumn` (see KPI widget spec), NOT by creating a second KPI for the previous period.
+- Label canonicalization — these refer to the same window, never use both:
+  - `(7D)` ≡ `(Last 7 Days)` — pick one form, prefer `(Last 7 Days)`.
+  - `(30D)` ≡ `(Last 30 Days)` — pick one form, prefer `(Last 30 Days)`.
+  - `(YTD)` ≡ `(Year to Date)` — pick one form, prefer `(Year to Date)`.
+- If the user's request says "show me spend for yesterday, last 7 days, and last 30 days", you must NOT generate three "Spend" KPIs. Pick the most useful window (typically Last 30 Days), put it in the KPI, and let the filter bar drive the window.
+
 **Section 3 — Analysis & Trends (y=4 to y=14):** Text section header, then 3-5 charts with varied types, placed side-by-side.
 
 **Section 4 — Detail & Drill-Down (y=15+):** One Text section header (e.g. "## Detail & Records"), then 1-2 detail tables. Use `config.title` on each table widget for its specific title — do NOT add extra Text widgets just to title individual tables.
@@ -88,8 +88,8 @@ Structure every dashboard as a top-to-bottom data story:
 ### Layout Patterns (12-column grid)
 
 ```
-Row 0:      KPI row — 3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
-Row 2:      Filter bar — w=12, h=2. Dropdowns for key categorical cols, date_range for time cols.
+Row 0:      Filter bar — w=12, h=2. Dropdowns for key categorical cols, date_range for time cols.
+Row 2:      KPI row — 3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
 Row 4:      Text section header — w=12, h=1 (e.g. "## Trends & Breakdown")
 Rows 5-9:   Primary charts SIDE-BY-SIDE:
               Equal halves:  x=0 w=6 | x=6 w=6  (same y, h=5)
