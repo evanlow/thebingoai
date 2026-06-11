@@ -13,6 +13,7 @@ export default defineNuxtPlugin(async () => {
           method: 'POST',
           body: { key: bypassKey },
           credentials: 'include',
+          timeout: 10_000,
         })
       } catch {
         // Invalid key / bypass disabled → user will see the maintenance page.
@@ -22,8 +23,13 @@ export default defineNuxtPlugin(async () => {
     }
   }
 
-  // Load SSO auth config from backend (includes maintenance state + bypass flag)
-  await authStore.loadAuthConfig()
+  // Load SSO auth config from backend (includes maintenance state + bypass flag).
+  // Must never block app mount forever — a hung backend would leave a blank page.
+  try {
+    await authStore.loadAuthConfig()
+  } catch (error) {
+    console.error('Auth config load failed during boot, continuing degraded:', error)
+  }
 
   // Restore user session from localStorage
   try {

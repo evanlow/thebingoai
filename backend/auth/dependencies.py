@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -60,6 +61,27 @@ async def get_current_user(
             detail="Email address not verified",
         )
 
+    # Sync SQLAlchemy work runs in the threadpool so a slow DB round-trip
+    # (NullPool behind PgBouncer = fresh TLS connection per request) never
+    # blocks the event loop.
+    user = await run_in_threadpool(_resolve_local_user, request, db, sso_user)
+
+    # Bind the user to the request-scoped contextvar so the governance
+    # plugin's DataPlane wrap can enforce ACL without threading `user`
+    # through every caller. The contextvar resets at request end via FastAPI's
+    # task-scoped contextvars; we don't need an explicit reset here.
+    from backend.auth.request_context import set_current_request_user
+    set_current_request_user(user)
+
+    return user
+
+
+def _resolve_local_user(request: Request, db: Session, sso_user) -> User:
+    """Resolve (or create) the local User for a validated SSO user.
+
+    Runs in the threadpool — keep all sync DB access here, not in
+    get_current_user.
+    """
     # Look up by sso_id first
     user = db.query(User).filter(User.sso_id == sso_user.id).first()
 
@@ -96,13 +118,6 @@ async def get_current_user(
             user.active_role = active_role
             request.state.active_org_id = active_org
             request.state.active_role = active_role
-
-    # Bind the user to the request-scoped contextvar so the governance
-    # plugin's DataPlane wrap can enforce ACL without threading `user`
-    # through every caller. The contextvar resets at request end via FastAPI's
-    # task-scoped contextvars; we don't need an explicit reset here.
-    from backend.auth.request_context import set_current_request_user
-    set_current_request_user(user)
 
     return user
 

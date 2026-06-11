@@ -19,4 +19,4 @@ USER appuser
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/health')"
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host ${BACKEND_HOST:-0.0.0.0} --port ${BACKEND_PORT:-8000}"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host ${BACKEND_HOST:-0.0.0.0} --port ${BACKEND_PORT:-8000} --workers ${UVICORN_WORKERS:-1}"]
