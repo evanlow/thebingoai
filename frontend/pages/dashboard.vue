@@ -278,6 +278,20 @@ onMounted(async () => {
   }
 })
 
+// Bulk widget loading (per-Org flag): filter changes refresh the whole
+// dashboard in one bulk request instead of one call per widget (the
+// per-widget useWidgetData watcher stays quiet under the flag). The
+// in-flight key inside refreshAllWidgets dedups against openDashboard's
+// initial bulk call when restored filters resolve during dashboard load.
+watch(
+  () => JSON.stringify(store.activeFilters),
+  () => {
+    if (store.bulkWidgetLoading && store.currentDashboardId != null) {
+      void store.refreshAllWidgets()
+    }
+  },
+)
+
 // ── Drill-down state ──────────────────────────────────────
 const sqlEditorWidget = ref<DashboardWidget | null>(null)
 const sqlEditorError = ref<string | null>(null)

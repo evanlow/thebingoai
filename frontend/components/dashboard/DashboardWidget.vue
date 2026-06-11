@@ -131,8 +131,9 @@
       <span v-else-if="lastRefreshedAt" class="age" :title="lastRefreshedAt">{{ formatRelativeTime(lastRefreshedAt) }}</span>
     </div>
 
-    <!-- Loading skeleton -->
-    <div v-if="loading" class="absolute inset-0 z-20 bg-[var(--paper-0)] dark:bg-neutral-800">
+    <!-- Loading skeleton — only when there's no stored data to paint;
+         widgets with data keep showing it while a refresh is in flight -->
+    <div v-if="loading && !hasData" class="absolute inset-0 z-20 bg-[var(--paper-0)] dark:bg-neutral-800">
       <DashboardWidgetSkeleton :type="widget.widget.type" />
     </div>
 
@@ -165,6 +166,7 @@ import { GripVertical, X, RefreshCw, Code, Copy, Settings } from 'lucide-vue-nex
 import type { DashboardWidget } from '~/types/dashboard'
 import { useWidgetData } from '~/composables/useWidgetData'
 import { parseUtcDate } from '~/utils/format'
+import { hasRenderableData } from '~/utils/widgetRender'
 
 const props = defineProps<{
   widget: DashboardWidget
@@ -193,6 +195,8 @@ const WIDGET_TYPE_LABELS: Record<string, string> = {
 const widgetDisplayName = computed(() =>
   WIDGET_TYPE_LABELS[props.widget.widget.type] ?? props.widget.widget.type,
 )
+
+const hasData = computed(() => hasRenderableData(props.widget))
 
 function formatRelativeTime(isoString: string): string {
   const diff = Date.now() - parseUtcDate(isoString).getTime()

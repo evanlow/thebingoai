@@ -356,6 +356,96 @@ def _duckdb_serving_enabled(org_id: str | None) -> bool:
     return enabled(str(org_id), "duckdb_widget_serving")
 
 
+def _widget_cache_enabled(org_id: str | None) -> bool:
+    """True when the per-Org `widget_result_cache` flag is on for this Org."""
+    if not org_id:
+        return False
+    try:
+        from backend.config.feature_flags import enabled
+        return enabled(str(org_id), "widget_result_cache")
+    except Exception:
+        logger.debug("widget_result_cache flag check failed", exc_info=True)
+        return False
+
+
+def _widget_cache_key(dashboard_id, widget_id, sql, filters, org_id, user_id):
+    """(key, ttl) for this widget read, or (None, None) when caching doesn't
+    apply (no dashboard/widget identity, or the per-Org flag is off).
+
+    Editor/preview calls carry no widget_id, so they are naturally uncached.
+    """
+    if not dashboard_id or not widget_id or not _widget_cache_enabled(org_id):
+        return None, None
+    from backend.config import settings
+    from backend.services import widget_result_cache as wrc
+
+    scope_kind, scope_id = ("org", org_id) if org_id else ("user", user_id)
+    filters_dump = [
+        f.model_dump() if hasattr(f, "model_dump") else dict(f)
+        for f in (filters or [])
+    ]
+    generation = wrc.get_generation(dashboard_id)
+    key = wrc.build_key(scope_kind, scope_id, dashboard_id, widget_id, sql, filters_dump, generation)
+    ttl = settings.widget_cache_ttl_filtered if filters else settings.widget_cache_ttl_unfiltered
+    return key, ttl
+
+
+def _widget_cache_lookup(key, mapping) -> "WidgetRefreshResponse | None":
+    """Cache hit → WidgetRefreshResponse replaying stored rows through the
+    current mapping (mapping can change without the SQL changing). None on miss."""
+    if not key:
+        return None
+    from types import SimpleNamespace
+    from backend.services import widget_result_cache as wrc
+
+    hit = wrc.get(key)
+    if hit is None:
+        return None
+    try:
+        result = SimpleNamespace(
+            columns=hit["columns"],
+            rows=hit["rows"],
+            row_count=hit.get("row_count", len(hit["rows"])),
+            execution_time_ms=0.0,
+            truncated=hit.get("truncated", False),
+        )
+        config = transform_widget_data(result, mapping)
+    except Exception:
+        logger.debug("widget_result_cache replay failed; treating as miss", exc_info=True)
+        return None
+    return WidgetRefreshResponse(
+        config=config,
+        execution_time_ms=0.0,
+        row_count=result.row_count,
+        truncated=result.truncated,
+        refreshed_at=hit.get("cached_at") or datetime.now(timezone.utc).isoformat(),
+        source_columns=result.columns,
+        source_rows=result.rows,
+        served_from=hit.get("served_from"),
+    )
+
+
+def _widget_cache_store(key, ttl, resp: "WidgetRefreshResponse | None") -> None:
+    """Write-through from a refresh response. `put` only stores data_plane /
+    cache outcomes — source-fallback results are degraded state, never pinned."""
+    if not key or resp is None:
+        return
+    from backend.services import widget_result_cache as wrc
+
+    wrc.put(
+        key,
+        {
+            "columns": resp.source_columns,
+            "rows": resp.source_rows,
+            "row_count": resp.row_count,
+            "truncated": resp.truncated,
+            "served_from": resp.served_from,
+            "cached_at": resp.refreshed_at,
+        },
+        ttl=ttl,
+    )
+
+
 def _build_widget_response(result, mapping, served_from: str = "data_plane") -> "WidgetRefreshResponse":
     """Shared QueryResult → WidgetRefreshResponse (local + GCS serving paths).
 
@@ -568,17 +658,37 @@ async def refresh_widget(
     """
     dashboard = None
     if request.dashboard_id:
-        dashboard = db.query(Dashboard).filter(
-            Dashboard.id == request.dashboard_id,
-            Dashboard.user_id == current_user.id,
-        ).first()
+        # Org-wide visibility, matching GET /dashboards/{id}: any org member who
+        # can view the dashboard can refresh its widgets.
+        from backend.api.dashboards import _dashboard_visible_to
+        dashboard = (
+            _dashboard_visible_to(db.query(Dashboard), current_user)
+            .filter(Dashboard.id == request.dashboard_id)
+            .first()
+        )
+
+    org_id = getattr(current_user, "org_id", None)
+
+    # Redis result cache (flag-gated, per-Org). Keys embed the dashboard's
+    # materialization generation, so unfiltered hits are exact; hits skip the
+    # serving ladder entirely.
+    cache_key, cache_ttl = (None, None)
+    if dashboard:
+        cache_key, cache_ttl = _widget_cache_key(
+            request.dashboard_id, request.widget_id, request.sql,
+            request.filters, org_id, current_user.id,
+        )
+        cached_resp = _widget_cache_lookup(cache_key, request.mapping)
+        if cached_resp is not None:
+            return cached_resp
 
     # DuckDB-over-DataPlane serving (flag-gated, per-Org). Serves filtered and
     # unfiltered reads alike; returns None to fall through on cold source etc.
-    if dashboard and _duckdb_serving_enabled(getattr(current_user, "org_id", None)):
+    if dashboard and _duckdb_serving_enabled(org_id):
         try:
             served = _serve_widget_via_dataplane(request, dashboard, current_user, db)
             if served is not None:
+                _widget_cache_store(cache_key, cache_ttl, served)
                 return served
         except Exception as e:
             logger.warning(
@@ -597,7 +707,7 @@ async def refresh_widget(
             )
             if result is not None:
                 config = transform_widget_data(result, request.mapping)
-                return WidgetRefreshResponse(
+                resp = WidgetRefreshResponse(
                     config=config,
                     execution_time_ms=result.execution_time_ms,
                     row_count=result.row_count,
@@ -610,6 +720,8 @@ async def refresh_widget(
                     ],
                     served_from="cache",
                 )
+                _widget_cache_store(cache_key, cache_ttl, resp)
+                return resp
         except Exception as e:
             logger.warning(f"DataPlane cache read failed for widget {request.widget_id}, falling back to source DB: {e}")
 
@@ -731,10 +843,14 @@ async def refresh_dashboard_widgets(
     without a dataSource are skipped; per-widget failures are captured as
     {error} rather than failing the entire request.
     """
-    dashboard = db.query(Dashboard).filter(
-        Dashboard.id == dashboard_id,
-        Dashboard.user_id == current_user.id,
-    ).first()
+    # Org-wide visibility, matching GET /dashboards/{id}: any org member who
+    # can view the dashboard can refresh its widgets.
+    from backend.api.dashboards import _dashboard_visible_to
+    dashboard = (
+        _dashboard_visible_to(db.query(Dashboard), current_user)
+        .filter(Dashboard.id == dashboard_id)
+        .first()
+    )
 
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
@@ -773,6 +889,24 @@ async def refresh_dashboard_widgets(
     connection_cache: dict = {}
     connector_cache: dict = {}
 
+    # Redis result cache (flag-gated, per-Org): generation, scope, and filter
+    # canonicalization computed once for the whole dashboard; lookups are one
+    # GET per widget. `bulk_cache_gen is not None` marks the cache active.
+    bulk_cache_gen = None
+    bulk_cache_scope = None
+    bulk_cache_ttl = None
+    bulk_filters_dump = None
+    if _widget_cache_enabled(org_id):
+        from backend.config import settings
+        from backend.services import widget_result_cache as wrc
+        bulk_cache_scope = ("org", org_id) if org_id else ("user", current_user.id)
+        bulk_cache_gen = wrc.get_generation(dashboard_id)
+        bulk_filters_dump = [
+            f.model_dump() if hasattr(f, "model_dump") else dict(f)
+            for f in (filters or [])
+        ]
+        bulk_cache_ttl = settings.widget_cache_ttl_filtered if filters else settings.widget_cache_ttl_unfiltered
+
     try:
         for widget in widgets:
             widget_id = widget.get("id")
@@ -792,6 +926,23 @@ async def refresh_dashboard_widgets(
             if chart_type and "chartType" not in mapping:
                 mapping = {**mapping, "chartType": chart_type}
 
+            # Redis result cache lookup — a hit skips the serving ladder.
+            widget_cache_key = None
+            if bulk_cache_gen is not None and widget_id:
+                from backend.services import widget_result_cache as wrc
+                widget_cache_key = wrc.build_key(
+                    bulk_cache_scope[0], bulk_cache_scope[1], dashboard_id,
+                    widget_id, sql, bulk_filters_dump, bulk_cache_gen,
+                )
+                cached_resp = _widget_cache_lookup(widget_cache_key, mapping)
+                if cached_resp is not None:
+                    results[widget_id] = {
+                        "config": cached_resp.config,
+                        "refreshed_at": cached_resp.refreshed_at,
+                        "served_from": cached_resp.served_from,
+                    }
+                    continue
+
             # DuckDB-over-DataPlane serving (flag-gated, per migrated dashboard) —
             # same path as single-widget refresh, so bulk loads on cut-over Orgs
             # avoid the per-widget BQ job. Falls through on None (GAP-7).
@@ -807,6 +958,7 @@ async def refresh_dashboard_widgets(
                         reader=shared_reader,
                     )
                     if served is not None:
+                        _widget_cache_store(widget_cache_key, bulk_cache_ttl, served)
                         results[widget_id] = {"config": served.config, "refreshed_at": refreshed_at, "served_from": served.served_from}
                         continue
                 except Exception as e:
@@ -821,6 +973,16 @@ async def refresh_dashboard_widgets(
                         org_id=org_id, user_id=current_user.id,
                     )
                     if cached is not None:
+                        if widget_cache_key:
+                            from backend.services import widget_result_cache as wrc
+                            wrc.put(widget_cache_key, {
+                                "columns": cached.columns,
+                                "rows": [[_to_json_safe(v) for v in row] for row in cached.rows],
+                                "row_count": cached.row_count,
+                                "truncated": getattr(cached, "truncated", False),
+                                "served_from": "cache",
+                                "cached_at": refreshed_at,
+                            }, ttl=bulk_cache_ttl)
                         results[widget_id] = {
                             "config": transform_widget_data(cached, mapping),
                             "refreshed_at": refreshed_at,
