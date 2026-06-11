@@ -316,6 +316,19 @@ class BigQueryGCSPlane:
         except NotFound:
             return None
 
+    def delete_raw_object(self, scope: OwnerScope, rel_path: str) -> None:
+        """Delete the raw object at *rel_path*; silently no-op when absent."""
+        from google.cloud.exceptions import NotFound
+        blob = self._gcs().bucket(self._bucket_name).blob(rel_path)
+        try:
+            blob.delete()
+        except NotFound:
+            pass
+
+    def raw_object_exists(self, scope: OwnerScope, rel_path: str) -> bool:
+        """Return True when a raw object exists at *rel_path*."""
+        return self._gcs().bucket(self._bucket_name).blob(rel_path).exists()
+
     def query(
         self,
         scope: OwnerScope,

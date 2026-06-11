@@ -252,6 +252,22 @@ def test_raw_object_not_listed_as_table(plane, scope):
     assert "_raw" not in plane.list_tables(scope)
 
 
+def test_delete_raw_object_removes_file(plane, scope):
+    plane.put_raw_object(scope, "sqlite_blobs/c1.sqlite", b"blob", "application/x-sqlite3")
+    plane.delete_raw_object(scope, "sqlite_blobs/c1.sqlite")
+    assert plane.get_raw_object(scope, "sqlite_blobs/c1.sqlite") is None
+
+
+def test_delete_raw_object_missing_is_noop(plane, scope):
+    plane.delete_raw_object(scope, "sqlite_blobs/never-existed.sqlite")  # must not raise
+
+
+def test_raw_object_exists(plane, scope):
+    assert plane.raw_object_exists(scope, "sqlite_blobs/c1.sqlite") is False
+    plane.put_raw_object(scope, "sqlite_blobs/c1.sqlite", b"blob", "application/x-sqlite3")
+    assert plane.raw_object_exists(scope, "sqlite_blobs/c1.sqlite") is True
+
+
 # ── storage_bytes ─────────────────────────────────────────────────────────
 
 def test_storage_bytes_zero_for_unwritten_scope(plane, scope):

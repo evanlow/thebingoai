@@ -523,3 +523,44 @@ def test_get_raw_object_missing_returns_none(plane, scope):
 
     with patch.object(plane, "_gcs", return_value=mock_gcs):
         assert plane.get_raw_object(scope, "chat_files/t/f.csv") is None
+
+
+def test_delete_raw_object_deletes_blob(plane, scope):
+    mock_blob = MagicMock()
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        plane.delete_raw_object(scope, "sqlite_blobs/c1.sqlite")
+
+    mock_bucket.blob.assert_called_once_with("sqlite_blobs/c1.sqlite")
+    mock_blob.delete.assert_called_once_with()
+
+
+def test_delete_raw_object_missing_is_noop(plane, scope):
+    from google.cloud.exceptions import NotFound
+    mock_blob = MagicMock()
+    mock_blob.delete.side_effect = NotFound("nope")
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        plane.delete_raw_object(scope, "sqlite_blobs/c1.sqlite")  # must not raise
+
+
+def test_raw_object_exists_delegates_to_blob(plane, scope):
+    mock_blob = MagicMock()
+    mock_blob.exists.return_value = True
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs):
+        assert plane.raw_object_exists(scope, "sqlite_blobs/c1.sqlite") is True
+
+    mock_bucket.blob.assert_called_once_with("sqlite_blobs/c1.sqlite")

@@ -215,6 +215,39 @@ class TestFromConnection:
         assert conn.health_checked_at is not None
 
 
+class TestFromConnectionDataPlaneBlob:
+    """A dp: key on dataset_table_name reads the blob from the DataPlane,
+    never touching DO Spaces."""
+
+    def test_dp_key_loads_blob_from_plane(self, sample_db, tmp_path):
+        from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
+        from backend.data_plane.scope import OwnerScope
+
+        plane = LocalFilesystemDataPlane(root_path=str(tmp_path / "plane"))
+        scope = OwnerScope("user", "user-1")
+        with open(sample_db, "rb") as f:
+            blob = f.read()
+        plane.put_raw_object(scope, "sqlite_blobs/u-1.sqlite", blob, "application/x-sqlite3")
+
+        connection = MagicMock()
+        connection.id = 789
+        connection.uuid = "u-1"
+        connection.dataset_table_name = "dp:sqlite_blobs/u-1.sqlite"
+        connection.owner_scope_kind = "user"
+        connection.owner_scope_id = "user-1"
+
+        with patch("backend.config.settings") as mock_settings, \
+             patch("backend.services.data_plane_service.get_default_plane",
+                   return_value=plane), \
+             patch("backend.services.object_storage.download_bytes") as mock_download:
+            mock_settings.dataset_cache_dir = str(tmp_path / "cache")
+            result = SqliteFileConnector.from_connection(connection)
+
+        assert isinstance(result, SqliteFileConnector)
+        assert result.get_tables() == ["users"]
+        mock_download.assert_not_called()
+
+
 class TestFromConnectionDataPlaneReroute:
     """Phase 4: when MigrationJournal.status='migrated' exists for the connection,
     `from_connection` must return a DataPlaneConnector and bypass the DO Spaces blob."""
