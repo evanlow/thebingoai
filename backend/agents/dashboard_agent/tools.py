@@ -45,7 +45,10 @@ def get_widget_spec(widget_type: str) -> str:
 
     if unknown:
         available = ", ".join(get_available_types())
-        return f"Unknown widget type(s) {', '.join(unknown)}. Valid types: {available} (or 'all')"
+        warning = f"Unknown widget type(s) {', '.join(unknown)}. Valid types: {available} (or 'all')"
+        if not specs:
+            return warning
+        return warning + "\n\n---\n\n" + "\n\n---\n\n".join(specs)
     return "\n\n---\n\n".join(specs)
 
 

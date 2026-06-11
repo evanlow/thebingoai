@@ -70,3 +70,10 @@ def test_tool_reports_unknown_type():
     from backend.agents.dashboard_agent.tools import get_widget_spec as tool
     out = tool.func("bogus")
     assert "Unknown widget type" in out
+
+
+def test_tool_mixed_valid_and_unknown():
+    from backend.agents.dashboard_agent.tools import get_widget_spec as tool
+    out = tool.func("kpi,bogus")
+    assert "Unknown widget type" in out
+    assert "valueColumn" in out  # kpi spec still returned

@@ -18,7 +18,7 @@ _DATA_WIDGET_TYPES = {"kpi", "chart", "table", "pivot_table"}
 _VALID_MAPPING_TYPES = {"kpi", "chart", "table", "pivot_table"}
 
 
-def _run_widget_query(connection, sql: str, db, connector):
+def _run_widget_query(connection, sql: str, db_session_factory, connector):
     """Execute widget SQL against the right surface.
 
     For connectors that own a managed pipeline + materialised view in the
@@ -29,23 +29,30 @@ def _run_widget_query(connection, sql: str, db, connector):
 
     For every other connector type, fall back to the standard
     `connector.execute_query(sql)` path.
+
+    Runs inside asyncio.to_thread, so it creates its own session — sessions
+    must not be shared across threads.
     """
     if connection.db_type == "bigquery_ga4":
         from backend.data_plane.scope import OwnerScope
         from backend.models.pipeline import Pipeline
         from backend.services.data_plane_service import get_default_plane
 
-        pipeline = db.query(Pipeline).filter(
-            Pipeline.source_connection_id == connection.id,
-        ).first()
-        if pipeline is None:
-            # No managed pipeline yet -- nothing to query. Defer to the
-            # source connector so the LLM sees a clear "table not found"
-            # rather than a silent empty result.
-            return connector.execute_query(sql)
-        scope = OwnerScope(kind=pipeline.owner_scope_kind, id=pipeline.owner_scope_id)
-        plane = get_default_plane(scope, db)
-        return plane.query(scope, sql)
+        db = db_session_factory()
+        try:
+            pipeline = db.query(Pipeline).filter(
+                Pipeline.source_connection_id == connection.id,
+            ).first()
+            if pipeline is None:
+                # No managed pipeline yet -- nothing to query. Defer to the
+                # source connector so the LLM sees a clear "table not found"
+                # rather than a silent empty result.
+                return connector.execute_query(sql)
+            scope = OwnerScope(kind=pipeline.owner_scope_kind, id=pipeline.owner_scope_id)
+            plane = get_default_plane(scope, db)
+            return plane.query(scope, sql)
+        finally:
+            db.close()
     return connector.execute_query(sql)
 
 
@@ -424,7 +431,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         connector = get_connector_for_connection(connection)
 
         try:
-            result = await asyncio.to_thread(_run_widget_query, connection, sql, db, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, sql, db_session_factory, connector)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             logger.info(f"Widget '{widget_id}': SQL executed, config populated with {result.row_count} rows")
@@ -441,7 +448,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
             for tbl in list(tables)[:2]:
                 try:
                     sample_result = await asyncio.to_thread(
-                        _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db, connector,
+                        _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
                     )
                     sample_data += f"\nTable '{tbl}' sample:\n"
                     sample_data += f"  Columns: {sample_result.columns}\n"
@@ -470,7 +477,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         logger.info(f"Widget '{widget_id}': SQL fix attempted, retrying with corrected SQL")
         try:
-            result = await asyncio.to_thread(_run_widget_query, connection, fixed_sql, db, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, fixed_sql, db_session_factory, connector)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             # Persist the fixed SQL back to the widget's dataSource
