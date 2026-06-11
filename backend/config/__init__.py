@@ -168,6 +168,11 @@ class Settings(BaseSettings):
     max_query_rows: int = 5000
     query_timeout_ms: int = 120000
 
+    # Widget result cache (per-Org flag `widget_result_cache`)
+    widget_cache_ttl_unfiltered: int = 3600   # exact until materialize bumps the generation
+    widget_cache_ttl_filtered: int = 120      # filtered reads scan live Parquet; short staleness window
+    widget_cache_max_bytes: int = 2_000_000   # skip caching payloads larger than this
+
     # SSO Authentication
     sso_base_url: str = "https://sso.thebingo.ai"
     sso_publishable_key: str = "Bingo-Community"   # app name (community) or pk_* key (enterprise)

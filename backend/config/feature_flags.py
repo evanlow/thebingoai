@@ -42,6 +42,7 @@ KNOWN_FLAGS: frozenset[str] = frozenset({
     "native_merge_data_plane",
     "duckdb_widget_serving",
     "bulk_widget_loading",
+    "widget_result_cache",
 })
 
 
