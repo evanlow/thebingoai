@@ -17,7 +17,7 @@ Available tools:
 - query_ga4_pipeline(connection_id, sql): SQL against a materialized GA4 pipeline (the dedup view). REQUIRED whenever the connection's db_type is `bigquery_ga4` -- the raw events_* source is not directly queryable here. Use bare table names like `ga4_events_<conn_id>_<analytics_id>` (the data plane resolves them).
 
 Guidelines:
-1. **Explore first**: Always use search_tables or list_tables before writing SQL
+1. **Explore first**: Always use search_tables or list_tables before writing SQL. Exception: connections whose full schema is pre-loaded in this prompt (see "Pre-loaded dataset schemas") — query those directly without any discovery calls.
 2. **Check schemas**: Use get_table_schema to understand column names and types
 3. **Read-only**: Generate SELECT queries only - no INSERT/UPDATE/DELETE
 4. **Self-heal, don't ask**: If `execute_query` returns `{"error": "..."}`, classify and fix it yourself — do NOT ask the user for permission on technical recovery.
@@ -92,4 +92,73 @@ def build_data_agent_prompt(available_connections: list[int], connection_metadat
     return (
         DATA_AGENT_SYSTEM_PROMPT
         + f"\n\nAvailable database connections:\n{connections_str}"
+    )
+
+
+def build_dataset_context_block(connection_metadata: list) -> str:
+    """Render pre-loaded schema + stats for dataset connections.
+
+    Dataset connections have exactly one known table, so when their
+    data_context is already saved (built inline at upload), the agent can
+    skip the list_tables/get_table_schema discovery round-trips and write
+    SQL directly. Returns "" when no dataset connection has a context yet.
+    """
+    dataset_conns = [
+        c for c in (connection_metadata or [])
+        if getattr(c, "db_type", None) == "dataset"
+    ]
+    if not dataset_conns:
+        return ""
+
+    from backend.database.session import SessionLocal
+    from backend.services.connection_context import load_connection_context
+
+    blocks: list[str] = []
+    db = SessionLocal()
+    try:
+        for conn in dataset_conns:
+            ctx = load_connection_context(db, conn.id)
+            if not ctx:
+                continue
+            for tname, tdata in ctx.get("tables", {}).items():
+                lines = [
+                    f'\nConnection {conn.id} ("{conn.name}") — table {tname} '
+                    f"({tdata.get('rowCount', 0)} rows):"
+                ]
+                for cname, cdata in tdata.get("columns", {}).items():
+                    parts = [
+                        str(cdata.get("type", "text")),
+                        f"role={cdata.get('role', 'attribute')}",
+                    ]
+                    if cdata.get("min") is not None and cdata.get("max") is not None:
+                        parts.append(f"range {cdata['min']} to {cdata['max']}")
+                    if cdata.get("cardinality") is not None:
+                        parts.append(f"{cdata['cardinality']} distinct")
+                    if cdata.get("topValues"):
+                        sample = ", ".join(str(v) for v in cdata["topValues"][:3])
+                        parts.append(f"e.g. {sample}")
+                    lines.append(f"  - {cname}: {' | '.join(parts)}")
+                blocks.append("\n".join(lines))
+    finally:
+        db.close()
+
+    if not blocks:
+        return ""
+
+    dialect = ""
+    try:
+        from backend.connectors.factory import get_connector_registration
+        reg = get_connector_registration("dataset")
+        if reg and reg.sql_dialect_hint:
+            dialect = f"\nSQL dialect for these tables: {reg.sql_dialect_hint}"
+    except Exception:
+        pass
+
+    return (
+        "\n\n## Pre-loaded dataset schemas\n"
+        "The complete schema for the dataset connections below is already "
+        "provided. Do NOT call list_tables, get_table_schema, or search_tables "
+        "for these connections — write SQL directly with execute_query."
+        + dialect
+        + "\n" + "".join(blocks)
     )

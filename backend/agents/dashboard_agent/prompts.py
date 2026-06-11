@@ -291,6 +291,10 @@ def build_dashboard_agent_prompt(
             if rels:
                 lines.append(f"Relationships: {', '.join(r['from'] + ' → ' + r['to'] for r in rels[:10])}")
             lines.append("Use `build_dashboard_context` to assemble a dashboard context from these tables.")
+            lines.append(
+                "If this pre-built context already covers the tables you need, "
+                "skip list_tables/get_table_schema and call build_dashboard_context directly."
+            )
             prompt += "\n".join(lines)
     finally:
         db.close()
