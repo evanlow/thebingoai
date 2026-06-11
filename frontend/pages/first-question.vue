@@ -181,7 +181,5 @@ onMounted(async () => {
 definePageMeta({
   layout: false,
   middleware: 'auth',
-  pageTransition: false,
-  layoutTransition: false,
 })
 </script>
