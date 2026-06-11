@@ -148,7 +148,10 @@ const recentConnection = ref<DatabaseConnection | null>(null)
 
 // Point the first question (and the resulting chat) at the chosen connection.
 function applyPendingConnection() {
-  chatStore.pendingConnectionIds = recentConnection.value ? [recentConnection.value.id] : []
+  // Fall back to the route-query id so the scope survives a Send/Finish click
+  // before the async connections list resolves (recentConnection still null).
+  const id = recentConnection.value?.id ?? connectionId
+  chatStore.pendingConnectionIds = id ? [id] : []
 }
 
 function handleSend() {
