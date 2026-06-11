@@ -52,7 +52,7 @@ celery_app.conf.beat_schedule = {
     },
     "detect-skill-patterns": {
         "task": "detect_skill_patterns",
-        "schedule": crontab(hour="*/6"),  # every 6 hours
+        "schedule": crontab(minute=0, hour="*/12"),  # every 12 hours
     },
     "agent-health-check": {
         "task": "agent_health_check",

@@ -110,7 +110,10 @@ class LocalFilesystemDataPlane:
 
     def _get_conn(self) -> duckdb.DuckDBPyConnection:
         if self._conn is None:
+            from .duckdb_exec import apply_memory_guardrails
+
             self._conn = duckdb.connect()
+            apply_memory_guardrails(self._conn)
         return self._conn
 
     def close(self) -> None:
@@ -300,6 +303,8 @@ class LocalFilesystemDataPlane:
             raise FileNotFoundError(f"dbt duckdb store not found: {dbt_path}")
         conn = duckdb.connect(dbt_path, read_only=True)
         try:
+            from .duckdb_exec import apply_memory_guardrails
+            apply_memory_guardrails(conn)
             return conn.execute(f'SELECT * FROM "{model_name}"').fetch_arrow_table()
         finally:
             conn.close()

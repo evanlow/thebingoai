@@ -40,6 +40,9 @@ class DashboardResponse(BaseModel):
     schedule_active: bool = False
     next_run_at: Optional[str] = None
     last_run_at: Optional[str] = None
+    # Per-Org rollout gate: frontend loads widget data via the bulk
+    # /{id}/refresh endpoint instead of one /widgets/refresh call per widget.
+    bulk_widget_loading: bool = False
 
 
 def _dashboard_visible_to(query, current_user: User):
@@ -75,8 +78,21 @@ def _governance_require_mutate_dashboard(current_user: User, dashboard: Dashboar
     )
 
 
-def _dashboard_to_response(dashboard: Dashboard) -> DashboardResponse:
+def _bulk_widget_loading_for(current_user: User) -> bool:
+    """Per-Org `bulk_widget_loading` rollout flag (False without an org)."""
+    if not current_user.org_id:
+        return False
+    try:
+        from backend.config.feature_flags import enabled
+        return enabled(str(current_user.org_id), "bulk_widget_loading")
+    except Exception:
+        logger.warning("bulk_widget_loading flag check failed", exc_info=True)
+        return False
+
+
+def _dashboard_to_response(dashboard: Dashboard, *, bulk_widget_loading: bool = False) -> DashboardResponse:
     return DashboardResponse(
+        bulk_widget_loading=bulk_widget_loading,
         id=dashboard.id,
         title=dashboard.title,
         description=dashboard.description,
@@ -105,7 +121,11 @@ async def list_dashboards(
     owner-only view.
     """
     dashboards = _dashboard_visible_to(db.query(Dashboard), current_user).all()
-    return [_dashboard_to_response(d) for d in dashboards]
+    # Org-level flag, computed once for the whole list. Must match the detail
+    # endpoint: widgets can mount from list data before the detail fetch lands,
+    # and a stale False here would fire the legacy per-widget refreshes.
+    bulk_widget_loading = _bulk_widget_loading_for(current_user)
+    return [_dashboard_to_response(d, bulk_widget_loading=bulk_widget_loading) for d in dashboards]
 
 
 @router.get("/{dashboard_id}", response_model=DashboardResponse)
@@ -122,7 +142,7 @@ async def get_dashboard(
     )
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
-    return _dashboard_to_response(dashboard)
+    return _dashboard_to_response(dashboard, bulk_widget_loading=_bulk_widget_loading_for(current_user))
 
 
 @router.post("", response_model=DashboardResponse, status_code=status.HTTP_201_CREATED)

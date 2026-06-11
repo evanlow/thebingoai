@@ -68,7 +68,10 @@ class GCSDuckDBReader:
         if self._conn is None:
             import duckdb
 
+            from .duckdb_exec import apply_memory_guardrails
+
             conn = duckdb.connect()
+            apply_memory_guardrails(conn)
             conn.execute("INSTALL httpfs")
             conn.execute("LOAD httpfs")
             conn.execute(_secret_sql(self._key_id, self._secret))

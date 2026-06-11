@@ -103,7 +103,14 @@ export function useDashboardGrid(
     initGrid()
     if (!grid || !widgets.value.length) return
 
-    for (const widget of widgets.value) {
+    // Add in reading order (top-left → bottom-right). Each add is committed
+    // separately, and float:false re-packs after every commit — adding a
+    // bottom widget before its upper neighbours exist lets gravity pull it
+    // up into the temporary gap and scrambles the saved layout.
+    const ordered = [...widgets.value].sort(
+      (a, b) => (a.position.y - b.position.y) || (a.position.x - b.position.x),
+    )
+    for (const widget of ordered) {
       try {
         grid.batchUpdate()
         addWidgetToGrid(widget)
