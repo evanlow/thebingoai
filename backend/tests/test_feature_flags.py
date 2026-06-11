@@ -3,9 +3,9 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch
 
-from sqlalchemy import create_engine, JSON
+from sqlalchemy import create_engine, JSON, LargeBinary
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import BYTEA, JSONB
 
 from backend.database.base import Base
 from backend.models.organization import Organization
@@ -26,13 +26,15 @@ from backend.config.feature_flags import (
 @pytest.fixture(scope="function")
 def sqlite_session():
     engine = create_engine("sqlite:///:memory:")
-    # SQLite doesn't know JSONB; downcast for test compatibility.
+    # SQLite doesn't know JSONB/BYTEA; downcast for test compatibility.
     # Also clear server_default to avoid PG-specific syntax (e.g. ::jsonb casts).
     for table in Base.metadata.tables.values():
         for col in table.columns:
             if isinstance(col.type, JSONB):
                 col.type = JSON()
                 col.server_default = None
+            elif isinstance(col.type, BYTEA):
+                col.type = LargeBinary()
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     db = Session()
@@ -253,6 +255,7 @@ def test_known_flags_registry():
         "governance_v1",
         "governance_v2",
         "duckdb_widget_serving",
+        "bulk_widget_loading",
     }
     assert KNOWN_FLAGS >= expected, f"Missing from KNOWN_FLAGS: {expected - KNOWN_FLAGS}"
 

@@ -335,6 +335,9 @@ export interface Dashboard {
   timezone?: string
   next_run_at?: string | null
   last_run_at?: string | null
+  // Per-Org rollout gate (from backend): load widget data via the bulk
+  // /{id}/refresh endpoint instead of one /widgets/refresh call per widget.
+  bulk_widget_loading?: boolean
 }
 
 // Run history for a scheduled dashboard refresh

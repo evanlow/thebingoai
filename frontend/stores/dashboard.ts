@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import type { Dashboard, DashboardWidget, FilterControl, GridPosition, WidgetDataSource, WidgetType } from '~/types/dashboard'
 import { WIDGET_DEFAULTS } from '~/types/dashboard'
 import { useApi } from '~/composables/useApi'
+import { mergeRefreshedConfig } from '~/utils/widgetMerge'
 
 export interface ActiveFilter {
   column: string
@@ -20,6 +21,11 @@ interface DashboardState {
   dirty: boolean
   filterValues: Record<string, any>  // control key → value (string | {from, to} | null)
   connectionTypes: Record<number, string>  // connectionId → db_type
+  // Bulk widget loading (per-Org flag): stale-response bookkeeping.
+  widgetSeq: Record<string, number>        // widget id → seq, bumped per single-widget refresh
+  refreshingWidgets: Record<string, boolean>  // widget id → bulk refresh in flight
+  bulkSeq: number                          // newer bulk beats older bulk
+  bulkKeyInFlight: string | null           // dedup concurrent identical bulk requests
 }
 
 export const useDashboardStore = defineStore('dashboard', {
@@ -33,6 +39,10 @@ export const useDashboardStore = defineStore('dashboard', {
     dirty: false,
     filterValues: {},
     connectionTypes: {},
+    widgetSeq: {},
+    refreshingWidgets: {},
+    bulkSeq: 0,
+    bulkKeyInFlight: null,
   }),
 
   getters: {
@@ -43,6 +53,11 @@ export const useDashboardStore = defineStore('dashboard', {
 
     currentWidgets(): DashboardWidget[] {
       return this.currentDashboard?.widgets ?? []
+    },
+
+    /** Per-Org rollout gate: widget data loads via the bulk endpoint. */
+    bulkWidgetLoading(): boolean {
+      return this.currentDashboard?.bulk_widget_loading === true
     },
 
     /** Resolve filterValues → ActiveFilter[] by looking up control column mappings */
@@ -218,6 +233,12 @@ export const useDashboardStore = defineStore('dashboard', {
       }
       // Ensure full dashboard data is loaded (saved config already has data)
       await this.fetchDashboard(id)
+      // Bulk widget loading (per-Org flag): one batched refresh for the whole
+      // dashboard. With the flag off, each widget's useWidgetData watcher
+      // fires its own per-widget refresh instead (legacy path).
+      if (this.bulkWidgetLoading) {
+        void this.refreshAllWidgets()
+      }
     },
 
     setFilterValue(key: string, value: any) {
@@ -348,34 +369,53 @@ export const useDashboardStore = defineStore('dashboard', {
       const dashboardId = this.currentDashboardId
       if (!dashboard || dashboardId == null) return
       const api = useApi()
+
+      const filters = this.activeFilters.length > 0 ? this.activeFilters : undefined
+      // Dedup concurrent identical bulk requests (e.g. openDashboard's explicit
+      // call racing the filter watcher firing for the same restored filters).
+      const requestKey = `${dashboardId}:${JSON.stringify(filters ?? [])}`
+      if (this.bulkKeyInFlight === requestKey) return
+      this.bulkKeyInFlight = requestKey
+
+      const bulkSeq = ++this.bulkSeq
+      // Snapshot per-widget seqs: a single-widget refresh issued after this
+      // point is newer than the bulk result and must not be overwritten.
+      const seqSnapshot: Record<string, number> = { ...this.widgetSeq }
+      const sqlWidgetIds = dashboard.widgets.filter(w => w.dataSource).map(w => w.id)
+      for (const id of sqlWidgetIds) this.refreshingWidgets[id] = true
       this.refreshing = true
 
       try {
-        const filters = this.activeFilters.length > 0 ? this.activeFilters : undefined
         // One bulk request for the whole dashboard: the backend reuses a single
         // DuckDB reader + connector across all widgets (vs one connection per
         // widget when refreshing them individually).
         const res = await api.dashboards.refreshAll(dashboardId, filters) as {
           widgets: Record<string, { config?: Record<string, any>; refreshed_at?: string; served_from?: 'data_plane' | 'cache' | 'source'; error?: string }>
         }
+        if (bulkSeq !== this.bulkSeq) return // a newer bulk superseded this one
         const widgetsResult = res?.widgets ?? {}
 
         for (const widget of dashboard.widgets) {
           if (!widget.dataSource) continue
+          if ((this.widgetSeq[widget.id] ?? 0) !== (seqSnapshot[widget.id] ?? 0)) continue // newer single-widget refresh wins
           const r = widgetsResult[widget.id]
           if (!r) continue
           if (r.error) {
             console.error(`Widget ${widget.id} refresh failed:`, r.error)
             continue
           }
-          if (r.config) Object.assign(widget.widget.config, r.config)
+          if (r.config) Object.assign(widget.widget.config, mergeRefreshedConfig(widget, r.config))
           if (r.refreshed_at) widget.dataSource.lastRefreshedAt = r.refreshed_at
           widget.dataSource.servedFrom = r.served_from
         }
       } catch (e) {
         console.error('Refresh all failed:', e)
       } finally {
-        this.refreshing = false
+        if (bulkSeq === this.bulkSeq) {
+          for (const id of sqlWidgetIds) delete this.refreshingWidgets[id]
+          this.refreshing = false
+        }
+        if (this.bulkKeyInFlight === requestKey) this.bulkKeyInFlight = null
       }
     },
 

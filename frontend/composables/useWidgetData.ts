@@ -3,9 +3,10 @@ import type { Ref } from 'vue'
 import type { DashboardWidget } from '~/types/dashboard'
 import { useApi } from '~/composables/useApi'
 import { useDashboardStore } from '~/stores/dashboard'
+import { mergeRefreshedConfig } from '~/utils/widgetMerge'
 
 export function useWidgetData(widget: Ref<DashboardWidget>) {
-  const loading = ref(false)
+  const localLoading = ref(false)
   const error = ref<string | null>(null)
   const store = useDashboardStore()
   let refreshSeq = 0
@@ -13,13 +14,18 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
   const hasDataSource = computed(() => !!widget.value.dataSource)
   const lastRefreshedAt = computed(() => widget.value.dataSource?.lastRefreshedAt ?? null)
   const servedFrom = computed(() => widget.value.dataSource?.servedFrom ?? null)
+  // Also true while a bulk dashboard refresh covering this widget is in flight.
+  const loading = computed(() => localLoading.value || !!store.refreshingWidgets[widget.value.id])
 
   async function refresh() {
     const ds = widget.value.dataSource
     if (!ds) return
 
     const seq = ++refreshSeq
-    loading.value = true
+    // Bump the store-level seq so an in-flight bulk refresh won't overwrite
+    // this newer single-widget result.
+    store.widgetSeq[widget.value.id] = (store.widgetSeq[widget.value.id] ?? 0) + 1
+    localLoading.value = true
     error.value = null
 
     try {
@@ -39,26 +45,14 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
       }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source' }
 
       if (seq !== refreshSeq) return
-      // For table widgets, preserve editor-only column fields (aggregation,
-      // align, displayType, comparisonCalc, runningCalc, etc.) that the
-      // backend transform doesn't know about. Merge by column key.
-      if (widget.value.widget.type === 'table' && Array.isArray(response.config?.columns)) {
-        const existingByKey = new Map<string, any>(
-          ((widget.value.widget.config as any)?.columns ?? []).map((c: any) => [c.key, c]),
-        )
-        response.config.columns = response.config.columns.map((rc: any) => {
-          const existing = existingByKey.get(rc.key)
-          return existing ? { ...rc, ...existing, key: rc.key, label: rc.label ?? existing.label } : rc
-        })
-      }
-      Object.assign(widget.value.widget.config, response.config)
+      Object.assign(widget.value.widget.config, mergeRefreshedConfig(widget.value, response.config))
       ds.lastRefreshedAt = response.refreshed_at
       ds.servedFrom = response.served_from
     } catch (err: any) {
       if (seq !== refreshSeq) return
       error.value = err?.data?.detail ?? err?.message ?? 'Refresh failed'
     } finally {
-      if (seq === refreshSeq) loading.value = false
+      if (seq === refreshSeq) localLoading.value = false
     }
   }
 
@@ -67,10 +61,13 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
   // fresh data instead of the unfiltered snapshot baked into widget.config at
   // generation time. refreshSeq inside refresh() discards stale responses if
   // activeFilters changes before the in-flight request returns.
+  // With the per-Org bulk_widget_loading flag on, the dashboard orchestrates
+  // one bulk refresh instead (openDashboard + the page-level filter watcher),
+  // so the per-widget watcher stays quiet.
   watch(
     () => JSON.stringify(store.activeFilters),
     () => {
-      if (hasDataSource.value) refresh()
+      if (hasDataSource.value && !store.bulkWidgetLoading) refresh()
     },
     { immediate: true },
   )

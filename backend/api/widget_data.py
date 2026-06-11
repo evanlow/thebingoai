@@ -568,10 +568,14 @@ async def refresh_widget(
     """
     dashboard = None
     if request.dashboard_id:
-        dashboard = db.query(Dashboard).filter(
-            Dashboard.id == request.dashboard_id,
-            Dashboard.user_id == current_user.id,
-        ).first()
+        # Org-wide visibility, matching GET /dashboards/{id}: any org member who
+        # can view the dashboard can refresh its widgets.
+        from backend.api.dashboards import _dashboard_visible_to
+        dashboard = (
+            _dashboard_visible_to(db.query(Dashboard), current_user)
+            .filter(Dashboard.id == request.dashboard_id)
+            .first()
+        )
 
     # DuckDB-over-DataPlane serving (flag-gated, per-Org). Serves filtered and
     # unfiltered reads alike; returns None to fall through on cold source etc.
@@ -731,10 +735,14 @@ async def refresh_dashboard_widgets(
     without a dataSource are skipped; per-widget failures are captured as
     {error} rather than failing the entire request.
     """
-    dashboard = db.query(Dashboard).filter(
-        Dashboard.id == dashboard_id,
-        Dashboard.user_id == current_user.id,
-    ).first()
+    # Org-wide visibility, matching GET /dashboards/{id}: any org member who
+    # can view the dashboard can refresh its widgets.
+    from backend.api.dashboards import _dashboard_visible_to
+    dashboard = (
+        _dashboard_visible_to(db.query(Dashboard), current_user)
+        .filter(Dashboard.id == dashboard_id)
+        .first()
+    )
 
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")

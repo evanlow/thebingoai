@@ -40,6 +40,9 @@ class DashboardResponse(BaseModel):
     schedule_active: bool = False
     next_run_at: Optional[str] = None
     last_run_at: Optional[str] = None
+    # Per-Org rollout gate: frontend loads widget data via the bulk
+    # /{id}/refresh endpoint instead of one /widgets/refresh call per widget.
+    bulk_widget_loading: bool = False
 
 
 def _dashboard_visible_to(query, current_user: User):
@@ -75,8 +78,9 @@ def _governance_require_mutate_dashboard(current_user: User, dashboard: Dashboar
     )
 
 
-def _dashboard_to_response(dashboard: Dashboard) -> DashboardResponse:
+def _dashboard_to_response(dashboard: Dashboard, *, bulk_widget_loading: bool = False) -> DashboardResponse:
     return DashboardResponse(
+        bulk_widget_loading=bulk_widget_loading,
         id=dashboard.id,
         title=dashboard.title,
         description=dashboard.description,
@@ -122,7 +126,16 @@ async def get_dashboard(
     )
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
-    return _dashboard_to_response(dashboard)
+
+    bulk_widget_loading = False
+    if current_user.org_id:
+        try:
+            from backend.config.feature_flags import enabled
+            bulk_widget_loading = enabled(str(current_user.org_id), "bulk_widget_loading")
+        except Exception:
+            logger.warning("bulk_widget_loading flag check failed", exc_info=True)
+
+    return _dashboard_to_response(dashboard, bulk_widget_loading=bulk_widget_loading)
 
 
 @router.post("", response_model=DashboardResponse, status_code=status.HTTP_201_CREATED)
