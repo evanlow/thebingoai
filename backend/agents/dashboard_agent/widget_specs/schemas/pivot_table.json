@@ -36,7 +36,9 @@
     "showRowTotals":     { "type": "boolean", "required": false, "description": "Show grand-total column + column-dimension subtotals (default: true)" },
     "showColumnTotals":  { "type": "boolean", "required": false, "description": "Show grand-total row + row-dimension subtotals (default: true)" },
     "rowLimit":          { "type": "number",  "required": false, "description": "Max number of top-level row groups" },
-    "columnLimit":       { "type": "number",  "required": false, "description": "Max number of column groups" }
+    "columnLimit":       { "type": "number",  "required": false, "description": "Max number of column groups" },
+    "sortBy":            { "type": "string",  "required": false, "description": "Value column to sort row groups by (defaults to first row dimension)" },
+    "sortDir":           { "type": "enum",    "required": false, "values": ["asc", "desc"], "description": "Sort direction for row groups (use 'desc' with the main metric)" }
   },
   "mapping": {
     "columnConfig": {

@@ -1,6 +1,10 @@
 from langchain_core.messages import ToolMessage
 from backend.agents.data_agent.tools import build_data_agent_tools
-from backend.agents.data_agent.prompts import DATA_AGENT_SYSTEM_PROMPT, build_data_agent_prompt
+from backend.agents.data_agent.prompts import (
+    DATA_AGENT_SYSTEM_PROMPT,
+    build_data_agent_prompt,
+    build_dataset_context_block,
+)
 from backend.agents.invoke_helpers import extract_final_answer, run_inline_react, run_via_mesh_runtime
 from backend.agents.loop_detector import make_loop_detector
 from backend.agents.prompt_resolver import resolve_agent_prompt
@@ -16,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_data_agent_prompt(context: AgentContext, db_session_factory=None) -> str:
     """Resolve data_agent prompt from profile or fallback to legacy."""
-    return resolve_agent_prompt(
+    prompt = resolve_agent_prompt(
         agent_type="data_agent",
         context=context,
         db_session_factory=db_session_factory,
@@ -25,6 +29,14 @@ def _resolve_data_agent_prompt(context: AgentContext, db_session_factory=None) -
         ),
         log_prefix=__name__,
     )
+    # Append pre-loaded dataset schemas so the agent skips discovery tool
+    # calls for dataset connections. Applied after resolution so DB-stored
+    # prompt profiles get the block too. Must never block prompt build.
+    try:
+        prompt += build_dataset_context_block(context.connection_metadata)
+    except Exception:
+        logger.warning("dataset context block injection failed", exc_info=True)
+    return prompt
 
 
 async def invoke_data_agent(

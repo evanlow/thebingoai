@@ -140,17 +140,29 @@ const starters: Starter[] = [
 
 const api = useApi()
 const chatStore = useChatStore()
+const route = useRoute()
 
+const connectionId = Number(route.query.connection) || null
 const question = ref('')
 const recentConnection = ref<DatabaseConnection | null>(null)
 
+// Point the first question (and the resulting chat) at the chosen connection.
+function applyPendingConnection() {
+  // Fall back to the route-query id so the scope survives a Send/Finish click
+  // before the async connections list resolves (recentConnection still null).
+  const id = recentConnection.value?.id ?? connectionId
+  chatStore.pendingConnectionIds = id ? [id] : []
+}
+
 function handleSend() {
   if (!question.value.trim()) return
+  applyPendingConnection()
   chatStore.inputText = question.value
   navigateTo('/chat')
 }
 
 function handleFinish() {
+  applyPendingConnection()
   chatStore.inputText = question.value
   navigateTo('/chat')
 }
@@ -158,10 +170,9 @@ function handleFinish() {
 onMounted(async () => {
   try {
     const conns: DatabaseConnection[] = await api.connections.list()
+    const chosen = connectionId ? conns.find((c: DatabaseConnection) => c.id === connectionId) : null
     const nonEphemeral = conns.filter((c: DatabaseConnection) => !c.is_ephemeral)
-    if (nonEphemeral.length > 0) {
-      recentConnection.value = nonEphemeral[nonEphemeral.length - 1]
-    }
+    recentConnection.value = chosen ?? (nonEphemeral.length > 0 ? nonEphemeral[nonEphemeral.length - 1] : null)
   } catch {
     // Connection fetch is informational only — page works without it
   }
@@ -170,7 +181,5 @@ onMounted(async () => {
 definePageMeta({
   layout: false,
   middleware: 'auth',
-  pageTransition: false,
-  layoutTransition: false,
 })
 </script>

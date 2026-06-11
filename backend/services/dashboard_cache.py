@@ -227,6 +227,13 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
                 connector.close()
 
         logger.info("Dashboard %d materialized via DataPlane", dashboard_id)
+
+        # Invalidate the Redis widget result cache: keys embed this generation,
+        # so the next read misses and repopulates from the fresh `_dash_*` data.
+        if widgets_succeeded:
+            from backend.services.widget_result_cache import bump_generation
+            bump_generation(dashboard_id)
+
         return MaterializeResult(
             widgets_total=widgets_total,
             widgets_succeeded=widgets_succeeded,

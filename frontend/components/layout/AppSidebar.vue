@@ -74,6 +74,7 @@
 
       <!-- New Task -->
       <button
+        v-if="!ws.isViewer"
         @click="handleNewTask"
         class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors duration-150 border-l-2"
         :class="isNewTaskActive ? 'border-[var(--ember)] bg-[var(--ember-wash)]' : 'border-transparent hover:bg-[var(--paper-2)]'"
@@ -143,6 +144,45 @@
           </template>
           <div v-if="chatStore.isLoadingMoreConversations" class="px-4 py-2 text-[11px] text-[var(--ink-3)]">
             Loading…
+          </div>
+        </div>
+      </div>
+
+      <!-- Notifications (invitations) -->
+      <div class="border-t border-dashed border-[var(--line-2)] px-4 py-2.5 flex-shrink-0">
+        <button
+          @click="handleToggleNotifications"
+          class="eyebrow flex items-center gap-1.5 hover:text-[var(--ink-1)] transition-colors"
+        >
+          <Bell class="h-3 w-3" />
+          Notifications
+          <span
+            v-if="incomingInvites.length"
+            class="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--ember)] text-white text-[10px] font-semibold leading-none"
+          >
+            {{ incomingInvites.length }}
+          </span>
+        </button>
+        <div v-show="isNotificationsExpanded" class="mt-1 max-h-48 overflow-y-auto">
+          <div v-if="incomingInvites.length === 0" class="py-2 text-[11px] text-[var(--ink-3)]">
+            No notifications
+          </div>
+          <div
+            v-for="invite in incomingInvites"
+            :key="invite.id"
+            class="flex w-full items-center gap-2 py-1.5 rounded-md px-1 -mx-1 hover:bg-[var(--paper-2)]"
+          >
+            <div class="flex-1 min-w-0">
+              <div class="truncate text-[12px] text-[var(--ink-1)]">{{ invite.org_name ?? 'A workspace' }}</div>
+              <div class="text-[10px] text-[var(--ink-3)]">invited you as Viewer</div>
+            </div>
+            <button
+              @click.stop="handleAcceptInvite(invite)"
+              :disabled="acceptingInviteId === invite.id"
+              class="flex-shrink-0 text-[11px] font-medium px-2 py-1 rounded-md bg-[var(--ember)] text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ acceptingInviteId === invite.id ? 'Joining…' : 'Accept' }}
+            </button>
           </div>
         </div>
       </div>
@@ -245,6 +285,7 @@
 
       <!-- New Task icon -->
       <button
+        v-if="!ws.isViewer"
         @click="handleNewTask"
         class="flex h-10 w-full items-center justify-center transition-colors border-l-2"
         :class="isNewTaskActive ? 'border-[var(--ember)] bg-[var(--ember-wash)] text-[var(--ember)]' : 'border-transparent hover:bg-[var(--paper-2)] text-[var(--ink-2)]'"
@@ -301,7 +342,7 @@
       <LayoutDashboard class="h-3.5 w-3.5 text-[var(--ink-1)]" />
       <span class="text-[13px] font-medium text-[var(--ink-0)]">Dashboards</span>
     </button>
-    <button @click="handleNewTask" class="flex w-full items-center gap-2.5 px-4 py-2.5 border-l-2 border-transparent hover:bg-[var(--paper-2)]">
+    <button v-if="!ws.isViewer" @click="handleNewTask" class="flex w-full items-center gap-2.5 px-4 py-2.5 border-l-2 border-transparent hover:bg-[var(--paper-2)]">
       <Plus class="h-3.5 w-3.5 text-[var(--ink-2)]" />
       <span class="text-[13px] font-medium text-[var(--ink-1)]">New task</span>
     </button>
@@ -314,7 +355,7 @@
       </template>
     </div>
 
-    <button @click="router.push('/settings'); closeSidebarOnMobile()" class="border-t border-[var(--line)] px-4 py-3 flex items-center gap-2.5 hover:bg-[var(--paper-1)]">
+    <button v-if="!ws.isViewer" @click="router.push('/settings'); closeSidebarOnMobile()" class="border-t border-[var(--line)] px-4 py-3 flex items-center gap-2.5 hover:bg-[var(--paper-1)]">
       <div class="h-8 w-8 rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] flex items-center justify-center text-[12px] font-semibold flex-shrink-0">{{ userInitial }}</div>
       <div class="min-w-0">
         <span class="text-[12.5px] text-[var(--ink-0)] truncate block">{{ authStore.user?.email }}</span>
@@ -327,12 +368,54 @@
 </template>
 
 <script setup lang="ts">
-import { Settings, Plus, ChevronDown, ChevronRight, Sparkles, LayoutDashboard, Archive as ArchiveIcon, ArchiveRestore, PanelLeftClose, PanelLeftOpen, X } from 'lucide-vue-next'
+import { Settings, Plus, ChevronDown, ChevronRight, Sparkles, LayoutDashboard, Archive as ArchiveIcon, ArchiveRestore, PanelLeftClose, PanelLeftOpen, X, Bell } from 'lucide-vue-next'
 import { formatDateLabel } from '~/utils/format'
 import type { Conversation } from '~/stores/chat'
 
+import { useWorkspaceStore } from '~/stores/workspace'
+import { toast } from 'vue-sonner'
+import { useDashboardStore } from '~/stores/dashboard'
+import type { IncomingInvite } from '~/utils/api/governanceApi'
+
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const ws = useWorkspaceStore()
+const dashboardStore = useDashboardStore()
+const incomingInvites = ref<IncomingInvite[]>([])
+const isNotificationsExpanded = ref(false)
+const acceptingInviteId = ref<string | null>(null)
+
+const handleToggleNotifications = () => {
+  isNotificationsExpanded.value = !isNotificationsExpanded.value
+}
+
+const loadIncomingInvites = async () => {
+  try {
+    incomingInvites.value = await useApi().governance.listIncomingInvites()
+  } catch {
+    incomingInvites.value = []
+  }
+}
+
+const handleAcceptInvite = async (invite: IncomingInvite) => {
+  if (acceptingInviteId.value) return  // guard against double-click while in flight
+  acceptingInviteId.value = invite.id
+  try {
+    await useApi().governance.acceptInviteById(invite.id)
+    incomingInvites.value = incomingInvites.value.filter(i => i.id !== invite.id)
+    toast.success(`Joined ${invite.org_name ?? 'workspace'}`)
+    // Shared dashboards now surface in the dashboards view; no workspace switch.
+    await dashboardStore.fetchDashboards()
+  } catch (e: any) {
+    const msg = e?.data?.detail || e?.message || 'Could not accept invitation'
+    toast.error(typeof msg === 'string' ? msg : 'Could not accept invitation')
+    if (e?.status === 410 || e?.statusCode === 410) {
+      incomingInvites.value = incomingInvites.value.filter(i => i.id !== invite.id)
+    }
+  } finally {
+    acceptingInviteId.value = null
+  }
+}
 const { remaining } = useCreditBalance()
 const { config: featureConfig } = useFeatureConfig()
 const layoutStore = useLayoutStore()
@@ -433,6 +516,8 @@ onMounted(() => {
       }
     })
     .catch(() => {})
+
+  loadIncomingInvites()
 })
 
 const handleNewTask = () => {

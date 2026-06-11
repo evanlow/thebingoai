@@ -31,6 +31,16 @@ Mapping:
 }
 ```
 
+### Visual Column Features (set in mapping.columnConfig — config.columns is rebuilt from it)
+
+Extended display fields MUST go in `mapping.columnConfig` entries, not `config.columns`:
+- **Ranking tables** (top-N by a metric): set `displayType: "bar"` + `showBarValue: true` on the key metric — in-cell bars make rank obvious at a glance
+- **Dense numeric comparison** (many numeric columns): set `displayType: "heatmap"` on the metrics
+- **Share-of-total questions**: set `comparisonCalc: "percentOfTotal"` on the metric
+- **Cumulative views**: set `runningCalc: "runningSum"` on the metric
+- Tag columns with `role`: `"dimension"` for grouping/text columns, `"metric"` for numeric values
+- Set `compactNumbers: true` on metrics that can exceed ~10,000
+
 ### Best Practices
 
 - Place tables in Section 4 (Detail & Drill-Down, y=16+)
@@ -38,6 +48,8 @@ Mapping:
 - Always use LIMIT in SQL to avoid sending thousands of rows
 - Make key columns sortable for interactive exploration
 - Set format on every column that isn't plain text — it significantly improves readability
+- Always set `config.defaultSortKey` to the primary metric (with `defaultSortDir: "desc"`)
+- For totals, set `config.showSummaryRow: true` and `aggregation` on each metric column
 - **Always set `config.title`** — the table renders it as a label above the columns. Do NOT place a separate Text widget just to title a table; use `config.title` instead.
 
 Example with title:

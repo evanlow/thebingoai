@@ -135,6 +135,7 @@ import TrialExpiredDialog from '~/components/TrialExpiredDialog.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const email = ref('')
 const password = ref('')
@@ -144,13 +145,20 @@ const loading = computed(() => authStore.loading)
 const error = computed(() => authStore.error)
 const showTrialExpired = ref(false)
 
+function postLoginDestination(fallback: string): string {
+  const rt = route.query.returnTo
+  const path = typeof rt === 'string' ? rt : ''
+  if (path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\')) return path
+  return fallback
+}
+
 async function handleLogin() {
   const result = await authStore.login({ email: email.value, password: password.value })
 
   if (authStore.isAccountInactive) {
     showTrialExpired.value = true
   } else if (result.success) {
-    router.push(authStore.isFirstLogin ? '/connect' : '/chat')
+    router.push(postLoginDestination(authStore.isFirstLogin ? '/connect' : '/chat'))
   }
 }
 

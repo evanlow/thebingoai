@@ -41,18 +41,18 @@ def download_and_cache_sqlite_blob(
     ``missing_blob_message`` lets callers customize the "still syncing"
     error string when ``connection.dataset_table_name`` is None.
     """
-    do_spaces_key = connection.dataset_table_name
+    storage_key = connection.dataset_table_name
 
-    if do_spaces_key is None:
+    if storage_key is None:
         raise FileNotFoundError(
             missing_blob_message
             or f"SQLite file not found for connection {connection.id}: dataset_table_name is None."
         )
 
-    if os.path.isabs(do_spaces_key) and os.path.isfile(do_spaces_key):
-        return do_spaces_key
+    if os.path.isabs(storage_key) and os.path.isfile(storage_key):
+        return storage_key
 
-    from backend.services import object_storage
+    from backend.services.sqlite_blob_storage import load_blob
 
     cache_path = os.path.join(cache_dir, f"{connection.id}.sqlite")
 
@@ -63,7 +63,7 @@ def download_and_cache_sqlite_blob(
     if cache_valid:
         return cache_path
 
-    data = object_storage.download_bytes(do_spaces_key)
+    data = load_blob(connection, db=db_session)
     if data is None:
         if db_session is not None:
             from datetime import datetime, timezone
@@ -71,7 +71,7 @@ def download_and_cache_sqlite_blob(
             connection.health_checked_at = datetime.now(timezone.utc)
             db_session.commit()
         raise FileNotFoundError(
-            f"SQLite file not found in DO Spaces: {do_spaces_key}"
+            f"SQLite blob not found in storage: {storage_key}"
         )
 
     os.makedirs(cache_dir, exist_ok=True)

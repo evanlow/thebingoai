@@ -87,6 +87,9 @@ import { X, Database, Sparkles, Clock, Brain, Key, User, MessageSquare, Shield, 
 const router = useRouter()
 const { isMobile } = useIsMobile()
 const { config: featureConfig } = useFeatureConfig()
+// Viewer of a host workspace: only the user's own Account sections are shown;
+// workspace/admin sections belong to the host and are not theirs to manage.
+const workspace = useWorkspaceStore()
 const settingsTabs = useSettingsTabs()
 const { currentSection } = useSettingsState()
 const { data: appInfo } = useLazyFetch<{ edition?: string; version?: string }>('/api/info')
@@ -167,7 +170,9 @@ const sections = computed<Section[]>(() => {
       order: tab.order ?? 100,
     })
   }
-  return all.sort((a, b) => {
+  // Viewer-active: restrict to the user's own Account sections (Profile, Credits).
+  const visible = workspace.isViewer ? all.filter(s => s.group === 'Account') : all
+  return visible.sort((a, b) => {
     const ga = GROUP_ORDER[a.group ?? ''] ?? 99
     const gb = GROUP_ORDER[b.group ?? ''] ?? 99
     return ga !== gb ? ga - gb : a.order - b.order
@@ -189,6 +194,10 @@ watch([() => route.query.tab, sections], ([tab, secs]) => {
   const id = LEGACY_TAB_REDIRECTS[raw] ?? raw
   if (secs.some(s => s.id === id)) {
     currentSection.value = id
+  } else if (secs.length && !secs.some(s => s.id === currentSection.value)) {
+    // Requested tab isn't available (e.g. a viewer deep-linking a workspace
+    // section) — fall back to the first visible section (Profile/account).
+    currentSection.value = secs[0].id
   }
 }, { immediate: true })
 

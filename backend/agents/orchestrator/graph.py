@@ -260,6 +260,7 @@ async def _render_orchestrator_prompt(
             available_connections=context.available_connections,
             connection_metadata=context.connection_metadata,
             mesh_enabled=settings.agent_mesh_enabled,
+            target_connection_id=context.target_connection_id,
         )
         return ProfileRenderer.render(profile, rt_ctx)
     logger.info("%s: using LEGACY hardcoded prompt (no profile)", log_prefix)
@@ -1342,10 +1343,25 @@ async def stream_orchestrator(
             reasoning_buffer.clear()
 
         # Layer 4: judge the streamed answer and retry once if unresolved.
+        # The judge only sees the question and the final prose — it has no view
+        # of the tool trail. A successful create/update_dashboard tool result is
+        # deterministic evidence the artifact exists; without this gate the
+        # judge flags "describes the dashboard but didn't create it" and the
+        # retry builds a duplicate dashboard.
+        dashboard_created = any(
+            s.get("step_type") == "tool_result"
+            and s.get("tool_name") in ("create_dashboard", "update_dashboard")
+            and isinstance(s.get("content", {}).get("result"), dict)
+            and s["content"]["result"].get("success")
+            for s in collected_steps
+        )
         retry_succeeded: Optional[bool] = None
         judge_metadata: Optional[Dict[str, Any]] = None
         highlighted_text: Optional[str] = None
-        if settings.judge_enabled and final_answer_text:
+        if settings.judge_enabled and final_answer_text and dashboard_created:
+            logger.info("Layer-4 judge skipped: dashboard tool already succeeded this turn")
+            yield {"type": "judge_status", "content": {"state": "approved"}}
+        if settings.judge_enabled and final_answer_text and not dashboard_created:
             yield {"type": "judge_status", "content": {"state": "refining"}}
             verdict = await judge_response(user_question, final_answer_text)
             if not verdict.resolved:

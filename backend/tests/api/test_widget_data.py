@@ -56,13 +56,17 @@ def _user(id_="u-1", org_id=None):
 
 
 def _db_with_first(*side):
-    """Return a MagicMock db where .query().filter().first() returns `side[0]`,
-    then `side[1]`, etc. Callers that need both dashboard + connection lookups
-    pass two values."""
+    """Return a MagicMock db where any .query()…(.outerjoin/.filter)*….first()
+    chain returns `side[0]`, then `side[1]`, etc. Callers that need both
+    dashboard + connection lookups pass two values. The query mock is
+    self-returning so chains of any depth (e.g. the org-visibility predicate's
+    outerjoin + double filter) resolve to the same `.first`."""
     db = MagicMock()
-    first = db.query.return_value.filter.return_value.first
+    q = db.query.return_value
+    q.outerjoin.return_value = q
+    q.filter.return_value = q
     if side:
-        first.side_effect = list(side)
+        q.first.side_effect = list(side)
     return db
 
 

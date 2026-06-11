@@ -153,22 +153,30 @@ register_connector(ConnectorRegistration(
 
 
 def _delete_sqlite_file(connection) -> None:
-    """Delete a SQLite file from DO Spaces (skip local/bundled files)."""
+    """Delete a SQLite blob (DataPlane or legacy DO Spaces; skip local/bundled files)."""
     import os
-    if connection.dataset_table_name and not os.path.isabs(connection.dataset_table_name):
-        from backend.services import object_storage
-        object_storage.delete_object(connection.dataset_table_name)
+    if not connection.dataset_table_name or os.path.isabs(connection.dataset_table_name):
+        return
+    try:
+        from backend.services.sqlite_blob_storage import delete_blob
+        delete_blob(connection)
+    except Exception:
+        # Connection deletion must never be blocked by a storage error.
+        import logging
+        logging.getLogger(__name__).warning(
+            "sqlite blob delete failed for connection %s", connection.id, exc_info=True,
+        )
 
 
 def _check_sqlite_health(connection) -> bool:
-    """Check whether a SQLite connection's file exists (local or DO Spaces)."""
+    """Check whether a SQLite connection's blob exists (local, DataPlane, or DO Spaces)."""
     import os
     if not connection.dataset_table_name:
         return False
     if os.path.isabs(connection.dataset_table_name):
         return os.path.isfile(connection.dataset_table_name)
-    from backend.services import object_storage
-    return object_storage.object_exists(connection.dataset_table_name)
+    from backend.services.sqlite_blob_storage import blob_exists
+    return blob_exists(connection)
 
 
 register_connector(ConnectorRegistration(

@@ -6,15 +6,38 @@ binding and the row-cap/truncation parity stay identical across planes.
 """
 from __future__ import annotations
 
+import logging
+import os
 import re
 import time
 from typing import Any
 
 from backend.connectors.base import QueryResult
 
+logger = logging.getLogger(__name__)
+
 # DuckDB named placeholder `$name` (name starts with a letter/underscore — `$1`
 # numbered-positional placeholders are deliberately excluded).
 _NAMED_PARAM_RE = re.compile(r"\$[A-Za-z_]\w*")
+
+
+def apply_memory_guardrails(conn) -> None:
+    """Cap per-connection memory and enable disk spill.
+
+    DuckDB's default memory_limit is ~80% of system RAM *per connection*;
+    serving opens one connection per request, so concurrent reads can OOM the
+    container. Large aggregations spill to `duckdb_temp_directory` instead of
+    failing. Applied at every `duckdb.connect()` site; failures are logged and
+    ignored so a bad setting never breaks serving.
+    """
+    from backend.config import settings
+
+    try:
+        os.makedirs(settings.duckdb_temp_directory, exist_ok=True)
+        conn.execute(f"SET memory_limit='{settings.duckdb_memory_limit}'")
+        conn.execute(f"SET temp_directory='{settings.duckdb_temp_directory}'")
+    except Exception:
+        logger.warning("Failed to apply DuckDB memory guardrails", exc_info=True)
 
 
 def build_scope_view_sql(

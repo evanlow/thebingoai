@@ -100,6 +100,13 @@ def profile_table(
     all_columns = columns[:MAX_COLUMNS]
 
     def q(name: str) -> str:
+        if is_dataset:
+            # Dataset SQL runs through the resolved DataPlane (DuckDB locally,
+            # BigQuery under lockdown). Double quotes are string literals on
+            # BigQuery, and the plane's table-path rewrite breaks on quoted
+            # table names — bare identifiers parse on both engines (the CSV
+            # connector sanitizes names to [a-z0-9_]).
+            return name
         return f"`{name}`" if db_type in ("mysql", "bigquery") else f'"{name}"'
 
     if db_type == "bigquery":
@@ -109,7 +116,7 @@ def profile_table(
         else:
             qualified_table = f"`{table_name}`"
     elif is_dataset:
-        qualified_table = f'"{table_name}"'
+        qualified_table = table_name
     elif schema_name:
         qualified_table = f"{q(schema_name)}.{q(table_name)}"
     else:

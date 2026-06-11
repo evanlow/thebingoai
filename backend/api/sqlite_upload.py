@@ -90,8 +90,8 @@ async def upload_sqlite(
     """
     Upload a SQLite database file as a queryable connection.
 
-    Creates a connection of type 'sqlite', stores the file in DO Spaces,
-    discovers the schema, and makes it queryable by the dashboard agent.
+    Creates a connection of type 'sqlite', stores the file on the owner's
+    DataPlane, discovers the schema, and makes it queryable by the dashboard agent.
     """
     filename = file.filename or ""
     if "." not in filename:
@@ -165,25 +165,27 @@ async def upload_sqlite(
         db.commit()
         db.refresh(connection)
 
-        # Upload to DO Spaces
-        from backend.services import object_storage as _object_storage
+        # Store the blob on the owner's DataPlane
+        from backend.data_plane.errors import NoPlaneProvisionedError
+        from backend.services import sqlite_blob_storage
 
-        do_spaces_key = f"{settings.do_spaces_base_path}/{current_user.id}/sqlite/{connection.uuid}.sqlite"
         try:
-            _object_storage.upload_bytes(do_spaces_key, file_bytes, content_type="application/x-sqlite3")
+            storage_key = sqlite_blob_storage.save_blob(connection, file_bytes, db)
         except Exception as e:
             db.delete(connection)
             db.commit()
+            if isinstance(e, NoPlaneProvisionedError):
+                raise  # global handler → 503 code=no_data_plane
             logger.error(
                 "SQLite upload failed for connection %s: %s",
                 connection.id, e, exc_info=True,
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload SQLite file: {e}",
+                detail=f"Failed to store SQLite file: {e}",
             )
 
-        connection.dataset_table_name = do_spaces_key
+        connection.dataset_table_name = storage_key
         db.commit()
 
         # Generate and save schema JSON
@@ -237,7 +239,7 @@ async def upload_sqlite(
 
         logger.info(
             "SQLite upload complete: connection_id=%s, key=%s, tables=%d",
-            connection.id, do_spaces_key, table_count,
+            connection.id, storage_key, table_count,
         )
 
         # Build table info for response
