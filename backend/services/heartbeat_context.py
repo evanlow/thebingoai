@@ -116,6 +116,11 @@ async def build_orchestrator_context(
     # Build AgentContext
     # Filter metadata to match team-restricted connections
     team_meta = [m for m in connection_metadata if m.id in team_connection_ids]
+    # When the client explicitly scoped this turn to a single connection (e.g.
+    # from the first-question onboarding flow), mark it as the primary
+    # connection in the system prompt. Multi-id or empty scope leaves it None
+    # so the existing "all available connections" path is unchanged.
+    target_connection_id = team_connection_ids[0] if len(team_connection_ids) == 1 else None
     agent_context = AgentContext(
         user_id=user.id,
         available_connections=team_connection_ids,
@@ -123,6 +128,7 @@ async def build_orchestrator_context(
         thread_id=thread_id,
         team_id=team_id,
         allowed_tool_keys=allowed_tool_keys,
+        target_connection_id=target_connection_id,
     )
 
     # Check if auto-memory retrieval is enabled
