@@ -114,3 +114,19 @@ def test_bulk_refresh_404_for_other_org_user(db, seeded, monkeypatch):
             seeded["dashboard"].id, None, seeded["outsider"], db,
         ))
     assert exc.value.status_code == 404
+
+
+# ── bulk_widget_loading flag exposure ────────────────────────────────────────
+
+def test_list_and_detail_both_carry_bulk_flag(db, seeded, monkeypatch):
+    """The LIST endpoint must expose the flag too: widgets can mount from list
+    data before the detail fetch lands; a stale False would fire the legacy
+    per-widget refreshes alongside the bulk request."""
+    import backend.api.dashboards as dashboards_api
+    monkeypatch.setattr(dashboards_api, "_bulk_widget_loading_for", lambda user: True)
+
+    listed = _run(dashboards_api.list_dashboards(db, seeded["member"]))
+    assert listed and all(d.bulk_widget_loading is True for d in listed)
+
+    detail = _run(dashboards_api.get_dashboard(seeded["dashboard"].id, db, seeded["member"]))
+    assert detail.bulk_widget_loading is True

@@ -78,6 +78,18 @@ def _governance_require_mutate_dashboard(current_user: User, dashboard: Dashboar
     )
 
 
+def _bulk_widget_loading_for(current_user: User) -> bool:
+    """Per-Org `bulk_widget_loading` rollout flag (False without an org)."""
+    if not current_user.org_id:
+        return False
+    try:
+        from backend.config.feature_flags import enabled
+        return enabled(str(current_user.org_id), "bulk_widget_loading")
+    except Exception:
+        logger.warning("bulk_widget_loading flag check failed", exc_info=True)
+        return False
+
+
 def _dashboard_to_response(dashboard: Dashboard, *, bulk_widget_loading: bool = False) -> DashboardResponse:
     return DashboardResponse(
         bulk_widget_loading=bulk_widget_loading,
@@ -109,7 +121,11 @@ async def list_dashboards(
     owner-only view.
     """
     dashboards = _dashboard_visible_to(db.query(Dashboard), current_user).all()
-    return [_dashboard_to_response(d) for d in dashboards]
+    # Org-level flag, computed once for the whole list. Must match the detail
+    # endpoint: widgets can mount from list data before the detail fetch lands,
+    # and a stale False here would fire the legacy per-widget refreshes.
+    bulk_widget_loading = _bulk_widget_loading_for(current_user)
+    return [_dashboard_to_response(d, bulk_widget_loading=bulk_widget_loading) for d in dashboards]
 
 
 @router.get("/{dashboard_id}", response_model=DashboardResponse)
@@ -126,16 +142,7 @@ async def get_dashboard(
     )
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
-
-    bulk_widget_loading = False
-    if current_user.org_id:
-        try:
-            from backend.config.feature_flags import enabled
-            bulk_widget_loading = enabled(str(current_user.org_id), "bulk_widget_loading")
-        except Exception:
-            logger.warning("bulk_widget_loading flag check failed", exc_info=True)
-
-    return _dashboard_to_response(dashboard, bulk_widget_loading=bulk_widget_loading)
+    return _dashboard_to_response(dashboard, bulk_widget_loading=_bulk_widget_loading_for(current_user))
 
 
 @router.post("", response_model=DashboardResponse, status_code=status.HTTP_201_CREATED)
