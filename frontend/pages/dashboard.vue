@@ -31,7 +31,7 @@
                 click away — every chart remembers where it came from.
               </p>
 
-              <ChatComposer @send="handleEmptyStateSend" />
+              <ChatComposer v-if="!ws.isViewer" @send="handleEmptyStateSend" />
             </div>
 
             <!-- Heads up tip box — pinned footer -->
@@ -67,7 +67,7 @@
                   <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': store.loading }" />
                   Refresh all
                 </button>
-                <button class="dash-btn dash-btn--primary" @click="handleNewDashboard">
+                <button v-if="!ws.isViewer" class="dash-btn dash-btn--primary" @click="handleNewDashboard">
                   <Plus class="h-3 w-3" />
                   New dashboard
                 </button>
@@ -166,7 +166,7 @@
 
         <!-- Toolbar — edit-mode only -->
         <DashboardToolbar
-          v-if="store.editMode"
+          v-if="store.editMode && !ws.isViewer"
           :widget-count="store.currentWidgets.length"
           @add-widget="handleAddWidget"
         />
@@ -253,6 +253,7 @@ import { ref, computed, watch } from 'vue'
 import { Info, Search, Plus, RefreshCw, LayoutGrid, List as ListIcon } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useDashboardStore } from '~/stores/dashboard'
+import { useWorkspaceStore } from '~/stores/workspace'
 import { toDashboardListItem } from '~/types/dashboard'
 import type { DashboardWidget } from '~/types/dashboard'
 import DashboardWidgetEditor from '~/components/dashboard/editors/DashboardWidgetEditor.vue'
@@ -265,6 +266,7 @@ import { useChat } from '~/composables/useChat'
 import { useDatasetStatus } from '~/composables/useDatasetStatus'
 
 const store = useDashboardStore()
+const ws = useWorkspaceStore()
 useDatasetStatus()
 const route = useRoute()
 const { isMobile } = useIsMobile()
@@ -389,7 +391,8 @@ const dashboardListItems = computed(() => {
   let list = store.dashboards.map(toDashboardListItem)
 
   if (filterPill.value === 'scheduled') list = list.filter(d => d.scheduleActive)
-  if (filterPill.value === 'shared')    list = []
+  if (filterPill.value === 'mine')      list = list.filter(d => !d.isShared)
+  if (filterPill.value === 'shared')    list = list.filter(d => d.isShared)
 
   const q = searchQuery.value.trim().toLowerCase()
   if (q) {

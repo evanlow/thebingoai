@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database.session import get_db
-from backend.auth.dependencies import get_current_user
+from backend.auth.dependencies import get_current_user, forbid_viewer
 from backend.models.user import User
 from backend.models.pipeline import Pipeline, PipelineRun
 from backend.utils.cron import compute_next_run, is_valid_timezone
@@ -132,6 +132,7 @@ async def create_pipeline(
     body: PipelineCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _viewer=Depends(forbid_viewer),
 ):
     """Create a new pipeline.
 
@@ -310,6 +311,7 @@ async def update_pipeline(
     body: PipelineUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _viewer=Depends(forbid_viewer),
 ):
     """Partial update — schedule, name, and enabled toggle only.
 
@@ -374,6 +376,7 @@ async def trigger_pipeline_run(
     pipeline_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _viewer=Depends(forbid_viewer),
 ):
     """Manually trigger a pipeline run. Dispatches via Celery."""
     pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
@@ -397,6 +400,7 @@ async def redetect_watermark(
     pipeline_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _viewer=Depends(forbid_viewer),
 ):
     """Re-run the watermark classifier for the pipeline's source table.
 
@@ -456,6 +460,7 @@ async def load_history(
     body: LoadHistoryRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _viewer=Depends(forbid_viewer),
 ):
     """Backfill pre-T-1 history: queue a one-shot run with `backfill_since`.
 
@@ -490,6 +495,7 @@ async def delete_pipeline_endpoint(
     pipeline_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _viewer=Depends(forbid_viewer),
 ):
     """Delete a pipeline. Metadata + runs removed; materialized output left in place."""
     _get_pipeline_for_user(pipeline_id, current_user.id, db)

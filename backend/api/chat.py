@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from backend.database.session import get_db
-from backend.auth.dependencies import get_current_user
+from backend.auth.dependencies import get_current_user, forbid_viewer
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
 from backend.schemas.chat import ChatRequest, ChatResponse, ConversationResponse, ConversationListResponse, ConversationListSummaryResponse, MessageStepsResponse, UpdateTitleRequest, ArchiveRequest, ConversationSummaryResponse
@@ -14,7 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[Depends(forbid_viewer)])
 
 
 @router.post("", response_model=ChatResponse)

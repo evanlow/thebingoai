@@ -53,7 +53,7 @@
             <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': refreshing }" />
             <span class="hidden sm:inline">{{ refreshing ? 'Refreshing…' : 'Refresh all' }}</span>
           </button>
-<button class="hdr-btn hdr-btn--filled" @click="emit('toggle-edit')">
+<button v-if="!ws.isViewer" class="hdr-btn hdr-btn--filled" @click="emit('toggle-edit')">
             <Pencil class="h-3.5 w-3.5" />
             <span class="hidden sm:inline">Edit</span>
           </button>
@@ -62,6 +62,7 @@
         <!-- Edit mode -->
         <template v-else>
           <button
+            v-if="!ws.isViewer"
             class="hdr-btn hdr-btn--danger"
             @click="emit('delete')"
           >
@@ -69,6 +70,7 @@
             <span class="hidden sm:inline">Delete</span>
           </button>
           <button
+            v-if="!ws.isViewer"
             class="hdr-btn"
             :class="dirty && !saving ? 'hdr-btn--save' : 'hdr-btn--disabled'"
             :disabled="!dirty || saving"
@@ -77,7 +79,7 @@
             <Save class="h-3.5 w-3.5" />
             {{ saving ? 'Saving…' : 'Save' }}
           </button>
-          <button class="hdr-btn hdr-btn--filled" @click="emit('toggle-edit')">
+          <button v-if="!ws.isViewer" class="hdr-btn hdr-btn--filled" @click="emit('toggle-edit')">
             <Eye class="h-3.5 w-3.5" />
             <span class="hidden sm:inline">Done</span>
           </button>
@@ -109,6 +111,9 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { Pencil, Eye, Save, RefreshCw, Trash2 } from 'lucide-vue-next'
+import { useWorkspaceStore } from '~/stores/workspace'
+
+const ws = useWorkspaceStore()
 
 const props = defineProps<{
   title: string

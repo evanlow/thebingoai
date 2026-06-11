@@ -338,6 +338,9 @@ export interface Dashboard {
   // Per-Org rollout gate (from backend): load widget data via the bulk
   // /{id}/refresh endpoint instead of one /widgets/refresh call per widget.
   bulk_widget_loading?: boolean
+  org_id?: string | null
+  orgName?: string | null
+  isShared?: boolean
 }
 
 // Run history for a scheduled dashboard refresh
@@ -371,6 +374,9 @@ export interface DashboardListItem {
   cronExpression?: string | null
   sourceTitle?: string | null
   sourceThreadId?: string | null
+  orgName?: string | null
+  ownerEmail?: string | null
+  isShared: boolean
 }
 
 // Default grid sizes per widget type
@@ -406,5 +412,8 @@ export function toDashboardListItem(dashboard: Dashboard): DashboardListItem {
     cronExpression: dashboard.cron_expression,
     sourceTitle: ctx?.source_title ?? ctx?.source_name ?? ctx?.source_task ?? null,
     sourceThreadId: ctx?.source_thread_id ?? null,
+    orgName: (dashboard as any).orgName ?? null,
+    ownerEmail: (dashboard as any).ownerEmail ?? null,
+    isShared: (dashboard as any).isShared ?? false,
   }
 }

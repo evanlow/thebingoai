@@ -96,6 +96,25 @@ def test_query_rewrites_table_names(plane, scope):
     assert "test-proj.test_dataset." in sql_arg
 
 
+def test_query_sets_default_dataset(plane, scope):
+    """A bare table (e.g. a GA4 pipeline target the rewriter doesn't qualify)
+    must resolve via the job's default_dataset."""
+    mock_bq = MagicMock()
+    mock_bq.list_tables.return_value = []  # nothing to rewrite → SQL stays bare
+    rows_iter = MagicMock()
+    rows_iter.schema = []
+    rows_iter.__iter__ = lambda s: iter([])
+    mock_bq.query.return_value = MagicMock(result=lambda: rows_iter)
+
+    with patch.object(plane, "_bq", return_value=mock_bq):
+        plane.query(scope, "SELECT * FROM ga4_events_18_249794534")
+
+    job_config = mock_bq.query.call_args.kwargs["job_config"]
+    assert job_config.default_dataset.dataset_id == "test_dataset"
+    # SQL left bare; BigQuery resolves it against the default dataset.
+    assert "ga4_events_18_249794534" in mock_bq.query.call_args[0][0]
+
+
 def test_credentials_per_instance(plane):
     """GCS + BQ clients are configured per-instance from provided SA JSON."""
     plane2 = __import__("backend.data_plane.bigquery_gcs", fromlist=["BigQueryGCSPlane"]).BigQueryGCSPlane(

@@ -7,6 +7,7 @@
       <div class="dash-col dash-col-schedule">SCHEDULE</div>
       <div class="dash-col dash-col-refreshed">REFRESHED</div>
       <div class="dash-col dash-col-owner">OWNER</div>
+      <div class="dash-col dash-col-workspace">WORKSPACE</div>
       <div class="dash-col dash-col-widgets">WIDGETS</div>
     </div>
 
@@ -53,10 +54,16 @@
         {{ item.updatedAt ? timeAgo(item.updatedAt) : '—' }}
       </div>
 
-      <!-- Owner -->
+      <!-- Owner (per-row: shared dashboards are owned by another user) -->
       <div class="dash-col dash-col-owner">
-        <span class="dash-avatar">{{ ownerInitial }}</span>
-        <span class="dash-owner-handle">@{{ ownerHandle }}</span>
+        <span class="dash-avatar">{{ ownerInitialFor(item) }}</span>
+        <span class="dash-owner-handle">@{{ ownerHandleFor(item) }}</span>
+      </div>
+
+      <!-- Workspace (org name on every row; ember pill marks shared cross-org) -->
+      <div class="dash-col dash-col-workspace">
+        <span v-if="item.orgName" :class="item.isShared ? 'dash-ws-pill' : 'dash-ws-name'">{{ item.orgName }}</span>
+        <span v-else class="dash-muted">—</span>
       </div>
 
       <!-- Widget count -->
@@ -84,14 +91,16 @@ const props = defineProps<{
 
 defineEmits<{ open: [id: number]; 'open-thread': [threadId: string] }>()
 
-const ownerHandle = computed(() => {
-  const local = props.currentUserEmail.split('@')[0] ?? ''
-  return local
-})
+// Per-row owner — shared dashboards belong to a user in another org, so the
+// owner must come from the row's ownerEmail, not the current viewer's email.
+function ownerHandleFor(item: DashboardListItem): string {
+  const email = item.ownerEmail || props.currentUserEmail || ''
+  return email.split('@')[0] ?? ''
+}
 
-const ownerInitial = computed(() => {
-  return ownerHandle.value.charAt(0).toUpperCase()
-})
+function ownerInitialFor(item: DashboardListItem): string {
+  return ownerHandleFor(item).charAt(0).toUpperCase()
+}
 
 function scheduleLabel(item: DashboardListItem): string | null {
   if (item.cronExpression) return item.cronExpression
@@ -111,16 +120,17 @@ function scheduleLabel(item: DashboardListItem): string | null {
   background: var(--paper-0);
 }
 
-/* Shared column grid — 6 columns */
+/* Shared column grid — 7 columns */
 .dash-table-head,
 .dash-row {
   display: grid;
   grid-template-columns:
-    minmax(160px, 2.2fr)   /* DASHBOARD */
-    minmax(140px, 2.4fr)   /* FROM THREAD */
-    minmax(120px, 1.4fr)   /* SCHEDULE */
+    minmax(150px, 2.0fr)   /* DASHBOARD */
+    minmax(130px, 2.2fr)   /* FROM THREAD */
+    minmax(110px, 1.3fr)   /* SCHEDULE */
     minmax(80px,  1fr)     /* REFRESHED */
-    minmax(100px, 1.2fr)   /* OWNER */
+    minmax(90px,  1.1fr)   /* OWNER */
+    minmax(90px,  1.2fr)   /* WORKSPACE */
     56px;                  /* WIDGETS */
   align-items: center;
   gap: 0;
@@ -261,6 +271,29 @@ function scheduleLabel(item: DashboardListItem): string | null {
 }
 
 .dash-owner-handle {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-ws-pill {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ember-wash, color-mix(in srgb, var(--ember) 12%, transparent));
+  color: var(--ember);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Own-workspace name — plain text, no pill (pill is reserved for shared rows) */
+.dash-ws-name {
   font-size: 12.5px;
   color: var(--ink-2);
   white-space: nowrap;
