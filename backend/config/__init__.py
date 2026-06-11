@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://thebingo_user:thebingo_password@localhost:5432/thebingo"
     database_url_direct: Optional[str] = None  # Direct connection for migrations (bypasses Supabase connection pooler)
+    db_pool_size: int = 10      # client-side connections kept warm per process
+    db_max_overflow: int = 20   # extra connections allowed beyond pool_size under burst
 
     # Schema storage
     schemas_dir: str = "data/schemas"
