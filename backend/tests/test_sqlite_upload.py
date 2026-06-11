@@ -71,8 +71,8 @@ class TestUploadRoute:
         """Set up common mocks for the upload endpoint."""
         with patch("backend.api.sqlite_upload.get_current_user") as mock_user, \
              patch("backend.api.sqlite_upload.get_db") as mock_db_dep, \
-             patch("backend.services.object_storage.upload_bytes") as mock_upload, \
-             patch("backend.services.object_storage.download_bytes") as mock_download, \
+             patch("backend.services.sqlite_blob_storage.save_blob",
+                   return_value="dp:sqlite_blobs/test.sqlite") as mock_save_blob, \
              patch("backend.api.sqlite_upload.save_schema_file", return_value="/schemas/1_schema.json"), \
              patch("backend.api.sqlite_upload.generate_schema_json", return_value={"test": True}), \
              patch("backend.api.sqlite_upload.settings") as mock_settings:
@@ -82,12 +82,11 @@ class TestUploadRoute:
             mock_user.return_value = user
 
             mock_settings.dataset_max_file_size = 100 * 1024 * 1024  # 100MB
-            mock_settings.do_spaces_base_path = "test"
             mock_settings.enable_governance = False
 
             yield {
                 "user": user,
-                "mock_upload": mock_upload,
+                "mock_save_blob": mock_save_blob,
                 "mock_settings": mock_settings,
             }
 
@@ -203,6 +202,36 @@ class TestUploadRoute:
             )
         assert exc_info.value.status_code == 422
         assert "no user tables" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_upload_no_plane_deletes_connection_and_propagates(self, sample_sqlite_bytes, mock_deps):
+        from backend.api.sqlite_upload import upload_sqlite
+        from backend.data_plane.errors import NoPlaneProvisionedError
+        from backend.data_plane.scope import OwnerScope
+
+        mock_deps["mock_save_blob"].side_effect = NoPlaneProvisionedError(
+            OwnerScope("user", "user-1")
+        )
+
+        file = MagicMock()
+        file.filename = "noplane.sqlite"
+        file.read = AsyncMock(return_value=sample_sqlite_bytes)
+
+        db = MagicMock()
+
+        def capture_add(obj):
+            if hasattr(obj, "db_type"):
+                obj.id = 7
+
+        db.add = MagicMock(side_effect=capture_add)
+        db.refresh = MagicMock()
+
+        with pytest.raises(NoPlaneProvisionedError):
+            await upload_sqlite(
+                file=file, name=None,
+                current_user=mock_deps["user"], db=db,
+            )
+        db.delete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_schema_json_generated_after_upload(self, sample_sqlite_bytes, mock_deps):

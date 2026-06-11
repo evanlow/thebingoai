@@ -210,6 +210,17 @@ class LocalFilesystemDataPlane:
         with open(path, "rb") as f:
             return f.read()
 
+    def delete_raw_object(self, scope: OwnerScope, rel_path: str) -> None:
+        """Delete the raw object at *rel_path*; silently no-op when absent."""
+        try:
+            os.remove(self._raw_path(scope, rel_path))
+        except FileNotFoundError:
+            pass
+
+    def raw_object_exists(self, scope: OwnerScope, rel_path: str) -> bool:
+        """Return True when a raw object exists at *rel_path*."""
+        return os.path.isfile(self._raw_path(scope, rel_path))
+
     def query(
         self,
         scope: OwnerScope,

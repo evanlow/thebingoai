@@ -257,15 +257,15 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
 
     from backend.data_plane.scope import OwnerScope
     from backend.services.data_plane_service import get_default_plane
-    import backend.services.object_storage as object_storage
+    from backend.services import sqlite_blob_storage
 
     scope = OwnerScope.from_connection(connection)
     plane = get_default_plane(scope, db)
 
     legacy_blob_path: str = connection.dataset_table_name  # type: ignore[assignment]
 
-    # Download SQLite blob
-    blob_data = object_storage.download_bytes(legacy_blob_path)
+    # Download SQLite blob (DataPlane dp: key or legacy DO Spaces key)
+    blob_data = sqlite_blob_storage.load_blob(connection, db=db)
     if blob_data is None:
         raise ValueError(f"Legacy blob not found in object storage: {legacy_blob_path!r}")
 
@@ -354,12 +354,10 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
         )
 
     if not dry_run:
-        # Clear the FK reference before deleting the blob
+        # Delete the blob first — delete_blob routes off connection.dataset_table_name
+        sqlite_blob_storage.delete_blob(connection, db=db)
         connection.dataset_table_name = None
         db.add(connection)
-
-        # Soft-delete legacy blob
-        object_storage.delete_object(legacy_blob_path)
 
         # Serialise widget rewrites for the journal
         journal.widget_rewrites_applied = [

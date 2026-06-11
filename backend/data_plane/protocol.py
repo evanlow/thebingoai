@@ -59,6 +59,14 @@ class DataPlane(Protocol):
         """Read opaque bytes previously written by `put_raw_object`; None if absent."""
         ...
 
+    def delete_raw_object(self, scope: OwnerScope, rel_path: str) -> None:
+        """Delete the raw object at *rel_path*; silently no-op when absent."""
+        ...
+
+    def raw_object_exists(self, scope: OwnerScope, rel_path: str) -> bool:
+        """Return True when a raw object exists at *rel_path*."""
+        ...
+
     def query(
         self,
         scope: OwnerScope,
