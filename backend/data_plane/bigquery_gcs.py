@@ -339,17 +339,16 @@ class BigQueryGCSPlane:
 
         rewritten_sql = self._rewrite_sql(scope, sql)
         bound_sql, bq_params = _pyformat_to_bq(rewritten_sql, params)
-        job_config = (
-            bigquery.QueryJobConfig(query_parameters=bq_params)
-            if bq_params
-            else None
-        )
+        job_config = bigquery.QueryJobConfig(query_parameters=bq_params or [])
+        # Default dataset so a *bare* table reference resolves to this plane's
+        # dataset. `_rewrite_sql` only fully-qualifies tables it knows from
+        # `list_tables` (scope-prefixed + `_dash_*`); a GA4 pipeline target like
+        # `ga4_events_18_...` isn't among them, so without a default dataset
+        # BigQuery rejects it with "must be qualified with a dataset". Already
+        # fully-qualified refs ignore the default, so this is harmless to them.
+        job_config.default_dataset = f"{self._project}.{self._dataset}"
         start = time.time()
-        job = (
-            self._bq().query(bound_sql, job_config=job_config)
-            if job_config is not None
-            else self._bq().query(bound_sql)
-        )
+        job = self._bq().query(bound_sql, job_config=job_config)
         rows_iter = job.result()
         columns = [f.name for f in rows_iter.schema]
         rows = [tuple(row.values()) for row in rows_iter]

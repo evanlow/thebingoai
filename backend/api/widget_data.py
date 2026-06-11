@@ -446,6 +446,60 @@ def _widget_cache_store(key, ttl, resp: "WidgetRefreshResponse | None") -> None:
     )
 
 
+def _serving_org_and_shared(dashboard, current_user):
+    """Return (serving_org_id, is_shared) for widget serving.
+
+    Shared (cross-org) dashboards serve from the HOST org's DataPlane/cache, so
+    the serving org is the dashboard's org, not the viewer's home org. `is_shared`
+    is anchored to the viewer's HOME org (matching dashboards.py) so it stays
+    stable regardless of any active-workspace header.
+    """
+    dash_org = str(dashboard.org_id) if getattr(dashboard, "org_id", None) else None
+    user_org = getattr(current_user, "home_org_id", None) or (
+        str(current_user.org_id) if getattr(current_user, "org_id", None) else None
+    )
+    is_shared = bool(dash_org and user_org and dash_org != str(user_org))
+    serving_org = dash_org or (str(user_org) if user_org else None)
+    return serving_org, is_shared
+
+
+def _readable_connection(db, connection_id, current_user, dashboard):
+    """Resolve the DatabaseConnection for serving a (possibly shared) dashboard.
+
+    Own dashboards: caller must own the connection (unchanged).
+    Shared (cross-org) dashboards: the connection must belong to a user in the
+    dashboard's (host) org — read-only serving from host parquet only.
+    """
+    _, is_shared = _serving_org_and_shared(dashboard, current_user) if dashboard else (None, False)
+    q = db.query(DatabaseConnection).filter(DatabaseConnection.id == connection_id)
+    if is_shared:
+        return (
+            q.join(User, DatabaseConnection.user_id == User.id)
+            .filter(User.org_id == str(dashboard.org_id))
+            .first()
+        )
+    return q.filter(DatabaseConnection.user_id == current_user.id).first()
+
+
+def _shared_serve_ctx(is_shared: bool, serving_org):
+    """Context manager wrapping DataPlane reads for SHARED-dashboard serving.
+
+    The governance DataPlane middleware enforces per-table grants against the
+    request user. A viewer's access to a shared dashboard is governed by the
+    share (org membership), not per-table grants, so its plane reads run under a
+    system_context — ACL-bypassed and audited as a system actor. No-op for own
+    dashboards (the viewer already holds grants in their home org).
+    """
+    from contextlib import nullcontext
+    if not (is_shared and serving_org):
+        return nullcontext()
+    from backend.auth.system_context import system_context
+    from backend.data_plane.scope import OwnerScope
+    return system_context(
+        reason="shared_dashboard.serve", scope=OwnerScope("org", str(serving_org))
+    )
+
+
 def _build_widget_response(result, mapping, served_from: str = "data_plane") -> "WidgetRefreshResponse":
     """Shared QueryResult → WidgetRefreshResponse (local + GCS serving paths).
 
@@ -535,10 +589,7 @@ def _serve_widget_via_dataplane(
     )
     from backend.utils.sql_refs import extract_table_refs, rewrite_table_refs
 
-    connection = db.query(DatabaseConnection).filter(
-        DatabaseConnection.id == request.connection_id,
-        DatabaseConnection.user_id == current_user.id,
-    ).first()
+    connection = _readable_connection(db, request.connection_id, current_user, dashboard)
     if not connection:
         return None
 
@@ -662,12 +713,15 @@ async def refresh_widget(
         # can view the dashboard can refresh its widgets.
         from backend.api.dashboards import _dashboard_visible_to
         dashboard = (
-            _dashboard_visible_to(db.query(Dashboard), current_user)
+            _dashboard_visible_to(db.query(Dashboard), current_user, db)
             .filter(Dashboard.id == request.dashboard_id)
             .first()
         )
 
-    org_id = getattr(current_user, "org_id", None)
+    serving_org, dash_is_shared = (
+        _serving_org_and_shared(dashboard, current_user) if dashboard else (None, False)
+    )
+    org_id = serving_org or getattr(current_user, "org_id", None)
 
     # Redis result cache (flag-gated, per-Org). Keys embed the dashboard's
     # materialization generation, so unfiltered hits are exact; hits skip the
@@ -686,7 +740,8 @@ async def refresh_widget(
     # unfiltered reads alike; returns None to fall through on cold source etc.
     if dashboard and _duckdb_serving_enabled(org_id):
         try:
-            served = _serve_widget_via_dataplane(request, dashboard, current_user, db)
+            with _shared_serve_ctx(dash_is_shared, serving_org):
+                served = _serve_widget_via_dataplane(request, dashboard, current_user, db)
             if served is not None:
                 _widget_cache_store(cache_key, cache_ttl, served)
                 return served
@@ -699,12 +754,13 @@ async def refresh_widget(
     # DataPlane cache read — only when no filters (Parquet has no WHERE injection).
     if dashboard and request.widget_id and not request.filters:
         try:
-            result = _read_widget_from_cache(
-                request.dashboard_id,
-                request.widget_id,
-                org_id=getattr(current_user, "org_id", None),
-                user_id=current_user.id,
-            )
+            with _shared_serve_ctx(dash_is_shared, serving_org):
+                result = _read_widget_from_cache(
+                    request.dashboard_id,
+                    request.widget_id,
+                    org_id=serving_org,
+                    user_id=current_user.id,
+                )
             if result is not None:
                 config = transform_widget_data(result, request.mapping)
                 resp = WidgetRefreshResponse(
@@ -725,11 +781,11 @@ async def refresh_widget(
         except Exception as e:
             logger.warning(f"DataPlane cache read failed for widget {request.widget_id}, falling back to source DB: {e}")
 
-    # Fallback: source DB query
-    connection = db.query(DatabaseConnection).filter(
-        DatabaseConnection.id == request.connection_id,
-        DatabaseConnection.user_id == current_user.id,
-    ).first()
+    # Fallback: source DB query. Shared (cross-org) dashboards read live from the
+    # HOST org's connection — `_readable_connection` authorizes a connection owned
+    # by a user in the dashboard's org; own dashboards still require the caller to
+    # own the connection.
+    connection = _readable_connection(db, request.connection_id, current_user, dashboard)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -765,7 +821,8 @@ async def refresh_widget(
             if _p is not None:
                 _scope = OwnerScope(kind=_p.owner_scope_kind, id=_p.owner_scope_id)
                 _plane = get_default_plane(_scope, db)
-                result = _plane.query(_scope, sql, params=params)
+                with _shared_serve_ctx(dash_is_shared, serving_org):
+                    result = _plane.query(_scope, sql, params=params)
                 served_from = "data_plane"
             else:
                 result = connector.execute_query(sql, params=params)
@@ -847,7 +904,7 @@ async def refresh_dashboard_widgets(
     # can view the dashboard can refresh its widgets.
     from backend.api.dashboards import _dashboard_visible_to
     dashboard = (
-        _dashboard_visible_to(db.query(Dashboard), current_user)
+        _dashboard_visible_to(db.query(Dashboard), current_user, db)
         .filter(Dashboard.id == dashboard_id)
         .first()
     )
@@ -855,9 +912,11 @@ async def refresh_dashboard_widgets(
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
 
+    serving_org, dash_is_shared = _serving_org_and_shared(dashboard, current_user)
+
     widgets = dashboard.widgets or []
     results: dict = {}
-    org_id = getattr(current_user, "org_id", None)
+    org_id = serving_org or getattr(current_user, "org_id", None)
     refreshed_at = datetime.now(timezone.utc).isoformat()
     # Dashboard-level filters (parity with single-widget refresh). When present,
     # the warm `_dash_*` cache is skipped (it holds unfiltered rows) and filters
@@ -948,15 +1007,16 @@ async def refresh_dashboard_widgets(
             # avoid the per-widget BQ job. Falls through on None (GAP-7).
             if duck_enabled:
                 try:
-                    served = _serve_widget_via_dataplane(
-                        WidgetRefreshRequest(
-                            connection_id=connection_id, sql=sql, mapping=mapping,
-                            filters=filters, dashboard_id=dashboard_id, widget_id=widget_id,
-                            widget_sources=widget.get("sources"),
-                        ),
-                        dashboard, current_user, db,
-                        reader=shared_reader,
-                    )
+                    with _shared_serve_ctx(dash_is_shared, serving_org):
+                        served = _serve_widget_via_dataplane(
+                            WidgetRefreshRequest(
+                                connection_id=connection_id, sql=sql, mapping=mapping,
+                                filters=filters, dashboard_id=dashboard_id, widget_id=widget_id,
+                                widget_sources=widget.get("sources"),
+                            ),
+                            dashboard, current_user, db,
+                            reader=shared_reader,
+                        )
                     if served is not None:
                         _widget_cache_store(widget_cache_key, bulk_cache_ttl, served)
                         results[widget_id] = {"config": served.config, "refreshed_at": refreshed_at, "served_from": served.served_from}
@@ -968,10 +1028,11 @@ async def refresh_dashboard_widgets(
             # holds unfiltered rows; serving it under a filter would be stale).
             if not filters:
                 try:
-                    cached = _read_widget_from_cache(
-                        dashboard_id, widget_id,
-                        org_id=org_id, user_id=current_user.id,
-                    )
+                    with _shared_serve_ctx(dash_is_shared, serving_org):
+                        cached = _read_widget_from_cache(
+                            dashboard_id, widget_id,
+                            org_id=org_id, user_id=current_user.id,
+                        )
                     if cached is not None:
                         if widget_cache_key:
                             from backend.services import widget_result_cache as wrc
@@ -992,14 +1053,14 @@ async def refresh_dashboard_widgets(
                 except Exception as e:
                     logger.warning(f"DataPlane cache read failed for widget {widget_id}, falling back to source DB: {e}")
 
-            # Fallback: source DB query. Connection row + connector are memoized
-            # per connection_id so a dashboard with many widgets on one
-            # connection pays a single fetch + connector build, not N.
+            # Fallback: source DB query. Shared (cross-org) dashboards read live
+            # from the HOST org's connection via `_readable_connection`. Connection
+            # row + connector are memoized per connection_id so a dashboard with
+            # many widgets on one connection pays a single fetch + connector build.
             if connection_id not in connection_cache:
-                connection_cache[connection_id] = db.query(DatabaseConnection).filter(
-                    DatabaseConnection.id == connection_id,
-                    DatabaseConnection.user_id == current_user.id,
-                ).first()
+                connection_cache[connection_id] = _readable_connection(
+                    db, connection_id, current_user, dashboard
+                )
             connection = connection_cache[connection_id]
 
             if not connection:
@@ -1037,7 +1098,8 @@ async def refresh_dashboard_widgets(
                     if _p is not None:
                         _s = _OS(kind=_p.owner_scope_kind, id=_p.owner_scope_id)
                         _plane = _get_default_plane(_s, db)
-                        result = _plane.query(_s, fb_sql, params=params)
+                        with _shared_serve_ctx(dash_is_shared, serving_org):
+                            result = _plane.query(_s, fb_sql, params=params)
                         served_from = "data_plane"
                     else:
                         result = connector.execute_query(fb_sql, params=params)

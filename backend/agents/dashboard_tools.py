@@ -703,8 +703,15 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
 
         db = db_session_factory()
         try:
+            # Stamp the owner's org so the dashboard is org-scoped like the
+            # api/dashboards.create_dashboard path. Without it the row is
+            # org_id=NULL, which breaks org-scoped visibility and the
+            # shared-with-me connection resolution for cross-org viewers.
+            from backend.services.dashboard_cache import _get_org_for_user
+            org_id = _get_org_for_user(context.user_id)
             dashboard = Dashboard(
                 user_id=context.user_id,
+                org_id=org_id,
                 title=title,
                 description=description or None,
                 widgets=widgets,
@@ -721,8 +728,6 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
             # bypasses (it persists the Dashboard directly).
             try:
                 from backend.config.feature_flags import enabled
-                from backend.services.dashboard_cache import _get_org_for_user
-                org_id = _get_org_for_user(context.user_id)
                 if org_id and enabled(str(org_id), "duckdb_widget_serving"):
                     from backend.migration.dialect_migration import mark_born_duckdb
                     mark_born_duckdb(dashboard.id, db)

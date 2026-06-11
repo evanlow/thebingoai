@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -19,8 +19,9 @@ security = HTTPBearer()
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> User:
     """
     FastAPI dependency to get the current authenticated user via SSO token validation.
@@ -76,6 +77,26 @@ async def get_current_user(
             # Auto-create new user
             user = _create_user(db, sso_user)
 
+    # Multi-workspace: an X-Workspace-Id header selects the active workspace
+    # when the user is a member of it. In-memory only; no commit happens here.
+    user.active_role = "member"
+    if settings.enable_governance:
+        try:
+            from bingo_org_governance.deps import resolve_active_workspace
+        except ImportError:
+            pass
+        else:
+            header_org = request.headers.get("X-Workspace-Id")
+            active_org, active_role = resolve_active_workspace(
+                db, user=user, header_org_id=header_org,
+            )
+            user.home_org_id = str(user.org_id) if user.org_id else None
+            if active_org and str(user.org_id) != str(active_org):
+                user.org_id = active_org
+            user.active_role = active_role
+            request.state.active_org_id = active_org
+            request.state.active_role = active_role
+
     # Bind the user to the request-scoped contextvar so the governance
     # plugin's DataPlane wrap can enforce ACL without threading `user`
     # through every caller. The contextvar resets at request end via FastAPI's
@@ -111,7 +132,6 @@ def _create_user(db: Session, sso_user) -> User:
         db.flush()  # Get the ID without committing
 
         org_to_emit = None  # set only when we created a new Org
-        invite_consumed = False  # set when we auto-joined via a pending invite
 
         if settings.enable_governance:
             # Phase 2 (multi-user-org): if there's a pending invite for this
@@ -129,21 +149,6 @@ def _create_user(db: Session, sso_user) -> User:
                 pending_invite = lookup_pending_invite_for_email(db, sso_user.email)
 
             if pending_invite is not None:
-                from backend.models.team import Team
-
-                user.org_id = pending_invite.org_id
-                first_team = (
-                    db.query(Team)
-                    .filter(Team.org_id == pending_invite.org_id)
-                    .order_by(Team.id)
-                    .first()
-                )
-                if first_team is not None:
-                    db.add(TeamMembership(
-                        user_id=user.id,
-                        team_id=first_team.id,
-                        role=MemberRole.MEMBER,
-                    ))
                 _consume_invite_for_user(db, invite=pending_invite, user=user)
                 write_event(
                     db,
@@ -154,14 +159,13 @@ def _create_user(db: Session, sso_user) -> User:
                     resource_id=pending_invite.id,
                     details={"email": user.email, "role": pending_invite.role},
                 )
-                invite_consumed = True
                 logger.info(
                     "SSO signup auto-joined org %s via invite %s (email=%s, role=%s)",
                     pending_invite.org_id, pending_invite.id,
                     user.email, pending_invite.role,
                 )
 
-        if settings.enable_governance and not invite_consumed:
+        if settings.enable_governance:
             if settings.per_user_org_signup:
                 # 1 user = 1 Org. Trial state lives on the Organization row.
                 import datetime as _dt
@@ -189,6 +193,8 @@ def _create_user(db: Session, sso_user) -> User:
                     team_id=team.id,
                     role=MemberRole.MEMBER,
                 ))
+                from bingo_org_governance.roles import assign_role
+                assign_role(db, user_id=user.id, org_id=org.id, role="admin")
                 org_to_emit = org
             else:
                 user.org_id = DEFAULT_ORG_ID
@@ -197,6 +203,8 @@ def _create_user(db: Session, sso_user) -> User:
                     team_id=DEFAULT_TEAM_ID,
                     role=MemberRole.MEMBER,
                 ))
+                from bingo_org_governance.roles import assign_role
+                assign_role(db, user_id=user.id, org_id=DEFAULT_ORG_ID, role="member")
 
         db.commit()
         db.refresh(user)
@@ -233,4 +241,16 @@ async def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
     """FastAPI dependency to ensure user is active (kept for backwards compatibility)."""
+    return current_user
+
+
+def forbid_viewer(current_user: User = Depends(get_current_user)) -> User:
+    """403 when the active workspace role is 'viewer' (read-only guest).
+    In community/no-governance deploys active_role is always 'member', so this
+    is a no-op there."""
+    if getattr(current_user, "active_role", None) == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot perform this action in this workspace.",
+        )
     return current_user

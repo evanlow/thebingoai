@@ -115,6 +115,9 @@ export const useDashboardStore = defineStore('dashboard', {
           widgets: (d.widgets ?? []).map(normalizeWidget),
           createdAt: (d as any).created_at,
           updatedAt: (d as any).updated_at,
+          orgName: (d as any).org_name ?? null,
+          ownerEmail: (d as any).owner_email ?? null,
+          isShared: (d as any).is_shared ?? false,
         }))
       } finally {
         this.loading = false
@@ -140,6 +143,12 @@ export const useDashboardStore = defineStore('dashboard', {
           data_context: data.data_context ?? null,
           createdAt: data.created_at,
           updatedAt: data.updated_at,
+          // Preserve org/owner/shared metadata (snake→camel) so opening a
+          // dashboard doesn't blank the list row's OWNER/WORKSPACE columns
+          // (which would fall back to the current viewer = apparent owner change).
+          orgName: (data as any).org_name ?? null,
+          ownerEmail: (data as any).owner_email ?? null,
+          isShared: (data as any).is_shared ?? false,
         }
         const idx = this.dashboards.findIndex(d => d.id === id)
         if (idx >= 0) {

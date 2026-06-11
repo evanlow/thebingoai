@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Any
 from backend.database.session import get_db
 from backend.api.auth import get_current_user
+from backend.auth.dependencies import forbid_viewer
 from backend.models.user import User
 from backend.models.dashboard import Dashboard
 
@@ -40,26 +41,67 @@ class DashboardResponse(BaseModel):
     schedule_active: bool = False
     next_run_at: Optional[str] = None
     last_run_at: Optional[str] = None
+    org_id: Optional[str] = None
+    org_name: Optional[str] = None
+    owner_email: Optional[str] = None
+    is_shared: bool = False
     # Per-Org rollout gate: frontend loads widget data via the bulk
     # /{id}/refresh endpoint instead of one /widgets/refresh call per widget.
     bulk_widget_loading: bool = False
 
 
-def _dashboard_visible_to(query, current_user: User):
-    """Phase 3 collaborative-workspace scope filter for dashboards.
+def _readable_org_ids(db: Session, current_user: User) -> set[str]:
+    """Org ids whose dashboards the user may READ: home org + every org the
+    user holds a UserOrgRole in (the 'shared with me' surface).
 
-    Same-org rows are visible; row whose owner currently lives in the caller's
-    org are also visible (covers pre-Phase-0 rows that never got `org_id`
-    backfilled). Falls back to owner-only when the caller has no org.
+    Falls back to the home org alone when the governance plugin is absent
+    (community standalone).
+    """
+    ids: set[str] = set()
+    if current_user.org_id:
+        ids.add(str(current_user.org_id))
+    home = getattr(current_user, "home_org_id", None)
+    # home_org_id may diverge from org_id (active workspace) in a later task; defensive.
+    if home:
+        ids.add(str(home))
+    try:
+        from bingo_org_governance.models import UserOrgRole
+    except ImportError:
+        return ids
+    rows = (
+        db.query(UserOrgRole.org_id)
+        .filter(UserOrgRole.user_id == current_user.id)
+        .all()
+    )
+    ids.update(str(r[0]) for r in rows)
+    return ids
+
+
+def _home_org_id(user) -> Optional[str]:
+    """The user's home org id (their own org), independent of active workspace."""
+    return getattr(user, "home_org_id", None) or (
+        str(user.org_id) if user.org_id else None
+    )
+
+
+def _dashboard_visible_to(query, current_user: User, db: Session):
+    """Read scope: dashboards in any org the caller may read (home +
+    memberships). Legacy owner-without-org rows whose owner currently lives in a
+    readable org stay visible. Falls back to owner-only when the caller has no org.
     """
     from sqlalchemy import or_
 
-    if current_user.org_id is None:
+    readable = _readable_org_ids(db, current_user)
+    if not readable:
         return query.filter(Dashboard.user_id == current_user.id)
-    return query.outerjoin(User, Dashboard.user_id == User.id).filter(
+    # Avoid a JOIN (which would duplicate rows and force a DISTINCT that Postgres
+    # can't apply over the `json` widgets/data_context columns). Resolve owner
+    # ids in readable orgs via a subquery instead — single table, no dupes.
+    owner_ids = db.query(User.id).filter(User.org_id.in_(readable))
+    return query.filter(
         or_(
-            Dashboard.org_id == current_user.org_id,
-            User.org_id == current_user.org_id,
+            Dashboard.org_id.in_(readable),
+            Dashboard.user_id.in_(owner_ids),
         )
     )
 
@@ -78,6 +120,25 @@ def _governance_require_mutate_dashboard(current_user: User, dashboard: Dashboar
     )
 
 
+def _org_name_map(db: Session, org_ids: set) -> dict:
+    """Map org_id -> name for the given ids (single query, no N+1)."""
+    if not org_ids:
+        return {}
+    from backend.models.organization import Organization
+    rows = db.query(Organization.id, Organization.name).filter(
+        Organization.id.in_(org_ids)
+    ).all()
+    return {str(i): n for i, n in rows}
+
+
+def _owner_email_map(db: Session, owner_ids: set) -> dict:
+    """Map user_id -> email for dashboard owners (single query, no N+1)."""
+    if not owner_ids:
+        return {}
+    rows = db.query(User.id, User.email).filter(User.id.in_(owner_ids)).all()
+    return {str(i): e for i, e in rows}
+
+
 def _bulk_widget_loading_for(current_user: User) -> bool:
     """Per-Org `bulk_widget_loading` rollout flag (False without an org)."""
     if not current_user.org_id:
@@ -90,9 +151,23 @@ def _bulk_widget_loading_for(current_user: User) -> bool:
         return False
 
 
-def _dashboard_to_response(dashboard: Dashboard, *, bulk_widget_loading: bool = False) -> DashboardResponse:
+def _dashboard_to_response(
+    dashboard: Dashboard,
+    *,
+    home_org_id: Optional[str] = None,
+    org_names: Optional[dict] = None,
+    owner_emails: Optional[dict] = None,
+    bulk_widget_loading: bool = False,
+) -> DashboardResponse:
+    org_id = str(dashboard.org_id) if dashboard.org_id else None
+    is_shared = bool(org_id and home_org_id and org_id != str(home_org_id))
+    # org_name is shown on every row (own + shared); is_shared still drives the
+    # frontend's shared pill styling.
+    org_name = (org_names or {}).get(org_id)
+    owner_email = (owner_emails or {}).get(
+        str(dashboard.user_id)
+    ) if dashboard.user_id else None
     return DashboardResponse(
-        bulk_widget_loading=bulk_widget_loading,
         id=dashboard.id,
         title=dashboard.title,
         description=dashboard.description,
@@ -106,6 +181,11 @@ def _dashboard_to_response(dashboard: Dashboard, *, bulk_widget_loading: bool = 
         schedule_active=dashboard.schedule_active or False,
         next_run_at=str(dashboard.next_run_at) if dashboard.next_run_at else None,
         last_run_at=str(dashboard.last_run_at) if dashboard.last_run_at else None,
+        org_id=org_id,
+        org_name=org_name,
+        owner_email=owner_email,
+        is_shared=is_shared,
+        bulk_widget_loading=bulk_widget_loading,
     )
 
 
@@ -120,12 +200,22 @@ async def list_dashboards(
     every dashboard in the org. Legacy callers without an org_id keep the
     owner-only view.
     """
-    dashboards = _dashboard_visible_to(db.query(Dashboard), current_user).all()
-    # Org-level flag, computed once for the whole list. Must match the detail
-    # endpoint: widgets can mount from list data before the detail fetch lands,
-    # and a stale False here would fire the legacy per-widget refreshes.
+    dashboards = _dashboard_visible_to(db.query(Dashboard), current_user, db).all()
+    home_org_id = _home_org_id(current_user)
+    org_ids = {str(d.org_id) for d in dashboards if d.org_id}
+    org_names = _org_name_map(db, org_ids)
+    owner_emails = _owner_email_map(db, {str(d.user_id) for d in dashboards if d.user_id})
     bulk_widget_loading = _bulk_widget_loading_for(current_user)
-    return [_dashboard_to_response(d, bulk_widget_loading=bulk_widget_loading) for d in dashboards]
+    return [
+        _dashboard_to_response(
+            d,
+            home_org_id=home_org_id,
+            org_names=org_names,
+            owner_emails=owner_emails,
+            bulk_widget_loading=bulk_widget_loading,
+        )
+        for d in dashboards
+    ]
 
 
 @router.get("/{dashboard_id}", response_model=DashboardResponse)
@@ -136,13 +226,22 @@ async def get_dashboard(
 ):
     """Get a specific dashboard."""
     dashboard = (
-        _dashboard_visible_to(db.query(Dashboard), current_user)
+        _dashboard_visible_to(db.query(Dashboard), current_user, db)
         .filter(Dashboard.id == dashboard_id)
         .first()
     )
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
-    return _dashboard_to_response(dashboard, bulk_widget_loading=_bulk_widget_loading_for(current_user))
+    home_org_id = _home_org_id(current_user)
+    org_names = _org_name_map(db, {str(dashboard.org_id)} if dashboard.org_id else set())
+    owner_emails = _owner_email_map(db, {str(dashboard.user_id)} if dashboard.user_id else set())
+    return _dashboard_to_response(
+        dashboard,
+        home_org_id=home_org_id,
+        org_names=org_names,
+        owner_emails=owner_emails,
+        bulk_widget_loading=_bulk_widget_loading_for(current_user),
+    )
 
 
 @router.post("", response_model=DashboardResponse, status_code=status.HTTP_201_CREATED)
@@ -150,6 +249,7 @@ async def create_dashboard(
     payload: DashboardCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _viewer=Depends(forbid_viewer),
 ):
     """Create a new dashboard."""
     dashboard = Dashboard(
@@ -175,7 +275,16 @@ async def create_dashboard(
         except Exception:
             logger.warning("mark_born_duckdb failed for dashboard %s", dashboard.id, exc_info=True)
 
-    return _dashboard_to_response(dashboard)
+    home_org_id = _home_org_id(current_user)
+    org_names = _org_name_map(db, {str(dashboard.org_id)} if dashboard.org_id else set())
+    owner_emails = _owner_email_map(db, {str(dashboard.user_id)} if dashboard.user_id else set())
+    return _dashboard_to_response(
+        dashboard,
+        home_org_id=home_org_id,
+        org_names=org_names,
+        owner_emails=owner_emails,
+        bulk_widget_loading=_bulk_widget_loading_for(current_user),
+    )
 
 
 @router.put("/{dashboard_id}", response_model=DashboardResponse)
@@ -184,11 +293,12 @@ async def update_dashboard(
     payload: DashboardUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _viewer=Depends(forbid_viewer),
 ):
     """Update a dashboard (partial update)."""
     dashboard = (
-        _dashboard_visible_to(db.query(Dashboard), current_user)
-        .filter(Dashboard.id == dashboard_id)
+        db.query(Dashboard)
+        .filter(Dashboard.id == dashboard_id, Dashboard.org_id == current_user.org_id)
         .first()
     )
     if not dashboard:
@@ -205,7 +315,16 @@ async def update_dashboard(
 
     db.commit()
     db.refresh(dashboard)
-    return _dashboard_to_response(dashboard)
+    home_org_id = _home_org_id(current_user)
+    org_names = _org_name_map(db, {str(dashboard.org_id)} if dashboard.org_id else set())
+    owner_emails = _owner_email_map(db, {str(dashboard.user_id)} if dashboard.user_id else set())
+    return _dashboard_to_response(
+        dashboard,
+        home_org_id=home_org_id,
+        org_names=org_names,
+        owner_emails=owner_emails,
+        bulk_widget_loading=_bulk_widget_loading_for(current_user),
+    )
 
 
 @router.delete("/{dashboard_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -213,11 +332,12 @@ async def delete_dashboard(
     dashboard_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _viewer=Depends(forbid_viewer),
 ):
     """Hard delete a dashboard."""
     dashboard = (
-        _dashboard_visible_to(db.query(Dashboard), current_user)
-        .filter(Dashboard.id == dashboard_id)
+        db.query(Dashboard)
+        .filter(Dashboard.id == dashboard_id, Dashboard.org_id == current_user.org_id)
         .first()
     )
     if not dashboard:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database.session import get_db
-from backend.auth.dependencies import get_current_user
+from backend.auth.dependencies import get_current_user, forbid_viewer
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection, ProfilingStatus
 from backend.models.team_membership import TeamMembership
@@ -98,7 +98,7 @@ def _governance_require_mutate_connection(current_user, connection) -> None:
     )
 
 
-router = APIRouter(prefix="/connections", tags=["connections"])
+router = APIRouter(prefix="/connections", tags=["connections"], dependencies=[Depends(forbid_viewer)])
 
 
 @router.post("", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)

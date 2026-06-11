@@ -37,6 +37,7 @@
         </Transition>
 
         <form
+          v-if="!ws.isViewer"
           @submit.prevent="handleSubmit"
           @dragover.prevent
           @drop.prevent="handleDrop"
@@ -173,6 +174,7 @@
 import { Scissors, ArrowUp, Paperclip, AtSign } from 'lucide-vue-next'
 import UiDialog from '~/components/ui/UiDialog.vue'
 import { useMentions, type MentionItem } from '~/composables/useMentions'
+import { useWorkspaceStore } from '~/stores/workspace'
 import pillDataset from '~/assets/icons/pill/dataset.svg?raw'
 import pillNotion from '~/assets/icons/pill/notion.svg?raw'
 import pillDashboard from '~/assets/icons/pill/dashboard.svg?raw'
@@ -180,6 +182,7 @@ import pillSkill from '~/assets/icons/pill/skill.svg?raw'
 import pillPerson from '~/assets/icons/pill/person.svg?raw'
 
 const chatStore = useChatStore()
+const ws = useWorkspaceStore()
 const emit = defineEmits<{ send: []; reset: [] }>()
 
 const { isExhausted, remaining } = useCreditBalance()
