@@ -143,6 +143,13 @@ export const useDatasetStatus = () => {
   async function startPolling(connectionId: number) {
     if (pollers[connectionId]) return
 
+    // Terminal status already cached — nothing to poll. Checking BEFORE the
+    // immediate fetch matters: the datasets watcher re-fires on every reactive
+    // update, and an unconditional fetch here would itself trigger the next
+    // recompute → infinite request loop.
+    const known = profilingStatuses.value.get(connectionId)
+    if (known?.status === 'ready' || known?.status === 'failed') return
+
     // Fetch immediately so historical datasets don't flash "profiling" for 3 seconds
     await fetchProfilingStatus(connectionId)
     const cached = profilingStatuses.value.get(connectionId)
@@ -218,8 +225,11 @@ export const useDatasetStatus = () => {
         ds.connectionId = ds.connectionId ?? rest.connection_id
       }
 
-      // Check profiling status if we have a connection ID and step is profiling
-      if (ds.connectionId && ds.step === 'profiling') {
+      // Check profiling status if we have a connection ID and step is still
+      // non-terminal. 'schema' is included: with inline profiling the backend
+      // can reach 'ready' before a profiling WS event is ever emitted, and a
+      // stuck 'schema' entry would otherwise keep the poll watcher firing.
+      if (ds.connectionId && (ds.step === 'profiling' || ds.step === 'schema')) {
         const profiling = profilingStatuses.value.get(ds.connectionId)
         if (profiling?.status === 'ready') {
           ds.step = 'ready'
