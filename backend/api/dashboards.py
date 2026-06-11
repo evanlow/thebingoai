@@ -225,5 +225,13 @@ async def delete_dashboard(
 
     _governance_require_mutate_dashboard(current_user, dashboard)
 
+    # Remove the dialect-migration journal row first — its FK on dashboards.id
+    # has no ON DELETE CASCADE, so deleting a migrated/born-DuckDB dashboard
+    # would otherwise fail with a ForeignKeyViolation.
+    from backend.migration.dialect_migration import DashboardDialectMigration
+    db.query(DashboardDialectMigration).filter(
+        DashboardDialectMigration.dashboard_id == dashboard_id
+    ).delete()
+
     db.delete(dashboard)
     db.commit()
