@@ -17,6 +17,7 @@ export function createFetchHelper(authStore: any, router: any) {
   const fetchWithRefresh = async <T>(url: string, options: Parameters<typeof $fetch>[1] = {}): Promise<T> => {
     try {
       return await $fetch<T>(url, {
+        timeout: 60_000,  // default cap; callers can override via options
         ...options,
         headers: {
           ...getHeaders(options.body),
@@ -29,6 +30,7 @@ export function createFetchHelper(authStore: any, router: any) {
         if (refreshed) {
           // Retry with new token
           return await $fetch<T>(url, {
+            timeout: 60_000,  // default cap; callers can override via options
             ...options,
             headers: {
               ...getHeaders(options.body),

@@ -68,6 +68,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const data = await $fetch<AuthConfig>('/api/auth/config', {
           credentials: 'include',  // send maint_bypass cookie if present
+          timeout: 15_000,  // hung backend must not block app boot forever
         })
         this.authConfig = data
         this.maintenance = data.maintenance
@@ -311,6 +312,7 @@ export const useAuthStore = defineStore('auth', {
           headers: {
             Authorization: `Bearer ${this.token}`,
           },
+          timeout: 15_000,
         })
         this.user = data
         this.isInactive = false
@@ -333,6 +335,7 @@ export const useAuthStore = defineStore('auth', {
                 headers: {
                   Authorization: `Bearer ${this.token}`,
                 },
+                timeout: 15_000,
               })
               this.user = data
               return
