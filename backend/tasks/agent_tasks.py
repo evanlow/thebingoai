@@ -168,8 +168,11 @@ def _build_agent_config(agent_type: str, context, db_session) -> tuple:
     elif agent_type == "dashboard_agent":
         from backend.agents.dashboard_agent.tools import build_dashboard_agent_tools
         from backend.agents.dashboard_agent.prompts import build_dashboard_agent_prompt
+        from backend.database.session import SessionLocal
 
-        tools = build_dashboard_agent_tools(context, lambda: db_session)
+        # Real factory (not a shared-session lambda): widget SQL execution
+        # runs concurrently and needs an isolated session per widget.
+        tools = build_dashboard_agent_tools(context, SessionLocal)
         from backend.services.dashboard_cache import _get_org_for_user
         prompt = build_dashboard_agent_prompt(
             context.available_connections,

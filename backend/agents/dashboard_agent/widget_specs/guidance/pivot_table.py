@@ -55,7 +55,9 @@ Mapping lists the UNION of every referenced column:
 
 ### Best Practices
 
-- Place pivot tables in Section 4 (Detail & Drill-Down, y=16+). Default w=8, h=5.
+- Place pivot tables in Section 4 (Detail & Drill-Down, y=16+). Use w=12 alone, or w=8 paired
+  with a w=4 chart at the same y so the row fills all 12 columns.
+- Sort row groups by the main metric: `"sortBy": "<value column>", "sortDir": "desc"`.
 - Keep column dimensions to 1 (2 max) — wide pivots are hard to read.
 - Use a hierarchy for row dimensions when there's a natural drill path; viewers expand/collapse it.
 - Always set `config.title`; do not add a separate Text widget to title the pivot.

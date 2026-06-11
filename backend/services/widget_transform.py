@@ -454,11 +454,28 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
     return config
 
 
+_TABLE_COLUMN_PASSTHROUGH_KEYS = (
+    "sortable",
+    "format",
+    "filterable",
+    "role",
+    "displayType",
+    "showBarValue",
+    "compactNumbers",
+    "aggregation",
+    "comparisonCalc",
+    "runningCalc",
+)
+
+
 def transform_table(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any]:
     """Transform QueryResult into table widget config data.
 
     Mapping keys:
-      - columnConfig: list of {column, label, sortable?, format?} dicts
+      - columnConfig: list of {column, label, sortable?, format?, displayType?,
+        aggregation?, comparisonCalc?, runningCalc?, ...} dicts — display
+        fields in _TABLE_COLUMN_PASSTHROUGH_KEYS are copied onto the output
+        column defs.
 
     Returns dict suitable for widget.config.
     """
@@ -476,10 +493,9 @@ def transform_table(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
             "key": cc["column"],
             "label": cc.get("label", cc["column"]),
         }
-        if "sortable" in cc:
-            col_def["sortable"] = cc["sortable"]
-        if "format" in cc:
-            col_def["format"] = cc["format"]
+        for key in _TABLE_COLUMN_PASSTHROUGH_KEYS:
+            if key in cc:
+                col_def[key] = cc[key]
         columns.append(col_def)
 
     rows = []
