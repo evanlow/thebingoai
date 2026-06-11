@@ -67,7 +67,7 @@
             </p>
             <div class="grid grid-cols-3 gap-3">
               <button
-                v-for="type in connectorTypes"
+                v-for="type in onboardingConnectorTypes"
                 :key="type.id"
                 class="relative flex flex-col gap-1.5 p-3 rounded-xl border text-left transition-all focus:outline-none"
                 :class="selectedKey === typeKey(type)
@@ -96,6 +96,13 @@
               </button>
             </div>
           </div>
+
+          <!-- Connection config dialog (in place — no navigation) -->
+          <OnboardingConnectionDialog
+            v-model:open="dialogOpen"
+            :connector-type="dialogType"
+            @created="onConnectionCreated"
+          />
 
           <!-- Network callout -->
           <div class="mt-6 flex items-center gap-3 text-sm text-neutral-500 dark:text-neutral-400">
@@ -172,6 +179,15 @@ const connectorTypes = ref<ConnectorType[]>([])
 const selectedKey = ref<string>('')
 const defaultConnectionEnabled = ref(false)
 
+// Connectors offered during onboarding (inline dialog supports these).
+const ONBOARDING_CONNECTOR_IDS = ['postgres', 'mysql', 'dataset', 'sqlite']
+const onboardingConnectorTypes = computed(() =>
+  connectorTypes.value.filter(t => ONBOARDING_CONNECTOR_IDS.includes(t.id))
+)
+
+const dialogOpen = ref(false)
+const dialogType = ref<ConnectorType | null>(null)
+
 const connectorTypeMap = computed(() =>
   Object.fromEntries(connectorTypes.value.map(t => [t.id, t]))
 )
@@ -218,11 +234,18 @@ function badgeClasses(variant: string) {
 }
 
 function handleContinue() {
-  if (selectedKey.value) {
-    navigateTo('/settings')
-  } else if (defaultConnectionEnabled.value) {
-    navigateTo('/first-question')
+  if (defaultConnectionEnabled.value && sampleConnection.value) {
+    navigateTo(`/first-question?connection=${sampleConnection.value.id}`)
+  } else if (selectedKey.value) {
+    const typeId = selectedKey.value.split(':')[1]
+    dialogType.value = connectorTypeMap.value[typeId] ?? null
+    dialogOpen.value = true
   }
+}
+
+function onConnectionCreated(conn: { id: number }) {
+  dialogOpen.value = false
+  navigateTo(`/first-question?connection=${conn.id}`)
 }
 
 onMounted(async () => {
