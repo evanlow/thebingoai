@@ -50,6 +50,7 @@ describe('chat store', () => {
     expect(store.inputText).toBe('')
     expect(store.isStreaming).toBe(false)
     expect(store.conversationsLoaded).toBe(false)
+    expect(store.pendingConnectionIds).toEqual([])
   })
 
   // ── addMessage ────────────────────────────────────────────────────
@@ -144,6 +145,7 @@ describe('chat store', () => {
     store.inputText = 'some text'
     store.isStreaming = true
     store.expandedThinking.add('msg-1')
+    store.pendingConnectionIds = [7]
 
     store.startNewChat()
 
@@ -152,6 +154,7 @@ describe('chat store', () => {
     expect(store.inputText).toBe('')
     expect(store.isStreaming).toBe(false)
     expect(store.expandedThinking.size).toBe(0)
+    expect(store.pendingConnectionIds).toEqual([])
   })
 
   // ── moveToArchived ────────────────────────────────────────────────

@@ -260,6 +260,7 @@ async def _render_orchestrator_prompt(
             available_connections=context.available_connections,
             connection_metadata=context.connection_metadata,
             mesh_enabled=settings.agent_mesh_enabled,
+            target_connection_id=context.target_connection_id,
         )
         return ProfileRenderer.render(profile, rt_ctx)
     logger.info("%s: using LEGACY hardcoded prompt (no profile)", log_prefix)

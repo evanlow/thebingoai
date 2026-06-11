@@ -466,7 +466,7 @@ export const useChatStreaming = () => {
       // Merge any connection IDs from @mentions in the message text
       const { extractMentionConnectionIds, extractMentions } = useMentions()
       const mentionIds = extractMentionConnectionIds(message)
-      const allConnectionIds = [...new Set([...readyConnectionIds, ...mentionIds])]
+      const allConnectionIds = [...new Set([...chatStore.pendingConnectionIds, ...readyConnectionIds, ...mentionIds])]
       const mentions = extractMentions(message)
 
       // --- Deferred send: wait for any CSV files still uploading to get their file_ids ---
@@ -507,6 +507,9 @@ export const useChatStreaming = () => {
         mentions,
         file_ids: deferredFileIds
       })
+
+      // One-shot: onboarding-forced connection ids apply only to this first message.
+      chatStore.pendingConnectionIds = []
     })
   }
 

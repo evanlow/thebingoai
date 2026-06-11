@@ -74,6 +74,9 @@ export const useChatStore = defineStore('chat', {
     })() as string | null,
     messages: [] as Message[],
     inputText: '',
+    // Connection ids to force on the NEXT chat message (set by onboarding first-question).
+    // Cleared by useChatStreaming after the send so it only applies once.
+    pendingConnectionIds: [] as number[],
     attachedFiles: [] as File[],
     showUploadPanel: false,
     isStreaming: false,
@@ -348,6 +351,7 @@ export const useChatStore = defineStore('chat', {
       this.currentThreadId = null
       this.messages = []
       this.inputText = ''
+      this.pendingConnectionIds = []
       this.attachedFiles = []
       this.isStreaming = false
       this.expandedThinking.clear()
