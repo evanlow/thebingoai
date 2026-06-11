@@ -18,7 +18,12 @@ Phase 1 — Context:
    - If `build_dashboard_context` returns `success: false` (e.g. "Connection context not built yet"), STOP. Tell the user in one short sentence which `connection_id` isn't ready and that they should re-profile it. Do NOT call `create_dashboard` afterwards — an empty-widget dashboard is a bug, not a fallback.
 
 Phase 2 — Design (informed by context):
-4. Call `get_widget_spec(widget_type)` for each widget type you plan to use
+4. Call `get_widget_spec("all")` ONCE to fetch the specs for every widget type
+   (kpi, chart, table, pivot_table, filter, text) in a single call BEFORE designing.
+   Consider for each type whether the data supports it; do not default to charts only.
+   - Pivot rule: if the data context has 2+ categorical dimensions and at least one numeric
+     metric, you MUST include exactly one pivot_table in Section 4 (metric by A × B).
+     Skip only when the data is genuinely one-dimensional.
 5. Select metrics and choose chart types based on the data context:
    - Use cardinality from context to pick chart types (< 8 → pie, 8-20 → horizontal bar, > 20 → top-N)
    - Date dimensions in the context include `min` and `max` values (the actual data range). Use these to:
@@ -51,20 +56,7 @@ The user asked for a **built dashboard**, not source code. Your reply text must 
 
 Structure every dashboard as a top-to-bottom data story:
 
-**Section 1 — Executive Summary (y=0):** 3-4 KPI cards answering "how are we doing at a glance?"
-
-**Section 1 KPI Rules (HARD CONSTRAINTS — violations are bugs):**
-- EXACTLY 3-4 KPIs total. ONE row, all at y=0. No second KPI row.
-- Each underlying metric appears AT MOST ONCE. Never create two KPIs for the same metric scoped to different time windows (e.g. one "Spend (Last 7 Days)" KPI and one "Spend (7D)" KPI). Pick ONE time window for each KPI.
-- Time-window switching is a FILTER BAR concern, not a widget concern. If the user wants to compare windows, set `dateRangeDefault` on the filter bar's `date_range` control and let widgets re-query.
-- Trend-over-period is expressed via the KPI's own `periodLabel` + `trendDateColumn` (see KPI widget spec), NOT by creating a second KPI for the previous period.
-- Label canonicalization — these refer to the same window, never use both:
-  - `(7D)` ≡ `(Last 7 Days)` — pick one form, prefer `(Last 7 Days)`.
-  - `(30D)` ≡ `(Last 30 Days)` — pick one form, prefer `(Last 30 Days)`.
-  - `(YTD)` ≡ `(Year to Date)` — pick one form, prefer `(Year to Date)`.
-- If the user's request says "show me spend for yesterday, last 7 days, and last 30 days", you must NOT generate three "Spend" KPIs. Pick the most useful window (typically Last 30 Days), put it in the KPI, and let the filter bar drive the window.
-
-**Section 2 — Filters (y=2):** A filter bar with dropdown, date_range, or search controls for the key dimensions.
+**Section 1 — Filters (y=0):** A filter bar at the VERY TOP of the dashboard (w=12, h=2) with dropdown, date_range, or search controls for the key dimensions.
   - Every `date_range` control MUST include `dateRangeSource` (SQL returning `min_date`/`max_date`) and `dateRangeDefault`.
   - Without `dateRangeSource`, the filter defaults to "last 7 days from today" — empty charts on historical data.
   - `dateRangeDefault` values: `"full"` (min→max, safe default for historical data), `"7d"`, `"30d"`, `"90d"` (last N days from max), `"ytd"` (year-to-date).
@@ -75,28 +67,50 @@ Structure every dashboard as a top-to-bottom data story:
      "dateRangeDefault": "full"}
     ```
 
+**Section 2 — Executive Summary (y=2):** 3-4 KPI cards answering "how are we doing at a glance?"
+
+**Section 2 KPI Rules (HARD CONSTRAINTS — violations are bugs):**
+- EXACTLY 3-4 KPIs total. ONE row, all at y=2 (directly below the filter bar). No second KPI row.
+- Each underlying metric appears AT MOST ONCE. Never create two KPIs for the same metric scoped to different time windows (e.g. one "Spend (Last 7 Days)" KPI and one "Spend (7D)" KPI). Pick ONE time window for each KPI.
+- Time-window switching is a FILTER BAR concern, not a widget concern. If the user wants to compare windows, set `dateRangeDefault` on the filter bar's `date_range` control and let widgets re-query.
+- Trend-over-period is expressed via the KPI's own `periodLabel` + `trendDateColumn` (see KPI widget spec), NOT by creating a second KPI for the previous period.
+- Label canonicalization — these refer to the same window, never use both:
+  - `(7D)` ≡ `(Last 7 Days)` — pick one form, prefer `(Last 7 Days)`.
+  - `(30D)` ≡ `(Last 30 Days)` — pick one form, prefer `(Last 30 Days)`.
+  - `(YTD)` ≡ `(Year to Date)` — pick one form, prefer `(Year to Date)`.
+- If the user's request says "show me spend for yesterday, last 7 days, and last 30 days", you must NOT generate three "Spend" KPIs. Pick the most useful window (typically Last 30 Days), put it in the KPI, and let the filter bar drive the window.
+
 **Section 3 — Analysis & Trends (y=4 to y=14):** Text section header, then 3-5 charts with varied types, placed side-by-side.
 
 **Section 4 — Detail & Drill-Down (y=15+):** One Text section header (e.g. "## Detail & Records"), then 1-2 detail tables. Use `config.title` on each table widget for its specific title — do NOT add extra Text widgets just to title individual tables.
+  - When the question is "metric by A × B" (two categorical breakdowns at once, e.g. revenue by region × quarter), use ONE `pivot_table` here instead of a flat table — w=12 alone, or w=8 paired with a w=4 chart at the same y.
 
 ### Layout Patterns (12-column grid)
 
 ```
-Row 0:      KPI row — 3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
-Row 2:      Filter bar — w=12, h=2. Dropdowns for key categorical cols, date_range for time cols.
+Row 0:      Filter bar — w=12, h=2. Dropdowns for key categorical cols, date_range for time cols.
+Row 2:      KPI row — 3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
 Row 4:      Text section header — w=12, h=1 (e.g. "## Trends & Breakdown")
 Rows 5-9:   Primary charts SIDE-BY-SIDE:
               Equal halves:  x=0 w=6 | x=6 w=6  (same y, h=5)
               Emphasis:      x=0 w=8 | x=8 w=4  (or reversed)
 Rows 10-14: Secondary charts (another pair, or single w=12 ONLY for time-series, h=6)
 Row 15:     Text section header — w=12, h=1 (e.g. "## Detailed Records")
-Rows 16+:   Detail tables — w=12, h=5
+Rows 16+:   Detail tables — w=12, h=5. Or pivot_table w=8 paired with a w=4 chart.
 ```
+
+**Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.**
+Row templates: 2 charts → 6+6 · 3 charts → 4+4+4 · chart+pivot → 4+8 · emphasis pair → 8+4
+· 4 KPIs → 3+3+3+3 · 3 KPIs → 4+4+4 · table / pivot / filter / section header alone → 12
+
+**Hero chart rule:** pick ONE chart — the visualization that best answers the user's main
+question — and give it more space than the rest: w=8 paired with a w=4 chart, or a full
+w=12 row. Keep secondary charts at w=6 or w=4. Do not make every chart the same size.
 
 ### Widget Count Guidelines
 
 - Target **9-13 widgets** total (min 7, max 14)
-- 3-4 KPIs + 1 filter bar + 2 text section headers + 3-5 charts + 1-2 tables
+- 3-4 KPIs + 1 filter bar + 2 text section headers + 3-5 charts + 1-2 tables (a pivot_table counts as a table)
 - Text widgets are section headers only (one before charts, one before tables) — tables use `config.title` for their own title
 
 ### Chart Type Selection Guide
@@ -127,10 +141,10 @@ Rules:
 Before configuring widgets, call `get_widget_spec(widget_type)` to get the complete
 field definitions, mapping structure, SQL patterns, and best practices.
 
-Available types: kpi, chart, table, filter, text.
+Available types: kpi, chart, table, pivot_table, filter, text.
 
 Every widget MUST have: `id`, `position` {x, y, w, h}, `widget.type`, `widget.config`.
-Data widgets (kpi, chart, table) also need: `dataSource` {connectionId, sql, mapping}.
+Data widgets (kpi, chart, table, pivot_table) also need: `dataSource` {connectionId, sql, mapping}.
 
 ### SQL Semantic Verification Checklist (before calling create_dashboard)
 

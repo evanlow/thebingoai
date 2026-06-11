@@ -5,7 +5,10 @@
     "prefix": { "type": "string",  "required": false, "description": "Value prefix, e.g. '$', 'RM'" },
     "suffix": { "type": "string",  "required": false, "description": "Value suffix, e.g. '%', 'units'" },
     "roundValue": { "type": "boolean", "required": false, "description": "Round the KPI value to a fixed number of decimal places" },
-    "decimalPlaces": { "type": "number", "required": false, "description": "Number of decimal places to round KPI value to (default: 2)" }
+    "decimalPlaces": { "type": "number", "required": false, "description": "Number of decimal places to round KPI value to (default: 2)" },
+    "compactNumbers": { "type": "boolean", "required": false, "description": "Format large values compactly (1.2K, 3.4M). Use whenever values exceed ~10,000" },
+    "comparison": { "type": "object", "required": false, "description": "Compare the KPI against a fixed target/goal: {type: 'value', targetValue (number), showAsProgress? (boolean), comparisonLabel? (string)}" },
+    "progressVisual": { "type": "enum", "required": false, "values": ["bar", "circle", "none"], "description": "Progress indicator style when comparison.showAsProgress is true" }
   },
   "mapping": {
     "valueColumn":            { "type": "string",  "required": true,  "description": "Column name for the main KPI value" },

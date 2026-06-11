@@ -25,7 +25,9 @@
         "decimalPlaces":   { "type": "number",  "description": "Decimal places for rounding displayed values (default: 2)" },
         "yAxisLeft":       { "type": "object",  "description": "Left Y-axis overrides", "fields": { "title": { "type": "string" }, "showTitle": { "type": "boolean" }, "min": { "type": "number" }, "max": { "type": "number" }, "logScale": { "type": "boolean" } } },
         "yAxisRight":      { "type": "object",  "description": "Right Y-axis overrides — only needed for dual-axis combo charts where a second series uses yAxisID 'right'", "fields": { "title": { "type": "string" }, "showTitle": { "type": "boolean" }, "min": { "type": "number" }, "max": { "type": "number" }, "logScale": { "type": "boolean" } } },
-        "alignBothAxesToZero": { "type": "boolean", "description": "Force both Y-axes to start at 0 (dual-axis only)" }
+        "alignBothAxesToZero": { "type": "boolean", "description": "Force both Y-axes to start at 0 (dual-axis only)" },
+        "sliceLabel":      { "type": "enum",    "values": ["none", "value", "percentage", "label"], "description": "Pie/doughnut only: label drawn on each slice. Prefer 'percentage' for part-of-whole charts" },
+        "referenceLines":  { "type": "array",   "description": "Horizontal target/threshold lines. Each item: {value (number, required), label?, axis? ('y' default | 'x')}" }
       }
     },
     "animation": {
@@ -42,7 +44,7 @@
   },
   "mapping": {
     "labelColumn":    { "type": "string", "required": false, "description": "Column for x-axis labels or pie slice names. Required for all chart types except scatter with xMetricColumn/yMetricColumn" },
-    "datasetColumns": { "type": "array",  "required": false, "description": "Array of dataset series objects. Required for non-scatter charts. Each item: {column, label, aggregation?, seriesType?, yAxisID?}", "items": { "column": "string", "label": "string", "aggregation": "enum:sum|avg|count|countDistinct|min|max|first|last|none", "seriesType": "enum:line|bars", "yAxisID": "enum:left|right" } },
+    "datasetColumns": { "type": "array",  "required": false, "description": "Array of dataset series objects. Required for non-scatter charts. Each item: {column, label, aggregation?, seriesType?, yAxisID?, showDataLabels?, trendline?, cumulative?}", "items": { "column": "string", "label": "string", "aggregation": "enum:sum|avg|count|countDistinct|min|max|first|last|none", "seriesType": "enum:line|bars", "yAxisID": "enum:left|right", "showDataLabels": "boolean — draw value labels on this series only (use sparingly, headline series)", "trendline": "object {type: 'linear'|'movingAverage'|'polynomial'|'exponential', period?} — overlay a trendline on this series", "cumulative": "boolean — transform the series into a running sum (cumulative total)" } },
     "xMetricColumn":  { "type": "string", "required": false, "description": "Scatter only: column for the X-axis metric. Use this instead of datasetColumns for scatter charts" },
     "yMetricColumn":  { "type": "string", "required": false, "description": "Scatter only: column for the Y-axis metric" },
     "xAggregation":   { "type": "enum",   "required": false, "values": ["sum", "avg", "count", "countDistinct", "min", "max", "first", "last", "none"], "description": "Scatter only: aggregation for xMetricColumn" },

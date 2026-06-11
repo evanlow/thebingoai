@@ -5,7 +5,9 @@ Kept as a standalone module to avoid circular imports between graph.py and tool_
 """
 from typing import List, Callable
 from backend.agents.context import AgentContext
+from backend.agents.dashboard_layout import normalize_dashboard_layout
 from backend.connectors.factory import get_connector_for_connection, get_connector_registration
+import asyncio
 import json
 import logging
 
@@ -16,7 +18,7 @@ _DATA_WIDGET_TYPES = {"kpi", "chart", "table", "pivot_table"}
 _VALID_MAPPING_TYPES = {"kpi", "chart", "table", "pivot_table"}
 
 
-def _run_widget_query(connection, sql: str, db, connector):
+def _run_widget_query(connection, sql: str, db_session_factory, connector):
     """Execute widget SQL against the right surface.
 
     For connectors that own a managed pipeline + materialised view in the
@@ -27,23 +29,30 @@ def _run_widget_query(connection, sql: str, db, connector):
 
     For every other connector type, fall back to the standard
     `connector.execute_query(sql)` path.
+
+    Runs inside asyncio.to_thread, so it creates its own session — sessions
+    must not be shared across threads.
     """
     if connection.db_type == "bigquery_ga4":
         from backend.data_plane.scope import OwnerScope
         from backend.models.pipeline import Pipeline
         from backend.services.data_plane_service import get_default_plane
 
-        pipeline = db.query(Pipeline).filter(
-            Pipeline.source_connection_id == connection.id,
-        ).first()
-        if pipeline is None:
-            # No managed pipeline yet -- nothing to query. Defer to the
-            # source connector so the LLM sees a clear "table not found"
-            # rather than a silent empty result.
-            return connector.execute_query(sql)
-        scope = OwnerScope(kind=pipeline.owner_scope_kind, id=pipeline.owner_scope_id)
-        plane = get_default_plane(scope, db)
-        return plane.query(scope, sql)
+        db = db_session_factory()
+        try:
+            pipeline = db.query(Pipeline).filter(
+                Pipeline.source_connection_id == connection.id,
+            ).first()
+            if pipeline is None:
+                # No managed pipeline yet -- nothing to query. Defer to the
+                # source connector so the LLM sees a clear "table not found"
+                # rather than a silent empty result.
+                return connector.execute_query(sql)
+            scope = OwnerScope(kind=pipeline.owner_scope_kind, id=pipeline.owner_scope_id)
+            plane = get_default_plane(scope, db)
+            return plane.query(scope, sql)
+        finally:
+            db.close()
     return connector.execute_query(sql)
 
 
@@ -422,7 +431,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         connector = get_connector_for_connection(connection)
 
         try:
-            result = _run_widget_query(connection, sql, db, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, sql, db_session_factory, connector)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             logger.info(f"Widget '{widget_id}': SQL executed, config populated with {result.row_count} rows")
@@ -438,8 +447,8 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
             tables = extract_table_names(sql)
             for tbl in list(tables)[:2]:
                 try:
-                    sample_result = _run_widget_query(
-                        connection, f'SELECT * FROM "{tbl}" LIMIT 3', db, connector,
+                    sample_result = await asyncio.to_thread(
+                        _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
                     )
                     sample_data += f"\nTable '{tbl}' sample:\n"
                     sample_data += f"  Columns: {sample_result.columns}\n"
@@ -468,7 +477,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         logger.info(f"Widget '{widget_id}': SQL fix attempted, retrying with corrected SQL")
         try:
-            result = _run_widget_query(connection, fixed_sql, db, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, fixed_sql, db_session_factory, connector)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             # Persist the fixed SQL back to the widget's dataSource
@@ -574,14 +583,17 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     options (optional): {stacked, indexAxis, showValues, showLegend, legendPosition,
                     showGrid, sortBy, sortDirection}
                 - table: columns: [{key, label, sortable?}] (defines headers; rows are auto-populated)
+                - pivot_table: title, rowDimensions: [{column, label}], columnDimensions (max 2),
+                    values: [{column, label, aggregation}] (SQL returns granular rows; pivot is computed client-side)
                 - text: content (markdown string), alignment (optional)
                 - filter: controls: [{type, label, key, column (required), optionsSource: {connectionId, sql} for dropdown}]
 
                 Layout guidelines (12-column grid, storytelling structure):
-                  Section 1 — KPI row (y=0):
-                    3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
-                  Section 2 — Filter bar (y=2):
+                  Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.
+                  Section 1 — Filter bar (y=0, the very top row):
                     w=12, h=2. Add dropdowns for key categories, date_range for time columns.
+                  Section 2 — KPI row (y=2):
+                    3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
                   Section headers (text widgets):
                     w=12, h=1. Place at y=4, y=10, or y=15 as dividers between sections.
                   Section 3 — Analysis charts (y=5 to y=14):
@@ -589,13 +601,15 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     w=12 h=6 ONLY for time-series line/area. Pie/doughnut: w=4 or w=6 only.
                     Use 2+ different chart types. Aim for 3-5 charts.
                   Section 4 — Detail table (y=16+):
-                    w=12, h=5.
+                    w=12, h=5. A pivot_table here is w=12 alone, or w=8 paired with a w=4 chart.
                   Target 9-13 widgets total (min 7, max 14).
 
                 Mapping types:
                 - chart:  { type, labelColumn, datasetColumns: [{column, label}] }
                 - kpi:    { type, valueColumn, trendValueColumn? (optional), sparklineXColumn? (optional), sparklineYColumn? (optional) }
                 - table:  { type, columnConfig: [{column, label, sortable?, format?}] }
+                - pivot_table: { type, columnConfig: [{column, label}] } (union of ALL columns referenced
+                    by rowDimensions + columnDimensions + values)
 
             data_context: Optional dict from build_dashboard_context. If provided,
                 stored on the dashboard for dimension-aware filtering.
@@ -630,6 +644,12 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     "widgets and call create_dashboard again."
                 ),
             })
+
+        # Deterministic layout pass: fill each grid row to 12 columns,
+        # resolve overlaps, compact vertical gaps. Runs after the verifier
+        # (positions guaranteed present) and before SQL/persistence so every
+        # downstream step sees final positions.
+        widgets = normalize_dashboard_layout(widgets)
 
         # Verify connection access for any SQL-backed widgets
         for w in widgets:
@@ -670,10 +690,16 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
         if schema_warnings:
             logger.warning("Schema validation warnings for '%s': %s", title, "; ".join(schema_warnings))
 
-        # Auto-execute SQL for SQL-backed widgets and populate config
-        for w in widgets:
-            if "dataSource" in w:
+        # Auto-execute SQL for SQL-backed widgets and populate config.
+        # Widgets are independent (each gets its own DB session + connector),
+        # so run them concurrently — bounded to avoid hammering the source DB.
+        sem = asyncio.Semaphore(5)
+
+        async def _exec_bounded(w):
+            async with sem:
                 await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+
+        await asyncio.gather(*[_exec_bounded(w) for w in widgets if "dataSource" in w])
 
         db = db_session_factory()
         try:
@@ -768,6 +794,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 ),
             })
 
+        # Same deterministic layout pass as create_dashboard. Only positions
+        # change, so the widget-id-keyed SQL diff below is unaffected.
+        widgets = normalize_dashboard_layout(widgets)
+
         # Verify connection access for any SQL-backed widgets
         for w in widgets:
             if "dataSource" in w:
@@ -802,6 +832,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
 
         # Only execute SQL for widgets whose SQL changed or that are new
         sql_changed = False
+        to_execute = []
         for w in widgets:
             if "dataSource" not in w:
                 continue
@@ -821,7 +852,17 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 logger.info(f"Skipping SQL execution for unchanged widget '{w.get('id')}'")
             else:
                 sql_changed = True
-                await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+                to_execute.append(w)
+
+        if to_execute:
+            # Independent per-widget sessions/connectors — run concurrently, bounded.
+            sem = asyncio.Semaphore(5)
+
+            async def _exec_bounded(w):
+                async with sem:
+                    await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+
+            await asyncio.gather(*[_exec_bounded(w) for w in to_execute])
 
         db = db_session_factory()
         try:

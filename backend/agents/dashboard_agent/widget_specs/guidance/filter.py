@@ -82,7 +82,7 @@ Set `dateRangeDefault` on `date_range` controls to configure the initial range w
 
 ### Best Practices
 
-- Place at y=2, w=12, h=2 (Section 2 — Filters)
+- Place at y=0, w=12, h=2 (Section 1 — Filters, the VERY TOP row of the dashboard)
 - Include 2-4 controls for key slicing dimensions from the data context
 - Use dropdown for categorical dimensions with reasonable cardinality
 - Use date_range for temporal dimensions

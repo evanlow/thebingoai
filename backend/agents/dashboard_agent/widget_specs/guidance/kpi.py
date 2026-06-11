@@ -73,5 +73,8 @@ Mapping: `{"type": "kpi", "valueColumn": "current_value", "trendValueColumn": "p
 - For sparklines, SQL MUST return multiple rows ordered by time (not a single aggregate)
 - Use `aggregation: "last"` for the most recent value in a time-series
 - Use `aggregation: "sum"` for totals across all rows
-- Position KPIs in the executive summary row: y=0, w=3 or w=4, h=2
+- Position KPIs in the executive summary row directly below the filter bar: y=2, w=3 or w=4, h=2
+- Set `compactNumbers: true` whenever the value can exceed ~10,000 (renders 1.2M instead of 1,200,000)
+- When the user mentions a goal/target/quota, render it as progress:
+  `"comparison": {"type": "value", "targetValue": <goal>, "showAsProgress": true}` plus `"progressVisual": "bar"` in config
 """
