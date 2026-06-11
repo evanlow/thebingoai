@@ -391,6 +391,23 @@ The explanation should be one sentence describing what was wrong and what was ch
         return None
 
 
+# Widget configs are persisted as JSONB and shipped to the browser — cap raw
+# result rows so an unaggregated SELECT can't bloat the dashboard payload.
+MAX_WIDGET_RESULT_ROWS = 5000
+
+
+def _cap_widget_rows(result, widget_id):
+    if result.row_count > MAX_WIDGET_RESULT_ROWS:
+        logger.warning(
+            f"Widget '{widget_id}': SQL returned {result.row_count} rows; truncating to "
+            f"{MAX_WIDGET_RESULT_ROWS}. The widget SQL should aggregate instead of returning raw rows."
+        )
+        result.rows = result.rows[:MAX_WIDGET_RESULT_ROWS]
+        result.row_count = MAX_WIDGET_RESULT_ROWS
+        result.truncated = True
+    return result
+
+
 async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_context: dict | None = None, user_id: str | None = None) -> str | None:
     """
     Execute the dataSource SQL for a widget and merge results into widget.widget.config.
@@ -432,6 +449,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         try:
             result = await asyncio.to_thread(_run_widget_query, connection, sql, db_session_factory, connector)
+            result = _cap_widget_rows(result, widget_id)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             logger.info(f"Widget '{widget_id}': SQL executed, config populated with {result.row_count} rows")
@@ -478,6 +496,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         logger.info(f"Widget '{widget_id}': SQL fix attempted, retrying with corrected SQL")
         try:
             result = await asyncio.to_thread(_run_widget_query, connection, fixed_sql, db_session_factory, connector)
+            result = _cap_widget_rows(result, widget_id)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
             # Persist the fixed SQL back to the widget's dataSource
@@ -645,6 +664,14 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 ),
             })
 
+        # Deep-copy before any mutation: `widgets` IS the tool-call args object
+        # held in the agent's message history. _execute_widget_sql merges query
+        # results into widget.config in-place — without the copy those rows leak
+        # into the replayed tool_call arguments and blow the provider's request
+        # size limit on the next model call.
+        import copy
+        widgets = copy.deepcopy(widgets)
+
         # Deterministic layout pass: fill each grid row to 12 columns,
         # resolve overlaps, compact vertical gaps. Runs after the verifier
         # (positions guaranteed present) and before SQL/persistence so every
@@ -793,6 +820,12 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     "widgets and call update_dashboard again."
                 ),
             })
+
+        # Deep-copy before any mutation — same reason as create_dashboard: the
+        # args object lives in the agent's message history and must not receive
+        # the query-result rows merged into widget.config below.
+        import copy
+        widgets = copy.deepcopy(widgets)
 
         # Same deterministic layout pass as create_dashboard. Only positions
         # change, so the widget-id-keyed SQL diff below is unaffected.

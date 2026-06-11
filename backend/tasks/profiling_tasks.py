@@ -38,8 +38,12 @@ def profile_connection(self, connection_id: int):
             logger.warning("profile_connection: connection %d not found", connection_id)
             return
 
-        # Mark in-progress
-        connection.profiling_status = ProfilingStatus.IN_PROGRESS.value
+        # Mark in-progress — but never downgrade a connection that is already
+        # 'ready' (inline profiling at upload may have completed first); the
+        # recompute then runs silently without flapping the UI status.
+        was_ready = connection.profiling_status == ProfilingStatus.READY.value
+        if not was_ready:
+            connection.profiling_status = ProfilingStatus.IN_PROGRESS.value
         connection.profiling_error = None
         connection.profiling_started_at = datetime.now(timezone.utc)
         db.commit()
@@ -144,11 +148,19 @@ def profile_connection(self, connection_id: int):
                     connection_id,
                 )
 
-        # Build context from schema + profiles
-        context = build_connection_context(connection_id, schema_json, table_profiles)
-
-        # Persist to database_connections.data_context (JSONB)
-        save_connection_context(db, connection_id, context)
+        # Build context from schema + profiles.
+        # Guard: if every table profile failed to produce column stats (e.g. a
+        # dialect error against the data plane) and a context already exists
+        # (inline profiling at upload), keep the richer existing context
+        # instead of overwriting it with a stat-less one.
+        if _profiles_have_stats(table_profiles) or not connection.data_context:
+            context = build_connection_context(connection_id, schema_json, table_profiles)
+            save_connection_context(db, connection_id, context)
+        else:
+            logger.warning(
+                "profile_connection %d: no column stats produced — keeping existing data_context",
+                connection_id,
+            )
 
         # Mark ready
         connection.profiling_status = ProfilingStatus.READY.value
@@ -175,6 +187,16 @@ def profile_connection(self, connection_id: int):
         raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
     finally:
         db.close()
+
+
+def _profiles_have_stats(table_profiles: dict) -> bool:
+    """True if at least one profiled column carries real statistics
+    (anything beyond a bare type / error marker)."""
+    for prof in table_profiles.values():
+        for col_stats in (prof.get("columns") or {}).values():
+            if "error" not in col_stats and len(col_stats) > 1:
+                return True
+    return False
 
 
 @shared_task(name="profile_chat_file", time_limit=120)
