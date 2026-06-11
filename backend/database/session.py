@@ -1,30 +1,24 @@
 from sqlalchemy import create_engine
-from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import sessionmaker, Session
 from backend.config import settings
 
 
-# Detect connection-pooler URLs (PgBouncer transaction mode).
-# Supabase uses :6543/; DigitalOcean Managed PG uses :25061/.
-# Transaction-mode pooling is incompatible with SQLAlchemy's client-side
-# pool, so we use NullPool to avoid double-pooling.
-_POOLER_PORTS = (":6543/", ":25061/")
-if any(p in settings.database_url for p in _POOLER_PORTS):
-    engine = create_engine(
-        settings.database_url,
-        pool_pre_ping=True,
-        poolclass=NullPool,
-        echo=settings.log_level == "DEBUG",
-    )
-else:
-    engine = create_engine(
-        settings.database_url,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-        pool_recycle=1800,
-        echo=settings.log_level == "DEBUG",
-    )
+# A client-side pool is kept even behind a transaction-mode pooler
+# (Supabase :6543, DO :25061). The pooler multiplexes server connections;
+# the client pool keeps TCP+TLS warm so requests don't pay a full handshake
+# per query. NullPool here caused a connection storm under load: every
+# request opened a fresh TLS connection, saturating the database
+# (40 concurrent users -> minutes-long request queues, ROLLBACKs stuck >100s).
+# Double-pooling is safe because the ORM relies on no session state
+# (no server-side prepared statements, SET vars, or advisory locks).
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_recycle=1800,
+    echo=settings.log_level == "DEBUG",
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
