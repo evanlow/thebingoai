@@ -173,6 +173,10 @@ class Settings(BaseSettings):
     widget_cache_ttl_filtered: int = 120      # filtered reads scan live Parquet; short staleness window
     widget_cache_max_bytes: int = 2_000_000   # skip caching payloads larger than this
 
+    # DuckDB memory guardrails (default memory_limit is ~80% of RAM per connection)
+    duckdb_memory_limit: str = "1GB"
+    duckdb_temp_directory: str = "/tmp/duckdb_spill"  # spill dir for large aggregations
+
     # SSO Authentication
     sso_base_url: str = "https://sso.thebingo.ai"
     sso_publishable_key: str = "Bingo-Community"   # app name (community) or pk_* key (enterprise)
