@@ -34,6 +34,13 @@ class AgentContext:
     # Briefing mode: set when orchestrator is running for a scheduled briefing
     briefing_id: Optional[int] = None  # set when running orchestrator for a briefing
 
+    # Single-connection focus: set when the user explicitly scoped this turn to
+    # one connection (e.g. via connection_ids from the onboarding first-question
+    # flow). Renders a "Primary connection to use" hint in the orchestrator
+    # system prompt so the LLM doesn't misroute to a different connection
+    # (such as a seeded sample connection).
+    target_connection_id: Optional[int] = None
+
     def can_access_connection(self, connection_id: int) -> bool:
         """Check if user can access a connection."""
         return connection_id in self.available_connections
