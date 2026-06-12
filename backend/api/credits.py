@@ -4,6 +4,7 @@ from sqlalchemy import text
 from backend.database.session import get_db
 from backend.auth.dependencies import get_current_user
 from backend.models.user import User
+from backend.services.token_tracking_service import _default_user_daily_credits
 from datetime import datetime, date, timedelta, timezone
 from pydantic import BaseModel
 
@@ -26,7 +27,7 @@ async def get_balance(
         text("SELECT daily_limit FROM user_credit_balances WHERE user_id = :uid"),
         {"uid": str(current_user.id)}
     ).fetchone()
-    daily_limit = row.daily_limit if row else 180
+    daily_limit = row.daily_limit if row else _default_user_daily_credits()
 
     today = date.today()
     used_row = db.execute(
