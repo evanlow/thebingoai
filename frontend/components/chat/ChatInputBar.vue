@@ -7,8 +7,9 @@
         v-if="isExhausted && featureConfig?.credits_enabled !== false"
         class="mb-3 rounded-xl border border-[var(--warn)] bg-[color-mix(in_oklch,var(--warn)_8%,var(--paper-0))] px-4 py-3 text-[13px] text-[var(--ink-0)] flex items-center justify-between gap-3"
       >
-        <span>Daily credits used up. Resets at midnight.</span>
-        <NuxtLink to="/settings?tab=credits" class="font-medium underline hover:opacity-80 whitespace-nowrap">
+        <span v-if="orgExhausted">Workspace credits exhausted. Contact your admin.</span>
+        <span v-else>Daily credits used up. Resets at midnight.</span>
+        <NuxtLink v-if="!orgExhausted" to="/settings?tab=credits" class="font-medium underline hover:opacity-80 whitespace-nowrap">
           Add your own API key →
         </NuxtLink>
       </div>
@@ -185,7 +186,7 @@ const chatStore = useChatStore()
 const ws = useWorkspaceStore()
 const emit = defineEmits<{ send: []; reset: [] }>()
 
-const { isExhausted, remaining } = useCreditBalance()
+const { isExhausted, remaining, orgExhausted } = useCreditBalance()
 const { config: featureConfig } = useFeatureConfig()
 
 const isPermanentThread = computed(() =>
