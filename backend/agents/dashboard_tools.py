@@ -10,6 +10,7 @@ from backend.connectors.factory import get_connector_for_connection, get_connect
 import asyncio
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,56 @@ def _validate_widget_sql_schema(widgets: list) -> list[str]:
     return warnings
 
 
+# Chart types that operate on aggregated category data. Charts outside this
+# set (e.g. scatter) take raw X/Y metric pairs and must not be forced through
+# an aggregation check.
+_CATEGORY_CHART_TYPES = {"bar", "pie", "line", "area", "doughnut"}
+
+# Cheap pre-check for "does this SQL look aggregated?" — used by the
+# `chart_not_aggregated` rule. Match GROUP BY at any depth (incl. CTEs) and
+# any standard aggregate function. Intentionally permissive: a false negative
+# is fine (the LLM will get a violation to fix); a false positive would block
+# legitimate pre-aggregated charts.
+_AGGREGATE_FN_RE = re.compile(
+    r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(",
+    re.IGNORECASE,
+)
+_GROUP_BY_RE = re.compile(r"\bGROUP\s+BY\b", re.IGNORECASE)
+
+
+def _is_aggregated_sql(sql: str) -> bool:
+    """True if SQL already aggregates (GROUP BY or an aggregate fn)."""
+    if not isinstance(sql, str) or not sql.strip():
+        return False
+    return bool(_GROUP_BY_RE.search(sql) or _AGGREGATE_FN_RE.search(sql))
+
+
+def cfg_title_for(wcfg: dict, fallback: str) -> str:
+    """Best-effort human label for a widget's config — used in error messages
+    so the LLM knows which widget the violation refers to."""
+    if not isinstance(wcfg, dict):
+        return fallback
+    cfg = wcfg.get("config") or {}
+    return (
+        cfg.get("title")
+        or cfg.get("label")
+        or cfg.get("content", "").splitlines()[0][:40]
+        or fallback
+    )
+
+
+def _datasetcolumns_aggregation_present(ds: dict | None) -> bool:
+    """True if dataSource.mapping.datasetColumns declares an `aggregation` key
+    on every entry — the escape hatch for pre-aggregated source tables."""
+    if not isinstance(ds, dict):
+        return False
+    mapping = ds.get("mapping") or {}
+    cols = mapping.get("datasetColumns") or []
+    if not cols:
+        return False
+    return all(isinstance(c, dict) and "aggregation" in c for c in cols)
+
+
 def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
     """Pre-persistence verification gate for create_dashboard / update_dashboard.
 
@@ -285,6 +336,32 @@ def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
                     "code": "invalid_dataSource",
                     "message": ds_error,
                     "fix_hint": "Fix the dataSource shape per the create_dashboard schema.",
+                })
+
+            # Aggregation guard for category charts. A bar/pie/line/area/doughnut
+            # without GROUP BY, an aggregate fn, or `aggregation` on every
+            # datasetColumns entry will return raw row-level data and render as
+            # noise (thousands of repeated labels). Reject pre-execution so the
+            # LLM can fix & retry. Scatter is exempt — it takes metric pairs.
+            chart_type = (wcfg.get("config") or {}).get("type")
+            if chart_type in _CATEGORY_CHART_TYPES and not _is_aggregated_sql(
+                widget["dataSource"].get("sql") or ""
+            ) and not _datasetcolumns_aggregation_present(widget["dataSource"]):
+                violations.append({
+                    "widget_id": wid,
+                    "code": "chart_not_aggregated",
+                    "message": (
+                        f"Chart '{cfg_title_for(wcfg, wid)}' (type={chart_type}) "
+                        "has no GROUP BY, no aggregate function, and no "
+                        "datasetColumns[].aggregation — the SQL will return raw rows."
+                    ),
+                    "fix_hint": (
+                        "Either (a) use GROUP BY + COUNT/SUM/AVG in the SQL, "
+                        "or (b) set `aggregation` on each datasetColumns entry "
+                        "(e.g. \"sum\") so the transform groups-by labelColumn. "
+                        "Raw-row category charts (e.g. "
+                        "`SELECT role, left FROM t WHERE left=1`) are rejected."
+                    ),
                 })
 
     for rule_msg in verify_dashboard_widgets(widgets):
@@ -555,7 +632,9 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                    "aggregation": "sum", "connectionId": 1, "sql": "SELECT SUM(o.amount) AS revenue FROM orders o",
                    "sources": ["orders"]},
                   {"type": "chart", "chartType": "bar", "title": "Revenue by Region",
-                   "labelColumn": "region", "datasetColumns": [{"column": "revenue", "label": "Revenue"}],
+                   "labelColumn": "region",
+                   "datasetColumns": [{"column": "revenue", "label": "Revenue", "aggregation": "sum"}],
+                   "options": {"sortBy": "value", "sortDirection": "desc"},
                    "connectionId": 1, "sql": "SELECT o.region, SUM(o.amount) AS revenue FROM orders o GROUP BY o.region",
                    "sources": ["orders"]},
                   {"type": "text", "content": "## Detail"},
@@ -586,6 +665,14 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 chart, optionally set its "width" (e.g. 8) and the next chart's
                 "width" (e.g. 4); otherwise omit width. To preserve a widget across
                 an update, include its "id". Target 9-13 widgets (min 7, max 14).
+
+                The backend fills only STRUCTURE (envelope, position, mapping wiring,
+                styling defaults). YOU must still make every design choice — chart
+                type, aggregation, chart options (sortBy/indexAxis/sliceLabel/stacked),
+                the 3-4 KPI exec-summary row — and emit them as params. Minimal
+                params ≠ skip design. Category charts (bar/pie/line/area) MUST
+                aggregate: either `GROUP BY` + `COUNT/SUM/AVG` in the SQL, OR set
+                `aggregation` on each `datasetColumns` entry (e.g. "sum").
 
             data_context: Optional dict from build_dashboard_context. If provided,
                 stored on the dashboard for dimension-aware filtering.

@@ -301,9 +301,11 @@ def test_lean_dashboard_verifies_and_lays_out():
         lean.append({"type": "kpi", "label": f"M{i}", "valueColumn": "v", "connectionId": 1, "sql": "SELECT 1 AS v"})
     lean += [
         {"type": "chart", "chartType": "bar", "labelColumn": "r",
-         "datasetColumns": [{"column": "v", "label": "V"}], "connectionId": 1, "sql": "SELECT r,v FROM t"},
+         "datasetColumns": [{"column": "v", "label": "V", "aggregation": "sum"}],
+         "connectionId": 1, "sql": "SELECT r,v FROM t"},
         {"type": "chart", "chartType": "line", "labelColumn": "d",
-         "datasetColumns": [{"column": "v", "label": "V"}], "connectionId": 1, "sql": "SELECT d,v FROM t"},
+         "datasetColumns": [{"column": "v", "label": "V", "aggregation": "sum"}],
+         "connectionId": 1, "sql": "SELECT d,v FROM t"},
         {"type": "text", "content": "## Detail"},
         {"type": "table", "columns": [{"column": "a", "label": "A"}], "connectionId": 1, "sql": "SELECT a FROM t"},
     ]
@@ -324,3 +326,119 @@ def test_lean_dashboard_verifies_and_lays_out():
     assert all(w == 6 for _, w in rows[ys[2]])
     assert ("text", 12) in rows[ys[3]]
     assert ("table", 12) in rows[ys[4]]
+
+
+# --------------------------------------------------------------------------- #
+# Aggregation guard (_verify_widgets -> chart_not_aggregated)
+# --------------------------------------------------------------------------- #
+
+def _chart_widget(chart_type, sql, dataset_columns=None, title="T"):
+    """Build a category-chart widget in the SHAPE the agent would emit (after
+    build_widgets hydration) so _verify_widgets accepts the envelope."""
+    return {
+        "id": "w_test",
+        "position": {"x": 0, "y": 0, "w": 6, "h": 5},
+        "widget": {"type": "chart", "config": {"type": chart_type, "title": title}},
+        "dataSource": {
+            "connectionId": 1,
+            "sql": sql,
+            "mapping": {
+                "type": "chart", "chartType": chart_type,
+                "labelColumn": "lbl", "datasetColumns": dataset_columns or [],
+            },
+        },
+    }
+
+
+def test_aggregation_guard_rejects_raw_row_pie():
+    """Reproduces the real regression: 'Attrition by Role' emitted
+    `SELECT role, left AS attritions FROM t WHERE left=1` — no GROUP BY, no
+    aggregate fn, no `aggregation` on datasetColumns."""
+    from backend.agents.dashboard_tools import _verify_widgets
+    w = _chart_widget(
+        "pie",
+        "SELECT role, `left` AS attritions FROM `csv_24` c WHERE c.`left` = 1",
+        [{"column": "attritions", "label": "Attritions"}],
+    )
+    v = _verify_widgets([w], None)
+    assert any(x.get("code") == "chart_not_aggregated" for x in v), v
+
+
+def test_aggregation_guard_passes_aggregated_sql():
+    from backend.agents.dashboard_tools import _verify_widgets
+    w = _chart_widget(
+        "bar",
+        "SELECT o.region, SUM(o.amount) AS revenue FROM orders o GROUP BY o.region",
+        [{"column": "revenue", "label": "Revenue"}],
+    )
+    assert not any(x.get("code") == "chart_not_aggregated" for x in _verify_widgets([w], None))
+
+
+def test_aggregation_guard_passes_explicit_aggregation_on_datasetcolumns():
+    """Escape hatch: pre-aggregated source table — agent declares aggregation
+    on datasetColumns and the transform groups-by labelColumn itself."""
+    from backend.agents.dashboard_tools import _verify_widgets
+    w = _chart_widget(
+        "bar",
+        "SELECT region, daily_revenue FROM daily_sales",   # raw rows, no GROUP BY
+        [{"column": "daily_revenue", "label": "Revenue", "aggregation": "sum"}],
+    )
+    assert not any(x.get("code") == "chart_not_aggregated" for x in _verify_widgets([w], None))
+
+
+def test_aggregation_guard_exempts_scatter():
+    """Scatter takes raw X/Y metric pairs — must never be forced through the
+    aggregation check."""
+    from backend.agents.dashboard_tools import _verify_widgets
+    w = _chart_widget(
+        "scatter",
+        "SELECT ts, bpm FROM heart_rate",   # raw rows
+        [{"column": "ts", "label": "TS"}, {"column": "bpm", "label": "BPM"}],
+    )
+    v = _verify_widgets([w], None)
+    assert not any(x.get("code") == "chart_not_aggregated" for x in v)
+
+
+def test_aggregation_guard_fires_for_each_category_type():
+    from backend.agents.dashboard_tools import _verify_widgets
+    for ct in ("bar", "pie", "line", "area", "doughnut"):
+        w = _chart_widget(ct, "SELECT region, sales FROM t", [{"column": "sales", "label": "S"}])
+        v = _verify_widgets([w], None)
+        assert any(x.get("code") == "chart_not_aggregated" for x in v), (ct, v)
+
+
+# --------------------------------------------------------------------------- #
+# Dialect hints for db_type='dataset' (CSV/Excel via bingo-csv-connector)
+# --------------------------------------------------------------------------- #
+
+def test_dialect_hints_dataset_dev_returns_duckdb():
+    """Dev (DISABLE_LOCAL_DATA_PLANE=false): dataset connections emit DuckDB hints
+    so the agent doesn't write BigQuery-only SQL (`SAFE_CAST`, backticks)."""
+    from backend.agents.profile_defaults import (
+        DUCKDB_DIALECT_HINTS, BIGQUERY_DIALECT_HINTS, _dialect_hints_for_target,
+    )
+    from backend.config import settings as _settings
+    saved = getattr(_settings, "disable_local_data_plane", None)
+    try:
+        _settings.disable_local_data_plane = False
+        out = _dialect_hints_for_target(org_id=None, target_db_type="dataset")
+        assert out == DUCKDB_DIALECT_HINTS
+        assert out != BIGQUERY_DIALECT_HINTS
+    finally:
+        _settings.disable_local_data_plane = saved
+
+
+def test_dialect_hints_dataset_lockdown_returns_bigquery():
+    """Lockdown (DISABLE_LOCAL_DATA_PLANE=true): dataset writes to BQ → BigQuery hints."""
+    from backend.agents.profile_defaults import (
+        DUCKDB_DIALECT_HINTS, BIGQUERY_DIALECT_HINTS, _dialect_hints_for_target,
+    )
+    from backend.config import settings as _settings
+    saved = getattr(_settings, "disable_local_data_plane", None)
+    try:
+        _settings.disable_local_data_plane = True
+        out = _dialect_hints_for_target(org_id=None, target_db_type="dataset")
+        assert out == BIGQUERY_DIALECT_HINTS
+        assert out != DUCKDB_DIALECT_HINTS
+    finally:
+        _settings.disable_local_data_plane = saved

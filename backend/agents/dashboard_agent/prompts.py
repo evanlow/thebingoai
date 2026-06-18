@@ -143,6 +143,7 @@ adds those. Data widgets (kpi, chart, table, pivot_table) need `connectionId` + 
 3. **Mapping columns in SELECT**: every column in mapping must appear in SQL SELECT output
 4. **No forbidden keywords**: no INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, GRANT, REVOKE, EXEC, EXECUTE, COPY, LOAD, SET, CALL, RENAME
 5. If `create_dashboard` returns with warnings, fix the affected widget SQL and call `update_dashboard` to update them
+6. **Category charts MUST aggregate.** bar/pie/line/area/doughnut plots return raw row-level data unless the SQL has `GROUP BY` + an aggregate fn, OR every `datasetColumns` entry declares an `aggregation`. Raw-row category charts are rejected pre-execution.
 
 ## Updating Existing Dashboards
 
