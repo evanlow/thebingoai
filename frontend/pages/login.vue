@@ -119,7 +119,7 @@
       </div>
     </div>
 
-    <TrialExpiredDialog v-model:open="showTrialExpired" />
+    <AccountDeactivatedDialog v-model:open="showAccountDeactivated" />
   </div>
 </template>
 
@@ -131,7 +131,7 @@ const isDark = computed({
   get: () => colorMode.value === 'dark',
   set: (val: boolean) => { colorMode.preference = val ? 'dark' : 'light' }
 })
-import TrialExpiredDialog from '~/components/TrialExpiredDialog.vue'
+import AccountDeactivatedDialog from '~/components/AccountDeactivatedDialog.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -143,7 +143,7 @@ const showPassword = ref(false)
 const remember = ref(false)
 const loading = computed(() => authStore.loading)
 const error = computed(() => authStore.error)
-const showTrialExpired = ref(false)
+const showAccountDeactivated = ref(false)
 
 function postLoginDestination(fallback: string): string {
   const rt = route.query.returnTo
@@ -156,7 +156,7 @@ async function handleLogin() {
   const result = await authStore.login({ email: email.value, password: password.value })
 
   if (authStore.isAccountInactive) {
-    showTrialExpired.value = true
+    showAccountDeactivated.value = true
   } else if (result.success) {
     router.push(postLoginDestination(authStore.isFirstLogin ? '/connect' : '/chat'))
   }

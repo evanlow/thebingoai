@@ -16,6 +16,7 @@ class BalanceResponse(BaseModel):
     used_today: int
     remaining: int
     resets_at: str
+    org_exhausted: bool = False  # workspace credit pool drained (trial expiry / spent)
 
 
 @router.get("/balance", response_model=BalanceResponse)
@@ -37,6 +38,19 @@ async def get_balance(
     used_today = int(used_row.used)
 
     remaining = max(0, daily_limit - used_today)
+
+    # Workspace (org) pool drained takes precedence over the daily quota: the
+    # spend gate blocks regardless of daily remaining, so surface 0 here too
+    # rather than a misleading daily count.
+    from backend.services.org_credit_pool import check_org_pool, lookup_user_org_id
+    org_exhausted = False
+    org_id = lookup_user_org_id(db, current_user.id)
+    if org_id is not None:
+        org_balance = check_org_pool(db, org_id)
+        if org_balance is not None and org_balance <= 0:
+            org_exhausted = True
+            remaining = 0
+
     tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time())
     resets_at = tomorrow.replace(tzinfo=timezone.utc).isoformat()
 
@@ -44,5 +58,6 @@ async def get_balance(
         daily_limit=daily_limit,
         used_today=used_today,
         remaining=remaining,
-        resets_at=resets_at
+        resets_at=resets_at,
+        org_exhausted=org_exhausted,
     )
