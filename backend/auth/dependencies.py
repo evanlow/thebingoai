@@ -99,6 +99,16 @@ def _resolve_local_user(request: Request, db: Session, sso_user) -> User:
             # Auto-create new user
             user = _create_user(db, sso_user)
 
+    # Tombstoned (self-serve deleted) accounts are locked out. SSO already
+    # deactivates the old sso_id, but this guards against a stale local match
+    # resurrecting a renamed account. The fresh-signup path above never reaches
+    # here with is_active False (new rows default to True).
+    if user.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+
     # Multi-workspace: an X-Workspace-Id header selects the active workspace
     # when the user is a member of it. In-memory only; no commit happens here.
     user.active_role = "member"

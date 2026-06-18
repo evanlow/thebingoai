@@ -1,10 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from backend.database.session import get_db
 from backend.auth.dependencies import get_current_user
-from backend.auth.sso import get_config as sso_get_config, logout as sso_logout
-from backend.schemas.auth import LogoutRequest
+from backend.auth.sso import (
+    get_config as sso_get_config,
+    logout as sso_logout,
+    delete_account as sso_delete_account,
+)
+from backend.schemas.auth import LogoutRequest, DeleteAccountRequest
+from backend.services.account_deletion import tombstone_account
 from backend.schemas.user import UserResponse
 from backend.models.user import User
 from backend.config import settings
@@ -107,3 +113,42 @@ async def logout(
     await sso_logout(access_token, request.refresh_token)
 
     return {"message": "Logged out successfully"}
+
+
+@router.delete("/account")
+async def delete_account(
+    body: DeleteAccountRequest | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Self-serve account deletion.
+
+    SSO renames the email to bingo-<ts>@<original_domain> and deactivates the
+    account; we mirror the rename locally and tear down credit-consuming
+    resources (live DB connections + pipelines, scheduled heartbeat jobs,
+    autonomous agents, dashboard refresh schedules) while KEEPING conversations,
+    generated briefs, dashboards, BigQuery/GCS data and file-based connections.
+    The freed email can register again later as a fresh account.
+
+    SSO owns the rename, so it runs first and a failure is fatal — no local data
+    is touched, avoiding a local/SSO email divergence.
+    """
+    access_token = credentials.credentials
+    refresh_token = body.refresh_token if body else None
+
+    result = await sso_delete_account(access_token, refresh_token)
+    if result is None or not result.get("new_email"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "sso_delete_failed",
+                "message": "Could not delete account at SSO. No changes were made.",
+            },
+        )
+
+    new_email = result["new_email"]
+    await run_in_threadpool(tombstone_account, db, current_user, new_email)
+
+    return {"message": "Account deleted", "email": new_email}

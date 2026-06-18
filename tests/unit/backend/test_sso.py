@@ -284,6 +284,113 @@ async def test_logout_community_app_name(mock_redis, mock_http):
 
 
 # ---------------------------------------------------------------------------
+# delete_account tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_delete_account_success(mock_redis, mock_http):
+    """delete_account() clears cache, POSTs to /delete-account, returns SSO body."""
+    mock_redis.delete = AsyncMock()
+
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"new_email": "1799999999999-deadbeef@gmail.com",
+                                  "message": "Account deleted"}
+    response.raise_for_status = MagicMock()
+    mock_http.post = AsyncMock(return_value=response)
+
+    with (
+        patch("backend.auth.sso._get_redis_client", return_value=mock_redis),
+        patch("backend.auth.sso._get_http_client", return_value=mock_http),
+        patch("backend.auth.sso.settings") as mock_settings,
+    ):
+        mock_settings.sso_secret_key = "sk_test"
+        from backend.auth.sso import delete_account
+        result = await delete_account("access_tok", "refresh_tok")
+
+    assert result == {"new_email": "1799999999999-deadbeef@gmail.com",
+                      "message": "Account deleted"}
+    mock_redis.delete.assert_awaited_once_with(_cache_key("access_tok"))
+    mock_http.post.assert_awaited_once()
+    args, kwargs = mock_http.post.call_args
+    assert args[0] == "/api/v1/auth/delete-account"
+    assert kwargs.get("json") == {"refresh_token": "refresh_tok"}
+    headers = kwargs.get("headers") or {}
+    assert headers.get("X-API-Key") == "sk_test"
+    assert headers.get("Authorization") == "Bearer access_tok"
+
+
+@pytest.mark.asyncio
+async def test_delete_account_no_refresh_token(mock_redis, mock_http):
+    """delete_account() posts an empty payload when no refresh token is given."""
+    mock_redis.delete = AsyncMock()
+
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"new_email": "x@y.com"}
+    response.raise_for_status = MagicMock()
+    mock_http.post = AsyncMock(return_value=response)
+
+    with (
+        patch("backend.auth.sso._get_redis_client", return_value=mock_redis),
+        patch("backend.auth.sso._get_http_client", return_value=mock_http),
+        patch("backend.auth.sso.settings") as mock_settings,
+    ):
+        mock_settings.sso_secret_key = "sk_test"
+        from backend.auth.sso import delete_account
+        result = await delete_account("access_tok")
+
+    assert result == {"new_email": "x@y.com"}
+    _, kwargs = mock_http.post.call_args
+    assert kwargs.get("json") == {}
+
+
+@pytest.mark.asyncio
+async def test_delete_account_http_error(mock_redis, mock_http):
+    """delete_account() returns None on HTTP error but still clears the token cache."""
+    mock_redis.delete = AsyncMock()
+
+    response = MagicMock()
+    response.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            "server error", request=MagicMock(), response=MagicMock(status_code=500),
+        )
+    )
+    mock_http.post = AsyncMock(return_value=response)
+
+    with (
+        patch("backend.auth.sso._get_redis_client", return_value=mock_redis),
+        patch("backend.auth.sso._get_http_client", return_value=mock_http),
+        patch("backend.auth.sso.settings") as mock_settings,
+    ):
+        mock_settings.sso_secret_key = "sk_test"
+        from backend.auth.sso import delete_account
+        result = await delete_account("access_tok", "refresh_tok")
+
+    assert result is None
+    mock_redis.delete.assert_awaited_once_with(_cache_key("access_tok"))
+
+
+@pytest.mark.asyncio
+async def test_delete_account_generic_error(mock_redis, mock_http):
+    """delete_account() returns None on unexpected error and still clears the cache."""
+    mock_redis.delete = AsyncMock()
+    mock_http.post = AsyncMock(side_effect=Exception("boom"))
+
+    with (
+        patch("backend.auth.sso._get_redis_client", return_value=mock_redis),
+        patch("backend.auth.sso._get_http_client", return_value=mock_http),
+        patch("backend.auth.sso.settings") as mock_settings,
+    ):
+        mock_settings.sso_secret_key = "sk_test"
+        from backend.auth.sso import delete_account
+        result = await delete_account("access_tok", "refresh_tok")
+
+    assert result is None
+    mock_redis.delete.assert_awaited_once_with(_cache_key("access_tok"))
+
+
+# ---------------------------------------------------------------------------
 # get_config tests
 # ---------------------------------------------------------------------------
 
