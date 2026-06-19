@@ -56,27 +56,55 @@ def check_org_pool(db: Session, org_id: str) -> Optional[int]:
     return int(row[0]) if row is not None else None
 
 
-def try_decrement_org_pool(db: Session, org_id: str, amount: int = 1) -> Optional[int]:
-    """Atomically decrement the org's credit_balance by `amount`.
+def spend_org_pool(db: Session, org_id: str, amount: int) -> Optional[int]:
+    """Atomically spend `amount` from the org pool, draining recurring first.
 
-    Returns the new balance on success, or None if there weren't enough
-    credits (the UPDATE's WHERE clause failed the >= check). The caller
-    owns the surrounding transaction; this function only flushes.
+    Recurring is derived (credit_balance - topup_balance). The spend reduces the
+    total; topup_balance only drops once the spend exceeds the derived recurring,
+    so top-up survives until recurring is exhausted. Gate is on the total
+    (credit_balance >= amount): all-or-nothing. Postgres evaluates SET against the
+    pre-UPDATE row. Returns the new total, or None if the column is missing
+    (pre-Phase-0 community schema) or the total was insufficient. Callers pass
+    amount >= 1. Caller owns the transaction.
     """
     try:
         result = db.execute(
             text(
                 "UPDATE organizations "
-                "SET credit_balance = credit_balance - :amt "
+                "SET topup_balance = CASE WHEN (credit_balance - topup_balance) >= :amt "
+                "        THEN topup_balance "
+                "        ELSE topup_balance - (:amt - (credit_balance - topup_balance)) END, "
+                "    credit_balance = credit_balance - :amt "
                 "WHERE id = :org AND credit_balance >= :amt "
                 "RETURNING credit_balance"
             ),
             {"amt": int(amount), "org": str(org_id)},
         )
     except Exception:
-        # Column missing (community pre-Phase-0) — treat as "no pool gating".
         return None
     row = result.fetchone()
     if row is None:
         return None
     return int(row[0])
+
+
+def read_org_pool_breakdown(db: Session, org_id: str) -> Optional[dict]:
+    """Return {recurring, topup, total} or None when the columns are missing.
+    recurring is derived: total - topup."""
+    try:
+        row = db.execute(
+            text("SELECT credit_balance, topup_balance FROM organizations WHERE id = :org"),
+            {"org": str(org_id)},
+        ).fetchone()
+    except Exception:
+        return None
+    if row is None:
+        return None
+    total, topup = int(row[0]), int(row[1])
+    return {"recurring": total - topup, "topup": topup, "total": total}
+
+
+def try_decrement_org_pool(db: Session, org_id: str, amount: int = 1) -> Optional[int]:
+    """Per-turn community debit — recurring-first. Thin wrapper over spend_org_pool
+    for back-compat with token_tracking_service._record."""
+    return spend_org_pool(db, org_id, amount)

@@ -37,3 +37,19 @@ def test_funded_org_pool_not_exhausted(authenticated_client, db_session, sample_
     data = authenticated_client.get("/api/credits/balance").json()
     assert data["org_exhausted"] is False
     assert data["remaining"] == data["daily_limit"]
+
+
+def test_balance_includes_org_breakdown(authenticated_client, db_session, sample_user):
+    import uuid
+    from backend.models.organization import Organization
+    org = Organization(id=str(uuid.uuid4()), name=f"o-{uuid.uuid4()}",
+                       credit_balance=130, topup_balance=30)  # recurring derived = 100
+    db_session.add(org)
+    sample_user.org_id = org.id
+    db_session.add(sample_user)
+    db_session.commit()
+    data = authenticated_client.get("/api/credits/balance").json()
+    assert data["org_recurring"] == 100
+    assert data["org_topup"] == 30
+    assert data["org_total"] == 130
+    assert data["org_exhausted"] is False
