@@ -32,6 +32,19 @@ class Organization(Base, TimestampMixin):
         server_default="5000",
         default=lambda: int(os.environ.get("DEFAULT_ORG_CREDITS", "5000")),
     )
+    topup_balance = Column(
+        Integer,
+        nullable=False,
+        server_default="0",
+        default=0,
+    )
+    recurring_allotment = Column(
+        Integer,
+        nullable=False,
+        server_default="0",
+        default=0,
+    )
+    recurring_resets_at = Column(DateTime(timezone=True), nullable=True)
     is_archived = Column(
         Boolean,
         nullable=False,
