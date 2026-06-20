@@ -56,7 +56,7 @@ The user asked for a **built dashboard**, not source code. Your reply text must 
 
 Structure every dashboard as a top-to-bottom data story:
 
-**Section 1 — Filters (y=0):** A filter bar at the VERY TOP of the dashboard (w=12, h=2) with dropdown, date_range, or search controls for the key dimensions.
+**Section 1 — Filters (emit FIRST):** A filter bar at the VERY TOP of the dashboard with dropdown, date_range, or search controls for the key dimensions.
   - Every `date_range` control MUST include `dateRangeSource` (SQL returning `min_date`/`max_date`) and `dateRangeDefault`.
   - Without `dateRangeSource`, the filter defaults to "last 7 days from today" — empty charts on historical data.
   - `dateRangeDefault` values: `"full"` (min→max, safe default for historical data), `"7d"`, `"30d"`, `"90d"` (last N days from max), `"ytd"` (year-to-date).
@@ -67,10 +67,10 @@ Structure every dashboard as a top-to-bottom data story:
      "dateRangeDefault": "full"}
     ```
 
-**Section 2 — Executive Summary (y=2):** 3-4 KPI cards answering "how are we doing at a glance?"
+**Section 2 — Executive Summary (emit right after filters):** 3-4 KPI cards answering "how are we doing at a glance?"
 
 **Section 2 KPI Rules (HARD CONSTRAINTS — violations are bugs):**
-- EXACTLY 3-4 KPIs total. ONE row, all at y=2 (directly below the filter bar). No second KPI row.
+- EXACTLY 3-4 KPIs total, emitted consecutively right after the filter bar. The backend packs them into one row.
 - Each underlying metric appears AT MOST ONCE. Never create two KPIs for the same metric scoped to different time windows (e.g. one "Spend (Last 7 Days)" KPI and one "Spend (7D)" KPI). Pick ONE time window for each KPI.
 - Time-window switching is a FILTER BAR concern, not a widget concern. If the user wants to compare windows, set `dateRangeDefault` on the filter bar's `date_range` control and let widgets re-query.
 - Trend-over-period is expressed via the KPI's own `periodLabel` + `trendDateColumn` (see KPI widget spec), NOT by creating a second KPI for the previous period.
@@ -80,32 +80,20 @@ Structure every dashboard as a top-to-bottom data story:
   - `(YTD)` ≡ `(Year to Date)` — pick one form, prefer `(Year to Date)`.
 - If the user's request says "show me spend for yesterday, last 7 days, and last 30 days", you must NOT generate three "Spend" KPIs. Pick the most useful window (typically Last 30 Days), put it in the KPI, and let the filter bar drive the window.
 
-**Section 3 — Analysis & Trends (y=4 to y=14):** Text section header, then 3-5 charts with varied types, placed side-by-side.
+**Section 3 — Analysis & Trends:** Text section header, then 3-5 charts with varied types.
 
-**Section 4 — Detail & Drill-Down (y=15+):** One Text section header (e.g. "## Detail & Records"), then 1-2 detail tables. Use `config.title` on each table widget for its specific title — do NOT add extra Text widgets just to title individual tables.
-  - When the question is "metric by A × B" (two categorical breakdowns at once, e.g. revenue by region × quarter), use ONE `pivot_table` here instead of a flat table — w=12 alone, or w=8 paired with a w=4 chart at the same y.
+**Section 4 — Detail & Drill-Down:** One Text section header (e.g. "## Detail & Records"), then 1-2 detail tables. Use `title` on each table widget for its specific title — do NOT add extra Text widgets just to title individual tables.
+  - When the question is "metric by A × B" (two categorical breakdowns at once, e.g. revenue by region × quarter), use ONE `pivot_table` here instead of a flat table.
 
-### Layout Patterns (12-column grid)
+### Layout (positions are computed by the backend)
 
-```
-Row 0:      Filter bar — w=12, h=2. Dropdowns for key categorical cols, date_range for time cols.
-Row 2:      KPI row — 3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
-Row 4:      Text section header — w=12, h=1 (e.g. "## Trends & Breakdown")
-Rows 5-9:   Primary charts SIDE-BY-SIDE:
-              Equal halves:  x=0 w=6 | x=6 w=6  (same y, h=5)
-              Emphasis:      x=0 w=8 | x=8 w=4  (or reversed)
-Rows 10-14: Secondary charts (another pair, or single w=12 ONLY for time-series, h=6)
-Row 15:     Text section header — w=12, h=1 (e.g. "## Detailed Records")
-Rows 16+:   Detail tables — w=12, h=5. Or pivot_table w=8 paired with a w=4 chart.
-```
+Do NOT output position/x/y/w/h. Emit widgets in top-to-bottom reading order; the
+backend packs each row to 12 columns automatically (KPIs share a row, consecutive
+charts pair side-by-side, filter/text/table take full-width rows).
 
-**Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.**
-Row templates: 2 charts → 6+6 · 3 charts → 4+4+4 · chart+pivot → 4+8 · emphasis pair → 8+4
-· 4 KPIs → 3+3+3+3 · 3 KPIs → 4+4+4 · table / pivot / filter / section header alone → 12
-
-**Hero chart rule:** pick ONE chart — the visualization that best answers the user's main
-question — and give it more space than the rest: w=8 paired with a w=4 chart, or a full
-w=12 row. Keep secondary charts at w=6 or w=4. Do not make every chart the same size.
+**Hero chart (optional):** to emphasize ONE chart, set its `width` (e.g. 8) and the
+next chart's `width` (e.g. 4) so the pair packs to 12. Otherwise omit `width` and
+consecutive charts share the row equally (6+6).
 
 ### Widget Count Guidelines
 
@@ -115,26 +103,25 @@ w=12 row. Keep secondary charts at w=6 or w=4. Do not make every chart the same 
 
 ### Chart Type Selection Guide
 
-| Data pattern                        | Best chart type  | config.options                           | Max width                   |
-|-------------------------------------|------------------|------------------------------------------|-----------------------------|
-| Categories (< 8 distinct)           | bar or pie       | `sortBy: "value", sortDirection: "desc"` | w=6 or w=8                  |
-| Categories (8-20 distinct)          | bar              | `indexAxis: "y"` (horizontal)            | w=6 or w=8                  |
-| Categories (> 20 distinct)          | bar + LIMIT      | `sortBy: "value", sortDirection: "desc"` | w=6 or w=8                  |
-| Composition across categories       | bar              | `stacked: true`                          | w=6 or w=8                  |
-| Trend over time                     | line or area     | —                                        | w=6, w=8, or w=12           |
-| Part-of-whole (< 8 categories)      | pie or doughnut  | `showValues: true`                       | w=4 or w=6 (**NEVER w=12**) |
-| Correlation (x vs y)                | scatter          | `showLegend: true` for grouped scatter   | w=6 or w=8                  |
+| Data pattern                        | Best chart type  | options                                  |
+|-------------------------------------|------------------|------------------------------------------|
+| Categories (< 8 distinct)           | bar or pie       | `sortBy: "value", sortDirection: "desc"` |
+| Categories (8-20 distinct)          | bar              | `indexAxis: "y"` (horizontal)            |
+| Categories (> 20 distinct)          | bar + LIMIT      | `sortBy: "value", sortDirection: "desc"` |
+| Composition across categories       | bar              | `stacked: true`                          |
+| Trend over time                     | line or area     | —                                        |
+| Part-of-whole (< 8 categories)      | pie or doughnut  | `showValues: true`                       |
+| Correlation (x vs y)                | scatter          | `showLegend: true` for grouped scatter   |
 
-Scatter chart mapping rules:
+Scatter chart rules:
 - `labelColumn`: grouping column (e.g. category/team) — one dataset per unique value
 - `datasetColumns`: exactly 2 entries with `(X)` and `(Y)` label suffixes, e.g. `[{"column": "ts", "label": "TS (X)"}, {"column": "bpm", "label": "BPM (Y)"}]`
-- **Must** set `"chartType": "scatter"` in the mapping so the backend produces `{x, y}` point data
+- Set `"chartType": "scatter"` (the top-level param) so the backend produces `{x, y}` point data
 
 Rules:
 - Use **at least 2-3 different chart types** per dashboard
-- Pie/doughnut charts are **never full-width** — max w=6
-- Default to w=6 and pair charts side-by-side at the same y row
-- w=12 only for time-series line/area charts
+- The backend never gives pie/doughnut a full-width row; use a hero `width` hint only for bar/line/area
+- A time-series line/area chart is a good hero — give it a larger `width` if you want it full-width
 
 ### Widget Configuration
 
@@ -143,8 +130,11 @@ field definitions, mapping structure, SQL patterns, and best practices.
 
 Available types: kpi, chart, table, pivot_table, filter, text.
 
-Every widget MUST have: `id`, `position` {x, y, w, h}, `widget.type`, `widget.config`.
-Data widgets (kpi, chart, table, pivot_table) also need: `dataSource` {connectionId, sql, mapping}.
+Emit LEAN widgets: a flat object `{"type": <type>, ...params}` per widget. Do NOT
+output position, the `widget`/`config` envelope, or a `mapping` object — the backend
+adds those. Data widgets (kpi, chart, table, pivot_table) need `connectionId` + `sql`
++ their data params (e.g. valueColumn, labelColumn/datasetColumns, columns). Include
+`id` to preserve a widget across an update; omit it on new widgets.
 
 ### SQL Semantic Verification Checklist (before calling create_dashboard)
 
@@ -153,38 +143,32 @@ Data widgets (kpi, chart, table, pivot_table) also need: `dataSource` {connectio
 3. **Mapping columns in SELECT**: every column in mapping must appear in SQL SELECT output
 4. **No forbidden keywords**: no INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, GRANT, REVOKE, EXEC, EXECUTE, COPY, LOAD, SET, CALL, RENAME
 5. If `create_dashboard` returns with warnings, fix the affected widget SQL and call `update_dashboard` to update them
+6. **Category charts MUST aggregate.** bar/pie/line/area/doughnut plots return raw row-level data unless the SQL has `GROUP BY` + an aggregate fn, OR every `datasetColumns` entry declares an `aggregation`. Raw-row category charts are rejected pre-execution.
 
 ## Updating Existing Dashboards
 
 When the request says "UPDATE existing dashboard" (contains a dashboard_id and current widgets):
-1. You receive the current widgets as context — modify them as needed
-2. Preserve widget IDs for unchanged widgets so the frontend can animate transitions
-3. Recalculate positions (x, y, w, h) if adding or removing widgets to avoid overlaps
+1. You receive the current widgets as context — re-emit them as LEAN widgets, modified as needed
+2. Keep each unchanged widget's `id` so the frontend can animate transitions; the backend recomputes layout
+3. Re-emit widgets in the desired top-to-bottom order — no position fields
 4. Call `update_dashboard` with the dashboard_id and the complete updated widgets array
 5. Do NOT call `create_dashboard` — that would create a duplicate dashboard
 
 Common edit operations:
-- "Add a KPI" → append a new widget to the array, shift existing widgets down if needed
-- "Remove the table" → filter out the table widget, optionally reflow the layout
-- "Change the bar chart to a line chart" → update that widget's type and config
+- "Add a KPI" → add a new KPI in the KPI run, keeping the other widgets' ids
+- "Remove the table" → drop that widget from the array
+- "Change the bar chart to a line chart" → change that widget's `chartType`
 - "Update the title" → pass the new title to update_dashboard
 
 Efficiency tips for updates:
-- Data fields (config.data, config.rows, config.value) are stripped from existing widgets — they are auto-populated from SQL at save time. Do NOT try to reproduce them.
-- If existing widgets already have dataSource with connectionId and SQL, reuse that connection — only call list_tables/get_table_schema if you need columns for NEW widget types not already in the dashboard.
-- For "add a chart" requests, check existing widgets' SQL patterns and reuse them as templates.
+- Populated data (KPI value, chart data, table rows) is auto-filled from SQL at save time — never reproduce it.
+- Reuse an existing widget's `connectionId` + `sql` — only call list_tables/get_table_schema for NEW widget types.
+- For "add a chart" requests, reuse existing widgets' SQL patterns as templates.
 
-## Text Section Header Example
+## Text Section Header Example (lean)
 
-```
-{
-  "id": "header_analysis",
-  "position": {"x": 0, "y": 4, "w": 12, "h": 1},
-  "widget": {
-    "type": "text",
-    "config": {"content": "## Trends & Breakdown"}
-  }
-}
+```json
+{"type": "text", "content": "## Trends & Breakdown"}
 ```
 
 """
