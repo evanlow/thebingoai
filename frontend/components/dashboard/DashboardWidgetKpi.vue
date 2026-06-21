@@ -344,8 +344,22 @@ const justifyClass = computed(() => {
   }
 })
 
+// True when a comparison/trend indicator or progress visual is shown — it
+// consumes vertical space, so the main value steps down one size to avoid clipping.
+const hasIndicator = computed(() =>
+  !!comparisonDisplay.value || (showProgress.value && progressPct.value !== null),
+)
+
 const valueSizeClass = computed(() => {
-  switch (props.config.fontSize) {
+  // Step down one notch when an indicator is present so value + indicator both fit.
+  const order = ['xs', 'sm', '', 'lg', 'xl'] as const // '' === md (base size)
+  const size = props.config.fontSize ?? 'md'
+  let key: (typeof order)[number] = size === 'md' ? '' : (size as any)
+  if (hasIndicator.value) {
+    const i = order.indexOf(key)
+    if (i > 0) key = order[i - 1]
+  }
+  switch (key) {
     case 'xs': return 'kpi-value-xs'
     case 'sm': return 'kpi-value-sm'
     case 'lg': return 'kpi-value-lg'
@@ -437,7 +451,7 @@ onBeforeUnmount(() => sparklineInstance?.destroy())
   font-size: 36px;
   font-optical-sizing: auto;
   font-variation-settings: 'opsz' 72;
-  line-height: 1.15;
+  line-height: 1.25;
   letter-spacing: -0.5px;
   color: var(--ink-0);
 }

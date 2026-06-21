@@ -275,18 +275,10 @@
           <option v-for="opt in sliceLabelOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
       </div>
-      <!-- Non-pie: show values toggle -->
-      <div v-else class="flex items-center justify-between py-1">
-        <span class="text-sm text-gray-700">Show values</span>
-        <button type="button" role="switch" :aria-checked="!!localOpts.showValues" :disabled="!editMode"
-          class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-          :class="localOpts.showValues ? 'bg-indigo-600' : 'bg-gray-200'"
-          @click="editMode && toggle('showValues')">
-          <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5"
-            :class="localOpts.showValues ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
-        </button>
-      </div>
-      <!-- Round Values: independent of Show values — applies to axes, tooltips, and labels -->
+      <!-- Data labels for non-pie charts are controlled per-series in the Series tab
+           ("Show data labels"). The old chart-wide "Show values" toggle was removed
+           to avoid two controls doing the same thing. -->
+      <!-- Round Values — applies to axes, tooltips, and labels -->
       <div class="flex items-center justify-between py-1">
         <div>
           <span class="text-sm text-gray-700">Round values</span>
@@ -709,6 +701,8 @@ const _normFontSize = (v?: string) => (v === 'xl' ? 'lg' : v) as ChartOptions['f
 if (_rawOpts.fontSize === 'xl') _rawOpts.fontSize = _normFontSize('xl')
 if ((_rawOpts as any).titleFontSize === 'xl') (_rawOpts as any).titleFontSize = 'lg'
 if ((_rawOpts as any).legendFontSize === 'xl') (_rawOpts as any).legendFontSize = 'lg'
+// Round values default ON — reflect the rendered default in the toggle.
+if (_rawOpts.roundValues === undefined) _rawOpts.roundValues = true
 const localOpts = ref<ChartOptions>(_rawOpts)
 const localDatasets = ref<DatasetConfig[]>(
   (JSON.parse(JSON.stringify(chartConfig.value.data?.datasets ?? [])) as DatasetConfig[])

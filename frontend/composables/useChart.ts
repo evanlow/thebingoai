@@ -324,9 +324,10 @@ function isStackedActive(val: any): boolean {
   return val === true || val === 'standard' || val === 'percentage'
 }
 
-function formatTickValue(value: unknown, opts: { roundValues?: boolean; decimalPlaces?: number }): string | number {
+function formatTickValue(value: unknown, opts: { decimalPlaces?: number }): string | number {
+  // Only invoked when rounding is active (see tickCallback gate).
   if (typeof value !== 'number') return value as any
-  return opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : value
+  return value.toFixed(opts.decimalPlaces ?? 2)
 }
 
 // ── Main options builder ──────────────────────────────────────────────────────
@@ -352,8 +353,13 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     : opts.missingData === 'breaks' ? false
     : undefined
 
+  // Round values ON by default (only explicit false disables it).
+  const roundValues = opts.roundValues !== false
+  // Reserve datalabel padding when any series shows labels (per-series default ON).
+  const anyDataLabels = config.data.datasets.some(ds => ds.showDataLabels ?? true)
+
   // Tooltip callback when rounding or percentage stacking is active
-  const needsTooltipCallback = opts.roundValues || isPercentage
+  const needsTooltipCallback = roundValues || isPercentage
   const tooltipCallbacks = needsTooltipCallback ? {
     label: (ctx: any) => {
       const label = ctx.dataset?.label ?? ''
@@ -375,8 +381,8 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     animation: enableAnimation ? undefined : false,
     layout: {
       padding: isHorizontal
-        ? { right: opts.showValues ? 28 : 0 }
-        : { top: opts.showValues ? 20 : 0 },
+        ? { right: anyDataLabels ? 28 : 0 }
+        : { top: anyDataLabels ? 20 : 0 },
     },
     plugins: {
       legend: {
@@ -427,7 +433,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
                   return `${((value / total) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
                 }
                 // value
-                return opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+                return roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
               },
             }
           })()
@@ -439,7 +445,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
             align: isHorizontal ? 'right' : 'top',
             formatter: (value: unknown) => {
               if (typeof value !== 'number') return value
-              const formatted = opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+              const formatted = roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
               return isPercentage ? `${formatted}%` : formatted
             },
           },
@@ -457,7 +463,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     const xCfg = opts.xAxis ?? {}
 
     // Tick callback for rounding
-    const tickCallback = opts.roundValues
+    const tickCallback = roundValues
       ? (value: unknown) => formatTickValue(value, opts)
       : undefined
 

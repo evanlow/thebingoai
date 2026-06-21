@@ -222,7 +222,7 @@
           <!-- Highlighted code overlay -->
           <div
             ref="sqlHighlightRef"
-            class="absolute inset-0 px-3 py-2 font-mono text-xs leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
+            class="absolute inset-0 pl-3 pr-8 py-2 font-mono text-xs leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
             aria-hidden="true"
             v-html="highlightedSql"
           />
@@ -324,6 +324,7 @@ import type { DashboardWidget, WidgetConfig, WidgetDataSource } from '~/types/da
 import { useDashboardStore } from '~/stores/dashboard'
 import { useApi } from '~/composables/useApi'
 import DashboardMappingDisplay from '~/components/dashboard/DashboardMappingDisplay.vue'
+import { mergeRefreshedConfig } from '~/utils/widgetMerge'
 import { useShikiHighlighter } from '~/composables/useShikiHighlighter'
 import { format as formatSql } from 'sql-formatter'
 
@@ -511,6 +512,10 @@ function onMappingUpdate(patch: Record<string, any>) {
       )
       const current = props.widget.widget
       const existingConfig = current.type === 'chart' ? (current.config as Record<string, any>) : {}
+      // Preserve per-series style edits (showDataLabels, colors, trendline, …) —
+      // the transform rebuilds datasets from the mapping only and would otherwise
+      // reset them to defaults. Merges existing dataset style in by index.
+      mergeRefreshedConfig(props.widget, transformed)
       store.updateWidgetConfig(props.widget.id, {
         type: 'chart',
         config: { ...existingConfig, ...transformed } as any,
