@@ -117,6 +117,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-vue-next'
 import type { KpiWidgetConfig } from '~/types/dashboard'
 import { Chart } from 'chart.js'
+import { formatNumericValue, formatCompact } from '~/utils/numberFormat'
 
 const POSITIVE_COLOR_DEFAULT = 'var(--d-teal)'
 const NEGATIVE_COLOR_DEFAULT = 'var(--d-ember)'
@@ -166,24 +167,15 @@ function missingValue(): string {
   }
 }
 
-function formatCompact(num: number): string {
-  const abs = Math.abs(num)
-  if (abs >= 1e9) return (num / 1e9).toFixed(1).replace(/\.0$/, '') + 'B'
-  if (abs >= 1e6) return (num / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'
-  if (abs >= 1e3) return (num / 1e3).toFixed(1).replace(/\.0$/, '') + 'K'
-  return num.toLocaleString()
-}
-
 const formattedValue = computed(() => {
   const v = props.config.value
   if (v === null || v === undefined) return missingValue()
   if (typeof v === 'number') {
-    if (props.config.compactNumbers) return formatCompact(v)
-    const dp = props.config.decimalPlaces ?? 2
-    const round = !!props.config.roundValue
-    if (round) return v.toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-    if (v % 1 !== 0) return v.toFixed(2)
-    return v.toLocaleString()
+    return formatNumericValue(v, {
+      format: (props.config.format ?? 'number') as any,
+      decimalPlaces: props.config.decimalPlaces,
+      compact: props.config.compactNumbers,
+    })
   }
   return String(v)
 })
@@ -445,7 +437,7 @@ onBeforeUnmount(() => sparklineInstance?.destroy())
   font-size: 36px;
   font-optical-sizing: auto;
   font-variation-settings: 'opsz' 72;
-  line-height: 1;
+  line-height: 1.15;
   letter-spacing: -0.5px;
   color: var(--ink-0);
 }

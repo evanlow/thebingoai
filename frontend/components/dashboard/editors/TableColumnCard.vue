@@ -124,84 +124,19 @@
       </div>
     </div>
 
-    <!-- Format + Alignment + Toggles + Delete -->
+    <!-- Format + Alignment + Decimals via shared control -->
+    <FieldFormatControls
+      :model-value="{ format: local.format, decimalPlaces: local.decimalPlaces, align: local.align }"
+      :edit-mode="editMode"
+      show-format
+      show-align
+      show-decimals
+      show-duration
+      @update:model-value="onFormatUpdate"
+    />
+
+    <!-- Sortable / Filterable / Delete row -->
     <div class="flex items-center gap-2 flex-wrap">
-      <!-- Format -->
-      <div class="space-y-1" style="min-width:80px;">
-        <label class="text-[10px] text-gray-400">Format</label>
-        <select
-          v-model="local.format"
-          :disabled="!editMode"
-          class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
-          @change="emitUpdate()"
-        >
-          <option value="">Default</option>
-          <option value="text">Text</option>
-          <option value="number">Number</option>
-          <option value="currency">Currency</option>
-          <option value="percent">Percent</option>
-          <option value="date">Date</option>
-          <option value="duration">Duration</option>
-        </select>
-      </div>
-
-      <!-- Alignment -->
-      <div class="space-y-1">
-        <label class="text-[10px] text-gray-400">Align</label>
-        <div class="flex gap-0.5">
-          <button
-            v-for="a in (['left', 'center', 'right'] as const)"
-            :key="a"
-            type="button"
-            :disabled="!editMode"
-            class="flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            :class="(local.align ?? 'left') === a
-              ? 'border-indigo-400 bg-indigo-50 text-indigo-600'
-              : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'"
-            :title="a"
-            @click="editMode && setAlign(a)"
-          >
-            <AlignLeft v-if="a === 'left'" class="h-3 w-3" />
-            <AlignCenter v-else-if="a === 'center'" class="h-3 w-3" />
-            <AlignRight v-else class="h-3 w-3" />
-          </button>
-        </div>
-      </div>
-
-      <!-- Numeric toggles: Round + Digits -->
-      <template v-if="isNumeric">
-        <div class="flex items-center gap-1.5 mt-4">
-          <span class="text-xs text-gray-600">Round</span>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="!!local.roundValue"
-            :disabled="!editMode"
-            class="relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-            :class="local.roundValue ? 'bg-indigo-600' : 'bg-gray-200'"
-            @click="editMode && toggleRound()"
-          >
-            <span
-              class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5"
-              :class="local.roundValue ? 'translate-x-3 ml-0.5' : 'translate-x-0 ml-0.5'"
-            />
-          </button>
-        </div>
-        <div v-if="local.roundValue" class="flex items-center gap-1.5 mt-4">
-          <span class="text-xs text-gray-600">Digits</span>
-          <input
-            v-model.number="local.decimalPlaces"
-            type="number"
-            min="0"
-            max="10"
-            class="w-10 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-center text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-            :readonly="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
-            @input="emitUpdate()"
-          />
-        </div>
-      </template>
-
       <!-- Sortable -->
       <div class="flex items-center gap-1.5 mt-4">
         <span class="text-xs text-gray-600">Sort</span>
@@ -370,8 +305,9 @@
 
 <script setup lang="ts">
 import { reactive, computed, ref } from 'vue'
-import { X, AlignLeft, AlignCenter, AlignRight, GripVertical, ChevronRight, ChevronDown } from 'lucide-vue-next'
+import { X, GripVertical, ChevronRight, ChevronDown } from 'lucide-vue-next'
 import type { TableColumn } from '~/types/dashboard'
+import FieldFormatControls from './FieldFormatControls.vue'
 
 const AGG_LABELS: Record<string, string> = {
   sum: 'Sum',
@@ -466,19 +402,15 @@ function emitUpdate() {
   emit('update:modelValue', { ...local })
 }
 
-function setAlign(a: 'left' | 'center' | 'right') {
-  local.align = a
-  emitUpdate()
-}
-
 function setDisplayType(dt: 'number' | 'bar' | 'heatmap') {
   local.displayType = dt
   emitUpdate()
 }
 
-function toggleRound() {
-  local.roundValue = !local.roundValue
-  if (local.roundValue) local.decimalPlaces = local.decimalPlaces ?? 2
+function onFormatUpdate(patch: { format?: string; decimalPlaces?: number; align?: 'left' | 'center' | 'right' }) {
+  if ('format' in patch) local.format = patch.format as TableColumn['format']
+  if ('decimalPlaces' in patch) local.decimalPlaces = patch.decimalPlaces
+  if ('align' in patch) local.align = patch.align
   emitUpdate()
 }
 </script>

@@ -138,12 +138,12 @@
             </div>
             <div class="flex items-center justify-between py-0.5">
               <span class="text-xs text-gray-700">Show points</span>
-              <button type="button" role="switch" :aria-checked="ds.showPoints !== false" :disabled="!editMode"
+              <button type="button" role="switch" :aria-checked="ds.showPoints === true" :disabled="!editMode"
                 class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                :class="ds.showPoints !== false ? 'bg-indigo-600' : 'bg-gray-200'"
-                @click="editMode && setDatasetProp(i, 'showPoints', !(ds.showPoints !== false))">
+                :class="ds.showPoints === true ? 'bg-indigo-600' : 'bg-gray-200'"
+                @click="editMode && setDatasetProp(i, 'showPoints', !(ds.showPoints === true))">
                 <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5"
-                  :class="ds.showPoints !== false ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
+                  :class="ds.showPoints === true ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
               </button>
             </div>
             <div class="flex items-center justify-between py-0.5">
@@ -690,6 +690,7 @@ import { ref, computed } from 'vue'
 import ColorPickerPopover from './ColorPickerPopover.vue'
 import type { WidgetConfig, ChartWidgetConfig } from '~/types/dashboard'
 import type { ChartOptions, DatasetConfig, ChartAxisConfig, ReferenceLine, ReferenceBand } from '~/types/chart'
+import { DATASET_STYLE_KEYS } from '~/utils/widgetMerge'
 
 const props = defineProps<{
   modelValue: WidgetConfig
@@ -709,7 +710,11 @@ if (_rawOpts.fontSize === 'xl') _rawOpts.fontSize = _normFontSize('xl')
 if ((_rawOpts as any).titleFontSize === 'xl') (_rawOpts as any).titleFontSize = 'lg'
 if ((_rawOpts as any).legendFontSize === 'xl') (_rawOpts as any).legendFontSize = 'lg'
 const localOpts = ref<ChartOptions>(_rawOpts)
-const localDatasets = ref<DatasetConfig[]>(JSON.parse(JSON.stringify(chartConfig.value.data?.datasets ?? [])))
+const localDatasets = ref<DatasetConfig[]>(
+  (JSON.parse(JSON.stringify(chartConfig.value.data?.datasets ?? [])) as DatasetConfig[])
+    // Data labels default ON — reflect the rendered default in the toggle.
+    .map(ds => ({ ...ds, showDataLabels: ds.showDataLabels ?? true })),
+)
 const localTitle = ref(chartConfig.value.title ?? '')
 
 // Track which series panels are expanded
@@ -889,12 +894,6 @@ function removeReferenceBand(i: number) {
 function emitUpdate() {
   emit('update:modelValue', buildConfig())
 }
-
-const DATASET_STYLE_KEYS = [
-  'seriesType', 'lineWeight', 'lineStyle', 'showPoints', 'pointRadius',
-  'stepped', 'gradient', 'cumulative', 'showDataLabels', 'yAxisID',
-  'trendline', 'borderColor', 'backgroundColor', 'borderWidth', 'fill', 'tension',
-] as const
 
 function buildConfig(): WidgetConfig {
   // Use live datasets (always fresh after Test Query) as base; overlay only style

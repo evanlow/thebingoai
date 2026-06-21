@@ -122,6 +122,14 @@
           />
         </div>
       </div>
+
+      <FieldFormatControls
+        :model-value="{ format: localFormat, decimalPlaces: localDecimalPlaces }"
+        :edit-mode="editMode"
+        show-format
+        show-decimals
+        @update:model-value="onFormatUpdate"
+      />
     </div>
 
     <!-- Comparison section (replaces Trend) -->
@@ -405,6 +413,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import type { WidgetConfig, KpiWidgetConfig, WidgetDataSource, KpiDataSourceMapping } from '~/types/dashboard'
+import FieldFormatControls from './FieldFormatControls.vue'
 
 const props = defineProps<{
   modelValue: WidgetConfig
@@ -491,6 +500,13 @@ const localLabel = ref(kpiConfig().label)
 const localValue = ref(String(kpiConfig().value))
 const localPrefix = ref(kpiConfig().prefix ?? '')
 const localSuffix = ref(kpiConfig().suffix ?? '')
+const localFormat = ref(kpiConfig().format ?? '')
+const localDecimalPlaces = ref<number | undefined>(kpiConfig().decimalPlaces)
+
+function onFormatUpdate(patch: { format?: string; decimalPlaces?: number }) {
+  if ('format' in patch) localFormat.value = patch.format ?? ''
+  if ('decimalPlaces' in patch) localDecimalPlaces.value = patch.decimalPlaces
+}
 const localComparisonType = ref(resolveComparisonType())
 const localTrendDirection = ref<'up' | 'down' | 'neutral'>(kpiConfig().trend?.direction ?? 'up')
 const localTrendValue = ref(kpiConfig().trend?.value ?? 0)
@@ -541,6 +557,8 @@ watch([() => props.modelValue, () => props.dataSource], () => {
   localValue.value = String(cfg.value)
   localPrefix.value = cfg.prefix ?? ''
   localSuffix.value = cfg.suffix ?? ''
+  localFormat.value = cfg.format ?? ''
+  localDecimalPlaces.value = cfg.decimalPlaces
   localComparisonType.value = resolveComparisonType()
   localTrendDirection.value = cfg.trend?.direction ?? 'up'
   localTrendValue.value = cfg.trend?.value ?? 0
@@ -611,6 +629,8 @@ function buildConfig(): WidgetConfig {
         : parsedValue,
       prefix: localPrefix.value || undefined,
       suffix: localSuffix.value || undefined,
+      format: (localFormat.value || undefined) as KpiWidgetConfig['format'],
+      decimalPlaces: localDecimalPlaces.value,
       trend,
       comparison,
       sparkline,
@@ -619,7 +639,7 @@ function buildConfig(): WidgetConfig {
 }
 
 watch(
-  [localLabel, localValue, localPrefix, localSuffix, localComparisonType, localTrendDirection, localTrendValue, localTrendPeriod, customTrendPeriod, localTargetValue, localTargetMetric, localShowAsProgress, localStartingValue, hasSparkline, sparklineInput],
+  [localLabel, localValue, localPrefix, localSuffix, localFormat, localDecimalPlaces, localComparisonType, localTrendDirection, localTrendValue, localTrendPeriod, customTrendPeriod, localTargetValue, localTargetMetric, localShowAsProgress, localStartingValue, hasSparkline, sparklineInput],
   () => {
     selfEmit = true
     emit('update:modelValue', buildConfig())

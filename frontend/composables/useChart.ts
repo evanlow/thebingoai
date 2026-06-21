@@ -194,15 +194,13 @@ function applyDefaultColors(
     const useFill = ds.gradient || type === 'area'
     const bgColor = ds.backgroundColor ?? (useFill ? `${color}33` : color)
 
-    // Points: explicit toggle wins, otherwise default pointRadius
-    const pointRadius = ds.showPoints === false ? 0
-      : ds.showPoints === true ? (ds.pointRadius ?? 3)
-      : ds.pointRadius
+    // Points: explicit toggle wins, otherwise default to no points
+    const pointRadius = ds.showPoints === true ? (ds.pointRadius ?? 3)
+      : ds.showPoints === false ? 0
+      : (ds.pointRadius ?? 0)
 
-    // Per-dataset datalabels
-    const datalabels = ds.showDataLabels !== undefined
-      ? { display: ds.showDataLabels }
-      : undefined
+    // Per-dataset datalabels — default ON when unset.
+    const datalabels = { display: ds.showDataLabels ?? true }
 
     const processed: Record<string, any> = {
       ...ds,
@@ -219,7 +217,7 @@ function applyDefaultColors(
     if (ds.stepped) processed.stepped = true
     if (ds.yAxisID === 'right') processed.yAxisID = 'y1'
     else if (ds.yAxisID === 'left' || !ds.yAxisID) processed.yAxisID = 'y'
-    if (datalabels) (processed as any).datalabels = datalabels
+    ;(processed as any).datalabels = datalabels
 
     // spanGaps for missing data (set here; overridden per chart type in options too)
     // linearInterpolation = true, breaks = false, lineToZero = already 0-filled in transform
@@ -467,7 +465,14 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     const baseTickFont = { family: getFontFamilyStr(opts.fontFamily), size: getFontSizePx(opts.fontSize) }
     const baseTickColor = opts.fontColor ?? colors.tickColor
 
-    const isDateAxis = !isScatter && opts.xAxisMode === 'date'
+    // Time scale only when labels are real ISO dates. Bucketed category labels
+    // (quarter "2024-Q1", year "2024", month "2024-03", parts "08:00"/"Mon"/"Jan")
+    // can't be parsed by the date adapter → fall back to the category scale.
+    const lbls = (config.data?.labels ?? []) as any[]
+    const labelsAreDates = lbls.length > 0 && lbls.every(
+      l => typeof l === 'string' && /^\d{4}-\d{2}-\d{2}/.test(l),
+    )
+    const isDateAxis = !isScatter && opts.xAxisMode === 'date' && labelsAreDates
 
     // Category (dimension/label) axis — physical X when vertical, Y when horizontal.
     const categoryScale: Record<string, any> = {

@@ -57,6 +57,65 @@ def _parse_date_value(value: Any) -> Optional[date]:
     return None
 
 
+def _parse_datetime_value(value: Any) -> Optional[datetime]:
+    """Parse a full datetime (time preserved) from various formats."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    if isinstance(value, str):
+        for candidate in (value, value.replace(" ", "T")):
+            try:
+                return datetime.fromisoformat(candidate)
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+_DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+_MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _bucket_label(value: Any, granularity: str) -> Tuple[Any, Any]:
+    """Bucket a raw label value by date granularity for time-series charts.
+
+    Returns ``(sort_key, display_label)``. The sort_key orders buckets
+    chronologically (or 0-23 / Mon-Sun / Jan-Dec for "part" granularities);
+    the display_label is what the chart renders on the axis.
+
+    Falls back to ``(value, value)`` when the value is not a parseable date
+    or the granularity is none/unknown.
+    """
+    if not granularity or granularity == "none":
+        return value, value
+    dt = _parse_datetime_value(value)
+    if dt is None:
+        return value, value
+    if granularity == "year":
+        return (dt.year,), str(dt.year)
+    if granularity == "quarter":
+        q = (dt.month - 1) // 3 + 1
+        return (dt.year, q), f"{dt.year}-Q{q}"
+    if granularity == "month":
+        return (dt.year, dt.month), f"{dt.year}-{dt.month:02d}"
+    if granularity == "week":
+        iso = dt.isocalendar()
+        start = dt.date() - timedelta(days=dt.weekday())
+        return (iso[0], iso[1]), start.isoformat()
+    if granularity == "day":
+        return (dt.year, dt.month, dt.day), dt.date().isoformat()
+    if granularity == "hour":
+        return (dt.year, dt.month, dt.day, dt.hour), f"{dt.date().isoformat()} {dt.hour:02d}:00"
+    if granularity == "hour_of_day":
+        return (dt.hour,), f"{dt.hour:02d}:00"
+    if granularity == "day_of_week":
+        return (dt.weekday(),), _DOW_LABELS[dt.weekday()]
+    if granularity == "month_of_year":
+        return (dt.month,), _MONTH_LABELS[dt.month - 1]
+    return value, value
+
+
 def _period_ranges(period_label: str, reference: date) -> Tuple[date, date, date, date]:
     """Return (current_start, current_end, previous_start, previous_end) for a period label."""
     today = reference
@@ -220,25 +279,84 @@ def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
         for ds in dataset_cols
     )
     missing_data = opts.get("missingData")
+    granularity = mapping.get("dateGranularity")
+    has_granularity = bool(granularity and granularity != "none")
+    breakdown_col = mapping.get("breakdownColumn")
 
-    if has_aggregation:
-        # Group rows by labelColumn, aggregate each metric per group
+    def _bucket(v: Any) -> Tuple[Any, Any]:
+        """(sort_key, display) for a raw label value, honoring dateGranularity."""
+        if has_granularity:
+            return _bucket_label(_to_json_safe(v), granularity)
+        sv = _to_json_safe(v)
+        return sv, sv
+
+    if breakdown_col:
+        # ── Series breakdown: pivot the FIRST metric into one dataset per
+        #    distinct breakdown value (Data-Studio "breakdown dimension").
+        #    Multiple metrics + breakdown is out of scope; the first metric wins.
+        breakdown_idx = _find_column(breakdown_col, result.columns, "breakdownColumn")
+        measure = dataset_cols[0]
+        m_idx = _find_column(measure["column"], result.columns, "datasetColumns[].column")
+        agg = measure.get("aggregation") or "sum"
+        if agg == "none":
+            agg = "sum"
+
+        label_keys: Dict[Any, Any] = {}
+        labels: List[Any] = []
+        series_seq: List[Any] = []
+        series_seen = set()
+        cells: Dict[Tuple[Any, Any], List[Any]] = {}
+        for row in result.rows:
+            sk, disp = _bucket(row[label_idx])
+            if disp not in label_keys:
+                label_keys[disp] = sk
+                labels.append(disp)
+            bv = _to_json_safe(row[breakdown_idx])
+            if bv not in series_seen:
+                series_seen.add(bv)
+                series_seq.append(bv)
+            cells.setdefault((disp, bv), []).append(_to_json_safe(row[m_idx]))
+
+        if has_granularity:
+            labels.sort(key=lambda d: label_keys[d])
+
+        datasets: List[Dict[str, Any]] = []
+        for bv in series_seq:
+            data: List[Any] = []
+            for d in labels:
+                vals = cells.get((d, bv), [])
+                data.append(_aggregate_values(vals, agg) if vals else None)
+            if missing_data == "lineToZero":
+                data = [0 if v is None else v for v in data]
+            datasets.append({
+                "label": str(bv) if bv is not None else "(null)",
+                "data": data,
+            })
+
+    elif has_aggregation or has_granularity:
+        # Group rows by (bucketed) labelColumn, aggregate each metric per group
+        label_keys = {}
         label_order: List[Any] = []
         row_groups: Dict[Any, List[list]] = {}
         for row in result.rows:
-            lv = _to_json_safe(row[label_idx])
+            sk, lv = _bucket(row[label_idx])
             if lv not in row_groups:
                 row_groups[lv] = []
                 label_order.append(lv)
+                label_keys[lv] = sk
             row_groups[lv].append(row)
-        labels: List[Any] = label_order
+        if has_granularity:
+            label_order.sort(key=lambda d: label_keys[d])
+        labels = label_order
 
-        datasets: List[Dict[str, Any]] = []
+        datasets = []
         for ds in dataset_cols:
             col = ds["column"]
             col_idx = _find_column(col, result.columns, "datasetColumns[].column")
             agg = ds.get("aggregation") or "sum"
-            data: List[Any] = []
+            if agg == "none" and has_granularity:
+                agg = "sum"
+            data = []
             for lv in labels:
                 vals = [_to_json_safe(r[col_idx]) for r in row_groups.get(lv, [])]
                 data.append(
