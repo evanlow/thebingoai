@@ -172,9 +172,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import type { TableWidgetConfig, TableColumn } from '~/types/dashboard'
 import { parseUtcDate } from '~/utils/format'
+import { formatNumericValue, NUMERIC_FORMATS, isNumericFormat as isNumericFormatStr } from '~/utils/numberFormat'
 
 const THEME_COLOR = '#6366f1'
-const NUMERIC_FORMATS = new Set(['number', 'currency', 'percent', 'duration'])
 
 const props = defineProps<{
   config: TableWidgetConfig
@@ -265,8 +265,12 @@ function indexRow(row: Record<string, any>, cols: TableColumn[]): Record<number,
 }
 
 function colAlignClass(col: TableColumn): string {
+  // Explicit user override always wins
   if (col.align === 'right') return 'text-right'
   if (col.align === 'center') return 'text-center'
+  if (col.align === 'left') return 'text-left'
+  // Default: right-align numeric columns (req 4)
+  if (isNumericFormatStr(col.format)) return 'text-right'
   return 'text-left'
 }
 
@@ -596,49 +600,28 @@ function missingValue(): string {
   }
 }
 
-function formatCompact(num: number): string {
-  const abs = Math.abs(num)
-  if (abs >= 1e9) return (num / 1e9).toFixed(1).replace(/\.0$/, '') + 'B'
-  if (abs >= 1e6) return (num / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'
-  if (abs >= 1e3) return (num / 1e3).toFixed(1).replace(/\.0$/, '') + 'K'
-  return num.toLocaleString()
-}
-
 function formatCell(value: any, col: TableColumn): string {
   if (value == null) return missingValue()
-  const num = Number(value)
-  if (col.compactNumbers && isFinite(num) && NUMERIC_FORMATS.has(col.format ?? '')) {
-    return formatCompact(num)
+
+  // Date — not numeric, handle separately
+  if (col.format === 'date') return parseUtcDate(value).toLocaleDateString()
+
+  // Duration — not handled by numberFormat util
+  if (col.format === 'duration') {
+    const secs = Math.round(Number(value))
+    const h = Math.floor(secs / 3600)
+    const m = Math.floor((secs % 3600) / 60)
+    const s = secs % 60
+    if (h > 0) return `${h}h ${m}m`
+    if (m > 0) return `${m}m ${s}s`
+    return `${s}s`
   }
-  const dp = col.decimalPlaces ?? 2
-  const round = !!col.roundValue
-  switch (col.format) {
-    case 'currency': {
-      if (round) return '$' + num.toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-      return '$' + num.toLocaleString()
-    }
-    case 'number': {
-      if (round) return num.toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-      return num.toLocaleString()
-    }
-    case 'percent': {
-      const formatted = round ? num.toFixed(dp) : num.toFixed(1)
-      return (num > 0 ? '+' : '') + formatted + '%'
-    }
-    case 'date':
-      return parseUtcDate(value).toLocaleDateString()
-    case 'duration': {
-      const secs = Math.round(num)
-      const h = Math.floor(secs / 3600)
-      const m = Math.floor((secs % 3600) / 60)
-      const s = secs % 60
-      if (h > 0) return `${h}h ${m}m`
-      if (m > 0) return `${m}m ${s}s`
-      return `${s}s`
-    }
-    default:
-      return String(value)
-  }
+
+  return formatNumericValue(value, {
+    format: col.format as any,
+    decimalPlaces: col.decimalPlaces,
+    compact: col.compactNumbers,
+  })
 }
 
 function getCellClass(value: any, format?: string): string {

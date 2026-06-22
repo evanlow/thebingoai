@@ -103,15 +103,17 @@ consecutive charts share the row equally (6+6).
 
 ### Chart Type Selection Guide
 
-| Data pattern                        | Best chart type  | options                                  |
-|-------------------------------------|------------------|------------------------------------------|
-| Categories (< 8 distinct)           | bar or pie       | `sortBy: "value", sortDirection: "desc"` |
-| Categories (8-20 distinct)          | bar              | `indexAxis: "y"` (horizontal)            |
-| Categories (> 20 distinct)          | bar + LIMIT      | `sortBy: "value", sortDirection: "desc"` |
-| Composition across categories       | bar              | `stacked: true`                          |
-| Trend over time                     | line or area     | —                                        |
-| Part-of-whole (< 8 categories)      | pie or doughnut  | `showValues: true`                       |
-| Correlation (x vs y)                | scatter          | `showLegend: true` for grouped scatter   |
+| Data pattern                        | Best chart type  | config.options                           | Max width                   |
+|-------------------------------------|------------------|------------------------------------------|-----------------------------|
+| Categories (< 8 distinct)           | bar or pie       | `sortBy: "value", sortDirection: "desc"` | w=6 or w=8                  |
+| Categories (8-20 distinct)          | bar              | `indexAxis: "y"` (horizontal)            | w=6 or w=8                  |
+| Categories (> 20 distinct)          | bar + LIMIT      | `sortBy: "value", sortDirection: "desc"` | w=6 or w=8                  |
+| Composition across categories       | bar              | `stacked: true`                          | w=6 or w=8                  |
+| Trend over time                     | line or area     | mapping `dateGranularity`                | w=6, w=8, or w=12           |
+| Trend by category (over time)       | line/bar         | mapping `breakdownColumn` (+ `stacked`)  | w=8 or w=12                 |
+| Timing pattern (best hour/weekday)  | bar              | mapping `dateGranularity: "hour_of_day"` | w=6 or w=8                  |
+| Part-of-whole (< 8 categories)      | pie or doughnut  | `showValues: true`                       | w=4 or w=6 (**NEVER w=12**) |
+| Correlation (x vs y)                | scatter          | `showLegend: true` for grouped scatter   | w=6 or w=8                  |
 
 Scatter chart rules:
 - `labelColumn`: grouping column (e.g. category/team) — one dataset per unique value
@@ -120,8 +122,10 @@ Scatter chart rules:
 
 Rules:
 - Use **at least 2-3 different chart types** per dashboard
-- The backend never gives pie/doughnut a full-width row; use a hero `width` hint only for bar/line/area
-- A time-series line/area chart is a good hero — give it a larger `width` if you want it full-width
+- Pie/doughnut charts are **never full-width** — max w=6
+- Default to w=6 and pair charts side-by-side at the same y row
+- w=12 only for time-series line/area charts
+- **Time-series**: when the x-axis is a timestamp, set mapping `dateGranularity` to bucket it (pick from the date min/max span); when a category also exists, prefer `breakdownColumn` (multi-series) over a single aggregated line. The transform buckets+pivots in Python, so return raw timestamp rows (no DATE_TRUNC). See the chart widget spec for full examples.
 
 ### Widget Configuration
 

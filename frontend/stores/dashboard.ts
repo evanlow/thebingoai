@@ -26,6 +26,9 @@ interface DashboardState {
   refreshingWidgets: Record<string, boolean>  // widget id → bulk refresh in flight
   bulkSeq: number                          // newer bulk beats older bulk
   bulkKeyInFlight: string | null           // dedup concurrent identical bulk requests
+  // Non-persisted cache of each widget's last raw SQL result, captured on canvas
+  // refresh so the Edit Widget panel can populate instantly without re-running SQL.
+  widgetSourceData: Record<string, { columns: string[]; rows: any[][] }>
 }
 
 export const useDashboardStore = defineStore('dashboard', {
@@ -43,6 +46,7 @@ export const useDashboardStore = defineStore('dashboard', {
     refreshingWidgets: {},
     bulkSeq: 0,
     bulkKeyInFlight: null,
+    widgetSourceData: {},
   }),
 
   getters: {
@@ -364,6 +368,11 @@ export const useDashboardStore = defineStore('dashboard', {
       this.dirty = true
     },
 
+    /** Cache a widget's raw SQL columns/rows from the latest refresh (not persisted). */
+    setWidgetSourceData(widgetId: string, columns: string[], rows: any[][]) {
+      this.widgetSourceData[widgetId] = { columns, rows }
+    },
+
     updateWidgetSql(widgetId: string, sql: string) {
       const dashboard = this.currentDashboard
       if (!dashboard) return
@@ -530,7 +539,7 @@ function getDefaultWidgetConfig(type: WidgetType): DashboardWidget['widget'] {
         config: {
           type: 'bar',
           title: 'New Chart',
-          data: { labels: ['A', 'B', 'C'], datasets: [{ label: 'Series 1', data: [10, 20, 30] }] },
+          data: { labels: ['A', 'B', 'C'], datasets: [{ label: 'Series 1', data: [10, 20, 30], showDataLabels: true }] },
         },
       }
     case 'table':

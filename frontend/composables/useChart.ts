@@ -194,15 +194,13 @@ function applyDefaultColors(
     const useFill = ds.gradient || type === 'area'
     const bgColor = ds.backgroundColor ?? (useFill ? `${color}33` : color)
 
-    // Points: explicit toggle wins, otherwise default pointRadius
-    const pointRadius = ds.showPoints === false ? 0
-      : ds.showPoints === true ? (ds.pointRadius ?? 3)
-      : ds.pointRadius
+    // Points: explicit toggle wins, otherwise default to no points
+    const pointRadius = ds.showPoints === true ? (ds.pointRadius ?? 3)
+      : ds.showPoints === false ? 0
+      : (ds.pointRadius ?? 0)
 
-    // Per-dataset datalabels
-    const datalabels = ds.showDataLabels !== undefined
-      ? { display: ds.showDataLabels }
-      : undefined
+    // Per-dataset datalabels — default ON when unset.
+    const datalabels = { display: ds.showDataLabels ?? true }
 
     const processed: Record<string, any> = {
       ...ds,
@@ -219,7 +217,7 @@ function applyDefaultColors(
     if (ds.stepped) processed.stepped = true
     if (ds.yAxisID === 'right') processed.yAxisID = 'y1'
     else if (ds.yAxisID === 'left' || !ds.yAxisID) processed.yAxisID = 'y'
-    if (datalabels) (processed as any).datalabels = datalabels
+    ;(processed as any).datalabels = datalabels
 
     // spanGaps for missing data (set here; overridden per chart type in options too)
     // linearInterpolation = true, breaks = false, lineToZero = already 0-filled in transform
@@ -326,9 +324,10 @@ function isStackedActive(val: any): boolean {
   return val === true || val === 'standard' || val === 'percentage'
 }
 
-function formatTickValue(value: unknown, opts: { roundValues?: boolean; decimalPlaces?: number }): string | number {
+function formatTickValue(value: unknown, opts: { decimalPlaces?: number }): string | number {
+  // Only invoked when rounding is active (see tickCallback gate).
   if (typeof value !== 'number') return value as any
-  return opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : value
+  return value.toFixed(opts.decimalPlaces ?? 2)
 }
 
 // ── Main options builder ──────────────────────────────────────────────────────
@@ -354,8 +353,13 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     : opts.missingData === 'breaks' ? false
     : undefined
 
+  // Round values ON by default (only explicit false disables it).
+  const roundValues = opts.roundValues !== false
+  // Reserve datalabel padding when any series shows labels (per-series default ON).
+  const anyDataLabels = config.data.datasets.some(ds => ds.showDataLabels ?? true)
+
   // Tooltip callback when rounding or percentage stacking is active
-  const needsTooltipCallback = opts.roundValues || isPercentage
+  const needsTooltipCallback = roundValues || isPercentage
   const tooltipCallbacks = needsTooltipCallback ? {
     label: (ctx: any) => {
       const label = ctx.dataset?.label ?? ''
@@ -377,8 +381,8 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     animation: enableAnimation ? undefined : false,
     layout: {
       padding: isHorizontal
-        ? { right: opts.showValues ? 28 : 0 }
-        : { top: opts.showValues ? 20 : 0 },
+        ? { right: anyDataLabels ? 28 : 0 }
+        : { top: anyDataLabels ? 20 : 0 },
     },
     plugins: {
       legend: {
@@ -429,7 +433,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
                   return `${((value / total) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
                 }
                 // value
-                return opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+                return roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
               },
             }
           })()
@@ -441,7 +445,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
             align: isHorizontal ? 'right' : 'top',
             formatter: (value: unknown) => {
               if (typeof value !== 'number') return value
-              const formatted = opts.roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+              const formatted = roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
               return isPercentage ? `${formatted}%` : formatted
             },
           },
@@ -459,7 +463,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     const xCfg = opts.xAxis ?? {}
 
     // Tick callback for rounding
-    const tickCallback = opts.roundValues
+    const tickCallback = roundValues
       ? (value: unknown) => formatTickValue(value, opts)
       : undefined
 
@@ -467,7 +471,14 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     const baseTickFont = { family: getFontFamilyStr(opts.fontFamily), size: getFontSizePx(opts.fontSize) }
     const baseTickColor = opts.fontColor ?? colors.tickColor
 
-    const isDateAxis = !isScatter && opts.xAxisMode === 'date'
+    // Time scale only when labels are real ISO dates. Bucketed category labels
+    // (quarter "2024-Q1", year "2024", month "2024-03", parts "08:00"/"Mon"/"Jan")
+    // can't be parsed by the date adapter → fall back to the category scale.
+    const lbls = (config.data?.labels ?? []) as any[]
+    const labelsAreDates = lbls.length > 0 && lbls.every(
+      l => typeof l === 'string' && /^\d{4}-\d{2}-\d{2}/.test(l),
+    )
+    const isDateAxis = !isScatter && opts.xAxisMode === 'date' && labelsAreDates
 
     // Category (dimension/label) axis — physical X when vertical, Y when horizontal.
     const categoryScale: Record<string, any> = {

@@ -222,7 +222,7 @@
           <!-- Highlighted code overlay -->
           <div
             ref="sqlHighlightRef"
-            class="absolute inset-0 px-3 py-2 font-mono text-xs leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
+            class="absolute inset-0 pl-3 pr-8 py-2 font-mono text-xs leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
             aria-hidden="true"
             v-html="highlightedSql"
           />
@@ -324,6 +324,7 @@ import type { DashboardWidget, WidgetConfig, WidgetDataSource } from '~/types/da
 import { useDashboardStore } from '~/stores/dashboard'
 import { useApi } from '~/composables/useApi'
 import DashboardMappingDisplay from '~/components/dashboard/DashboardMappingDisplay.vue'
+import { mergeRefreshedConfig } from '~/utils/widgetMerge'
 import { useShikiHighlighter } from '~/composables/useShikiHighlighter'
 import { format as formatSql } from 'sql-formatter'
 
@@ -430,10 +431,20 @@ const editorComponent = computed(() =>
   editorComponents[props.widget.widget.type] ?? null,
 )
 
-/** Auto-fetch raw SQL columns/rows so the editor's column-key dropdowns stay populated. */
-async function fetchSourceColumns() {
+/** Auto-fetch raw SQL columns/rows so the editor's column-key dropdowns stay populated.
+ *  Reuses the canvas-populated store cache for an instant Configure tab; pass force=true
+ *  after the SQL/connection changes to bypass the cache. */
+async function fetchSourceColumns(force = false) {
   const ds = props.widget.dataSource
   if (!ds?.sql) return
+  if (!force) {
+    const cached = store.widgetSourceData[props.widget.id]
+    if (cached?.columns?.length) {
+      sourceColumns.value = cached.columns
+      previewRows.value = cached.rows
+      return
+    }
+  }
   try {
     const response = await api.dashboards.refreshWidget({
       connection_id: ds.connectionId,
@@ -442,6 +453,9 @@ async function fetchSourceColumns() {
     }) as { source_columns?: string[]; source_rows?: any[][] }
     sourceColumns.value = response.source_columns ?? []
     previewRows.value = response.source_rows ?? []
+    if (response.source_columns) {
+      store.setWidgetSourceData(props.widget.id, response.source_columns, response.source_rows ?? [])
+    }
   } catch {
     // silently ignore — columns will just be empty
   }
@@ -498,6 +512,10 @@ function onMappingUpdate(patch: Record<string, any>) {
       )
       const current = props.widget.widget
       const existingConfig = current.type === 'chart' ? (current.config as Record<string, any>) : {}
+      // Preserve per-series style edits (showDataLabels, colors, trendline, …) —
+      // the transform rebuilds datasets from the mapping only and would otherwise
+      // reset them to defaults. Merges existing dataset style in by index.
+      mergeRefreshedConfig(props.widget, transformed)
       store.updateWidgetConfig(props.widget.id, {
         type: 'chart',
         config: { ...existingConfig, ...transformed } as any,
@@ -534,7 +552,7 @@ async function onSqlBlur() {
   if (ds) {
     if (localSql.value !== ds.sql) {
       store.updateWidgetSql(props.widget.id, localSql.value)
-      await fetchSourceColumns()
+      await fetchSourceColumns(true)
     }
   } else if (selectedConnectionId.value !== null && localSql.value.trim()) {
     // Create dataSource for the first time
@@ -543,7 +561,7 @@ async function onSqlBlur() {
       sql: localSql.value,
       mapping: getDefaultMapping(props.widget.widget.type),
     })
-    await fetchSourceColumns()
+    await fetchSourceColumns(true)
   }
 }
 
@@ -555,7 +573,7 @@ async function onConnectionChange() {
       ...ds,
       connectionId: selectedConnectionId.value,
     })
-    await fetchSourceColumns()
+    await fetchSourceColumns(true)
   }
 }
 
@@ -691,21 +709,26 @@ async function loadOrgTables() {
   }
 }
 
-onMounted(async () => {
-  document.addEventListener('keydown', onKeydown)
+// Data-Source-tab-only work (connections list, lineage graph, Shiki highlighter) is
+// deferred until that tab is first opened — the Configure tab needs none of it.
+let dataTabInit = false
+async function initDataTab() {
+  if (dataTabInit) return
+  dataTabInit = true
   initHighlighter()
-  if (isDataWidget.value) {
-    try {
-      const data = await api.connections.list() as { id: number; name: string }[]
-      connections.value = data
-    } catch {
-      // silently ignore — connections will just be empty
-    }
-    loadOrgTables()
-
-    // Auto-fetch source columns if data source exists
-    await fetchSourceColumns()
+  loadOrgTables()
+  try {
+    connections.value = await api.connections.list() as { id: number; name: string }[]
+  } catch {
+    // silently ignore — connections will just be empty
   }
+}
+watch(activeTab, t => { if (t === 'data') initDataTab() })
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+  // Configure tab populates from the store cache (instant) or a single fetch fallback.
+  if (isDataWidget.value) fetchSourceColumns()
 })
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 </script>

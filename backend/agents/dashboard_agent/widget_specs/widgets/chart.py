@@ -21,12 +21,15 @@ class ChartWidget(BaseWidget):
         "- `animation` (object)\n"
         "- `labelColumn` (string): x-axis / slice names (all types except pure scatter)\n"
         "- `datasetColumns` (array of {column, label, aggregation?, seriesType?, yAxisID?, ...})\n"
+        "- `dateGranularity` (string): bucket a timestamp labelColumn (year|quarter|month|week|day|hour|hour_of_day|day_of_week|month_of_year)\n"
+        "- `breakdownColumn` (string): split the first metric into one series per distinct value\n"
         "- scatter: `xMetricColumn`, `yMetricColumn`, `xAggregation`, `yAggregation`\n"
         "- `connectionId`* (int), `sql`* (string), `sources` (string[])\n"
     )
 
     _CONFIG_KEYS = ("title", "description", "options", "animation")
-    _MAPPING_KEYS = ("labelColumn", "datasetColumns", "xMetricColumn",
+    _MAPPING_KEYS = ("labelColumn", "datasetColumns", "dateGranularity",
+                     "breakdownColumn", "xMetricColumn",
                      "yMetricColumn", "xAggregation", "yAggregation")
 
     def _config(self, params: dict) -> dict:

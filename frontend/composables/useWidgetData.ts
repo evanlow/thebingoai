@@ -42,12 +42,16 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
         filters,
         dashboard_id: store.currentDashboardId ?? undefined,
         widget_sources: widget.value.sources ?? undefined,
-      }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source' }
+      }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source'; source_columns?: string[]; source_rows?: any[][] }
 
       if (seq !== refreshSeq) return
       Object.assign(widget.value.widget.config, mergeRefreshedConfig(widget.value, response.config))
       ds.lastRefreshedAt = response.refreshed_at
       ds.servedFrom = response.served_from
+      // Cache raw columns/rows so the Edit Widget panel opens without re-running SQL.
+      if (response.source_columns) {
+        store.setWidgetSourceData(widget.value.id, response.source_columns, response.source_rows ?? [])
+      }
     } catch (err: any) {
       if (seq !== refreshSeq) return
       error.value = err?.data?.detail ?? err?.message ?? 'Refresh failed'

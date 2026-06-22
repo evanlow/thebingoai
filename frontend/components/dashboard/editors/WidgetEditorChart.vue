@@ -154,6 +154,20 @@
             </select>
           </div>
 
+          <!-- Datetime drill-down -->
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600">Time granularity</label>
+            <select
+              :value="chartMapping?.dateGranularity || 'none'"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              @change="emitMappingPatch({ dateGranularity: ($event.target as HTMLSelectElement).value === 'none' ? undefined : ($event.target as HTMLSelectElement).value })"
+            >
+              <option v-for="g in dateGranularityOptions" :key="g.value" :value="g.value">{{ g.label }}</option>
+            </select>
+            <p class="text-[10px] text-gray-400">Bucket a date/timestamp dimension. Leave "None" for plain categories.</p>
+          </div>
+
           <div class="space-y-2">
             <div class="flex items-center justify-between">
               <label class="text-xs text-gray-600">Metrics (Y-axis)</label>
@@ -185,17 +199,49 @@
               </button>
             </div>
 
+            <!-- Collapsible metric cards (Table-style) -->
             <div
               v-for="(ds, idx) in chartMapping.datasetColumns"
               :key="idx"
-              class="rounded-lg border border-gray-200 p-2.5 space-y-2"
+              class="relative rounded-lg border border-gray-200 bg-gray-50 transition-shadow"
+              :class="expandedDatasets.has(idx) ? 'p-3 space-y-2' : ''"
             >
-              <div class="flex gap-2 items-start">
+              <!-- Collapsed header -->
+              <button
+                v-if="!expandedDatasets.has(idx)"
+                type="button"
+                class="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-100 rounded-lg transition-colors"
+                @click="expandDataset(idx)"
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                  <span class="text-sm font-medium text-gray-700 truncate">{{ ds.label || ds.column || 'Untitled metric' }}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 flex-shrink-0">{{ ds.aggregation || 'sum' }}</span>
+                </div>
+                <button
+                  v-if="editMode && chartMapping.datasetColumns.length > 1"
+                  type="button"
+                  class="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors flex-shrink-0"
+                  @click.stop="removeDatasetColumn(idx)"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              </button>
+
+              <!-- Expanded body -->
+              <template v-if="expandedDatasets.has(idx)">
+                <button
+                  type="button"
+                  class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors z-10"
+                  @click="collapseDataset(idx)"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                </button>
                 <div class="flex-1 space-y-1.5">
                   <select
                     :value="ds.column || ''"
                     :disabled="!editMode"
-                    class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                    class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
                     @change="updateDatasetColumn(idx, 'column', ($event.target as HTMLSelectElement).value)"
                   >
                     <option value="" disabled>Column…</option>
@@ -204,7 +250,7 @@
                   <select
                     :value="ds.aggregation || 'sum'"
                     :disabled="!editMode"
-                    class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                    class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
                     @change="updateDatasetColumn(idx, 'aggregation', ($event.target as HTMLSelectElement).value)"
                   >
                     <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
@@ -214,21 +260,36 @@
                     type="text"
                     placeholder="Label"
                     :readonly="!editMode"
-                    class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+                    class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 transition-colors"
                     :class="!editMode ? 'cursor-default bg-gray-50' : ''"
                     @input="updateDatasetColumn(idx, 'label', ($event.target as HTMLInputElement).value)"
                   />
+                  <button
+                    v-if="editMode && chartMapping.datasetColumns.length > 1"
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                    @click="removeDatasetColumn(idx)"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                  </button>
                 </div>
-                <button
-                  v-if="editMode && chartMapping.datasetColumns.length > 1"
-                  type="button"
-                  class="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-gray-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
-                  @click="removeDatasetColumn(idx)"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                </button>
-              </div>
+              </template>
             </div>
+          </div>
+
+          <!-- Series breakdown -->
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600">Break down by (optional)</label>
+            <select
+              :value="chartMapping?.breakdownColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              @change="emitMappingPatch({ breakdownColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="">None</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+            <p v-if="chartMapping?.breakdownColumn" class="text-[10px] text-gray-400">Splits the first metric into one series per value. Use Stacked / 100% (below) for stacked bars.</p>
           </div>
         </div>
       </template>
@@ -428,16 +489,43 @@ function updateDatasetColumn(idx: number, field: keyof ChartDatasetColumn, value
 
 function addDatasetColumn() {
   const cols = [...(chartMapping.value?.datasetColumns ?? [])]
+  const newIdx = cols.length
   cols.push({ column: '', label: `Metric ${cols.length + 1}`, aggregation: 'sum' })
   emit('update:mapping', { datasetColumns: cols })
+  expandDataset(newIdx)
 }
 
 function removeDatasetColumn(idx: number) {
   const cols = (chartMapping.value?.datasetColumns ?? []).filter((_, i) => i !== idx)
   emit('update:mapping', { datasetColumns: cols })
+  expandedDatasets.value.delete(idx)
+}
+
+// ── Collapsible metric cards ─────────────────────────────────────────────────
+const expandedDatasets = ref<Set<number>>(new Set())
+function expandDataset(idx: number) {
+  expandedDatasets.value = new Set(expandedDatasets.value).add(idx)
+}
+function collapseDataset(idx: number) {
+  const next = new Set(expandedDatasets.value)
+  next.delete(idx)
+  expandedDatasets.value = next
 }
 
 // ── Static data ──────────────────────────────────────────────────────────────
+
+const dateGranularityOptions = [
+  { value: 'none', label: 'None' },
+  { value: 'year', label: 'Year' },
+  { value: 'quarter', label: 'Quarter' },
+  { value: 'month', label: 'Month' },
+  { value: 'week', label: 'Week' },
+  { value: 'day', label: 'Day' },
+  { value: 'hour', label: 'Hour' },
+  { value: 'hour_of_day', label: 'Hour of day' },
+  { value: 'day_of_week', label: 'Day of week' },
+  { value: 'month_of_year', label: 'Month of year' },
+]
 
 const aggregationOptions = [
   { value: 'sum', label: 'Sum' },

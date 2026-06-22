@@ -25,20 +25,15 @@
             @click="addDim('row')">+ Add</button>
         </div>
         <p v-if="!localRowDims.length" class="text-xs text-gray-400">Add a dimension to break down the rows.</p>
-        <div v-for="(d, i) in localRowDims" :key="'r'+i" class="rounded-lg border border-gray-200 p-2 space-y-1.5">
-          <div class="flex gap-2">
-            <select :value="d.column" :disabled="!editMode"
-              class="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
-              @change="setDimColumn('row', i, ($event.target as HTMLSelectElement).value)">
-              <option value="" disabled>Column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-            </select>
-            <button v-if="editMode" type="button" class="px-2 text-gray-400 hover:text-rose-500" @click="removeDim('row', i)">✕</button>
-          </div>
-          <input :value="d.label || ''" type="text" placeholder="Label (optional)" :readonly="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"
-            @input="setDimLabel('row', i, ($event.target as HTMLInputElement).value)" />
-        </div>
+        <PivotDimCard
+          v-for="(d, i) in localRowDims"
+          :key="'r'+i"
+          :model-value="d"
+          :edit-mode="editMode"
+          :available-columns="sourceColumns"
+          @update:model-value="updateDim('row', i, $event)"
+          @remove="removeDim('row', i)"
+        />
         <div v-if="localRowDims.length" class="space-y-2 pt-1">
           <div class="flex items-center justify-between py-0.5">
             <span class="text-xs text-gray-700">Expand-collapse hierarchy</span>
@@ -69,20 +64,15 @@
             @click="addDim('col')">+ Add</button>
         </div>
         <p v-if="!localColDims.length" class="text-xs text-gray-400">Optional. Each distinct value becomes a column group (max 2).</p>
-        <div v-for="(d, i) in localColDims" :key="'c'+i" class="rounded-lg border border-gray-200 p-2 space-y-1.5">
-          <div class="flex gap-2">
-            <select :value="d.column" :disabled="!editMode"
-              class="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
-              @change="setDimColumn('col', i, ($event.target as HTMLSelectElement).value)">
-              <option value="" disabled>Column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-            </select>
-            <button v-if="editMode" type="button" class="px-2 text-gray-400 hover:text-rose-500" @click="removeDim('col', i)">✕</button>
-          </div>
-          <input :value="d.label || ''" type="text" placeholder="Label (optional)" :readonly="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"
-            @input="setDimLabel('col', i, ($event.target as HTMLInputElement).value)" />
-        </div>
+        <PivotDimCard
+          v-for="(d, i) in localColDims"
+          :key="'c'+i"
+          :model-value="d"
+          :edit-mode="editMode"
+          :available-columns="sourceColumns"
+          @update:model-value="updateDim('col', i, $event)"
+          @remove="removeDim('col', i)"
+        />
       </div>
 
       <!-- Values / metrics -->
@@ -93,32 +83,15 @@
             @click="addValue()">+ Add</button>
         </div>
         <p v-if="!localValues.length" class="text-xs text-gray-400">Add at least one metric to show in the cells.</p>
-        <div v-for="(v, i) in localValues" :key="'v'+i" class="rounded-lg border border-gray-200 p-2.5 space-y-2">
-          <div class="flex gap-2">
-            <select :value="v.column" :disabled="!editMode"
-              class="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50"
-              @change="setValueField(i, 'column', ($event.target as HTMLSelectElement).value)">
-              <option value="" disabled>Column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-            </select>
-            <button v-if="editMode" type="button" class="px-2 text-gray-400 hover:text-rose-500" @click="removeValue(i)">✕</button>
-          </div>
-          <div class="flex gap-2">
-            <select :value="v.aggregation || 'sum'" :disabled="!editMode"
-              class="w-32 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"
-              @change="setValueField(i, 'aggregation', ($event.target as HTMLSelectElement).value)">
-              <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
-            </select>
-            <select :value="v.format || 'number'" :disabled="!editMode"
-              class="w-28 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"
-              @change="setValueField(i, 'format', ($event.target as HTMLSelectElement).value)">
-              <option v-for="f in formatOptions" :key="f.value" :value="f.value">{{ f.label }}</option>
-            </select>
-          </div>
-          <input :value="v.label || ''" type="text" placeholder="Label (optional)" :readonly="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-50"
-            @input="setValueField(i, 'label', ($event.target as HTMLInputElement).value)" />
-        </div>
+        <PivotFieldCard
+          v-for="(v, i) in localValues"
+          :key="'v'+i"
+          :model-value="v"
+          :edit-mode="editMode"
+          :available-columns="sourceColumns"
+          @update:model-value="updateValue(i, $event)"
+          @remove="removeValue(i)"
+        />
       </div>
 
       <!-- Totals -->
@@ -189,6 +162,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { WidgetConfig, PivotTableWidgetConfig, PivotDimension, PivotValue, WidgetDataSource } from '~/types/dashboard'
+import PivotFieldCard from './PivotFieldCard.vue'
+import PivotDimCard from './PivotDimCard.vue'
 
 const props = defineProps<{
   modelValue: WidgetConfig
@@ -216,25 +191,6 @@ const localRowLimit = ref<number | undefined>(pivotConfig.value.rowLimit)
 const localColLimit = ref<number | undefined>(pivotConfig.value.columnLimit)
 const localSortBy = ref(pivotConfig.value.sortBy ?? '')
 const localSortDir = ref<'asc' | 'desc'>(pivotConfig.value.sortDir ?? 'desc')
-
-const aggregationOptions = [
-  { value: 'sum', label: 'Sum' },
-  { value: 'average', label: 'Average' },
-  { value: 'count', label: 'Count' },
-  { value: 'countDistinct', label: 'Count Distinct' },
-  { value: 'min', label: 'Min' },
-  { value: 'max', label: 'Max' },
-  { value: 'median', label: 'Median' },
-  { value: 'stdDev', label: 'Std Dev' },
-  { value: 'variance', label: 'Variance' },
-]
-const formatOptions = [
-  { value: 'number', label: 'Number' },
-  { value: 'currency', label: 'Currency' },
-  { value: 'percent', label: 'Percent' },
-  { value: 'text', label: 'Text' },
-  { value: 'date', label: 'Date' },
-]
 
 let debounce: ReturnType<typeof setTimeout> | null = null
 function emitConfig() {
@@ -282,15 +238,12 @@ function addDim(kind: 'row' | 'col') {
   arr.value.push({ column: '' })
   emitConfig()
 }
-function setDimColumn(kind: 'row' | 'col', i: number, column: string) {
+function updateDim(kind: 'row' | 'col', i: number, updated: PivotDimension) {
   const arr = kind === 'row' ? localRowDims : localColDims
-  arr.value[i] = { ...arr.value[i], column }
-  emitBoth()
-}
-function setDimLabel(kind: 'row' | 'col', i: number, label: string) {
-  const arr = kind === 'row' ? localRowDims : localColDims
-  arr.value[i] = { ...arr.value[i], label }
-  emitConfig()
+  const prev = arr.value[i]
+  arr.value[i] = updated
+  if (updated.column !== prev.column) emitBoth()
+  else emitConfig()
 }
 function removeDim(kind: 'row' | 'col', i: number) {
   const arr = kind === 'row' ? localRowDims : localColDims
@@ -299,12 +252,13 @@ function removeDim(kind: 'row' | 'col', i: number) {
 }
 
 function addValue() {
-  localValues.value.push({ column: '', aggregation: 'sum', format: 'number' })
+  localValues.value.push({ column: '', aggregation: 'sum', format: 'number', decimalPlaces: 0 })
   emitConfig()
 }
-function setValueField(i: number, field: keyof PivotValue, value: any) {
-  localValues.value[i] = { ...localValues.value[i], [field]: value }
-  if (field === 'column') emitBoth()
+function updateValue(i: number, updated: PivotValue) {
+  const prev = localValues.value[i]
+  localValues.value[i] = updated
+  if (updated.column !== prev.column) emitBoth()
   else emitConfig()
 }
 function removeValue(i: number) {
