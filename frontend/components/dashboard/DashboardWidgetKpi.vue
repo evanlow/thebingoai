@@ -436,7 +436,7 @@ function renderSparkline() {
 onMounted(() => renderSparkline())
 
 watch(
-  () => [props.config.sparkline, props.config.sparklineColor, props.config.sparklineFill, props.config.sparklineSmooth, props.config.sparklineMissingData] as const,
+  () => [props.config?.sparkline, props.config?.sparklineColor, props.config?.sparklineFill, props.config?.sparklineSmooth, props.config?.sparklineMissingData] as const,
   () => nextTick(() => renderSparkline()),
 )
 
