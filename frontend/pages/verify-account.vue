@@ -90,6 +90,6 @@ async function handleResend() {
 }
 
 definePageMeta({
-  layout: false
+  layout: 'blank'
 })
 </script>

@@ -64,6 +64,6 @@ async function handleSubmit() {
 }
 
 definePageMeta({
-  layout: false
+  layout: 'blank'
 })
 </script>

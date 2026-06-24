@@ -133,6 +133,6 @@ function handleGoogleSignup() {
 }
 
 definePageMeta({
-  layout: false
+  layout: 'blank'
 })
 </script>
