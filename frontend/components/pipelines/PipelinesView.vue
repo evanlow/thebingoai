@@ -49,7 +49,7 @@
     </UiEmptyState>
 
     <!-- Pipeline table -->
-    <div v-else class="rounded-xl border border-[var(--line)] overflow-hidden">
+    <div v-else class="rounded-xl border border-[var(--line)] overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-[var(--line)] bg-[var(--paper-1)]">
@@ -75,7 +75,7 @@
                 <UiBadge v-if="!pipeline.enabled" variant="default" size="sm">disabled</UiBadge>
               </div>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 max-w-[200px]">
               <div class="flex items-center gap-2 min-w-0">
                 <span
                   class="grid place-items-center h-6 w-6 rounded-md text-[11px] font-semibold text-white shrink-0"
@@ -83,7 +83,7 @@
                 >
                   {{ sourceInitial(pipeline.source_connection_id) }}
                 </span>
-                <span class="text-[var(--ink-1)] truncate">{{ sourceLabel(pipeline.source_connection_id) }}</span>
+                <span class="text-[var(--ink-1)] truncate" :title="sourceLabel(pipeline.source_connection_id)">{{ sourceLabel(pipeline.source_connection_id) }}</span>
               </div>
             </td>
             <td class="px-4 py-3 font-mono text-xs text-[var(--ink-2)]">{{ pipeline.target_table }}</td>

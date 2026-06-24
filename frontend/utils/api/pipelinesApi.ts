@@ -1,10 +1,29 @@
+export interface PipelineScheduleTable {
+  source_table: string
+  target_table: string
+  mode: string
+  incremental_key: string | null
+  unique_key: string[] | null
+  enabled: boolean
+}
+
+export interface PipelineSchedule {
+  id: string
+  name: string | null
+  cron: string | null
+  timezone: string
+  enabled: boolean
+  next_run_at: string | null
+  tables: PipelineScheduleTable[]
+}
+
 export interface Pipeline {
   id: string
   name: string
   source_connection_id: number
   owner_scope_kind: string
   owner_scope_id: string
-  target_table: string
+  target_table: string | null
   cron: string | null
   timezone: string
   mode: string
@@ -18,6 +37,14 @@ export interface Pipeline {
   created_by_user_id: string
   created_at?: string | null
   updated_at?: string | null
+  schedules?: PipelineSchedule[]
+}
+
+export interface ScheduleUpdate {
+  cron?: string | null
+  timezone?: string | null
+  enabled?: boolean
+  tables?: string[]
 }
 
 export interface PipelineCreate {
@@ -67,6 +94,12 @@ export function createPipelinesApi(fetchWithRefresh: Function) {
     },
     async update(id: string, data: PipelineUpdate): Promise<Pipeline> {
       return fetchWithRefresh(`/api/pipelines/${id}`, {
+        method: 'PATCH',
+        body: data,
+      })
+    },
+    async updateSchedule(pipelineId: string, scheduleId: string, data: ScheduleUpdate): Promise<Pipeline> {
+      return fetchWithRefresh(`/api/pipelines/${pipelineId}/schedules/${scheduleId}`, {
         method: 'PATCH',
         body: data,
       })

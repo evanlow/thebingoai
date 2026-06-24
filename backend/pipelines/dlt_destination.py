@@ -22,6 +22,7 @@ def make_dataplane_destination(
     table: str,
     *,
     unique_key: tuple[str, ...] | None = None,
+    unique_key_by_table: dict[str, tuple[str, ...] | None] | None = None,
 ):
     """Return (destination, row_counter) for a dlt run.
 
@@ -54,10 +55,15 @@ def make_dataplane_destination(
             # than 'replace' as append (delta union).
             write_disposition = table.get("write_disposition", "replace")
             mode = "overwrite" if write_disposition == "replace" else "append"
+            # Per-table dedup key (new model) keyed by the dlt/target table name;
+            # fall back to the single closure key (legacy one-table pipelines).
+            tbl_unique_key = unique_key
+            if unique_key_by_table is not None:
+                tbl_unique_key = unique_key_by_table.get(table_name_from_dlt, None)
             arrow_tbl = pa.Table.from_pylist(items)
             plane.write_parquet(
                 scope, table_name_from_dlt, arrow_tbl,
-                mode=mode, unique_key=unique_key,
+                mode=mode, unique_key=tbl_unique_key,
             )
             row_counter["rows"] += len(items)
             logger.debug(

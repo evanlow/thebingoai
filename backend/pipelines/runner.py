@@ -11,6 +11,14 @@ logger = logging.getLogger(__name__)
 
 PIPELINE_LOCK_TTL = 1800  # 30 minutes
 
+# ponytail: tables per dlt run for schedule (new-model) runs. dlt's sql_database
+# holds ~1 source connection PER TABLE in the chunk at once, so peak source-DB
+# connections ≈ _CHUNK_SIZE × (concurrent pipeline runs, capped at the celery
+# `pipelines` worker --concurrency). Keep small to avoid exhausting the source DB:
+# 10 × 10 pipelines = ≤100 conns. Bigger = fewer dlt cycles (faster) but more
+# connections + a failed chunk loses more tables.
+_CHUNK_SIZE = 10
+
 
 def compute_pipeline_fingerprint(connection_fingerprint: str | None, extraction_config: dict) -> str:
     """sha256(conn_fingerprint | canonical_json(extraction_config))."""
@@ -24,6 +32,7 @@ def run_pipeline(
     triggered_by: Literal["cron", "manual", "api", "bootstrap", "manual-backfill"],
     triggered_by_user_id: str | None = None,
     backfill_since: str | None = None,
+    schedule_id: str | None = None,
 ) -> str:
     """Execute a Pipeline; return the new pipeline_run_id.
 
@@ -83,6 +92,17 @@ def run_pipeline(
         if not connection:
             raise RuntimeError(f"Source connection {pipeline.source_connection_id} not found")
 
+        # New-model run: a schedule provides the table subset + per-table specs.
+        schedule = None
+        if schedule_id:
+            from backend.models.pipeline import PipelineSchedule
+            schedule = db.query(PipelineSchedule).filter(
+                PipelineSchedule.id == schedule_id
+            ).first()
+            if not schedule:
+                logger.warning("run_pipeline: schedule %s not found", schedule_id)
+                return ""
+
         scope = OwnerScope(pipeline.owner_scope_kind, pipeline.owner_scope_id)
         plane = get_default_plane(scope, db)
 
@@ -91,6 +111,7 @@ def run_pipeline(
         run = PipelineRun(
             id=run_id,
             pipeline_id=pipeline_id,
+            schedule_id=schedule_id,
             started_at=started_at,
             status="running",
             triggered_by=triggered_by,
@@ -139,8 +160,22 @@ def run_pipeline(
                 # so the cursor pulls from `backfill_since` forward instead of
                 # the last persisted watermark. A no-op for full-snapshot
                 # pipelines.
+                # Build extraction_config. New-model (schedule) runs pass
+                # per-table specs (own target/mode/cursor/PK); legacy runs pass
+                # the pipeline-wide single incremental_key.
                 extraction_config = dict(pipeline.extraction_config or {})
-                if pipeline.mode == "incremental" and pipeline.incremental_key:
+                unique_key_by_table: dict[str, tuple] | None = None
+                specs: list[dict] = []
+                if schedule is not None:
+                    specs = [s for s in (schedule.tables or []) if s.get("enabled", True)]
+                    extraction_config["cutoff_days"] = settings.incremental_cutoff_days
+                    extraction_config.pop("incremental_key", None)
+                    unique_key_by_table = {
+                        s["target_table"]: tuple(s["unique_key"])
+                        for s in specs
+                        if s.get("mode") == "incremental" and s.get("unique_key")
+                    }
+                elif pipeline.mode == "incremental" and pipeline.incremental_key:
                     extraction_config["incremental_key"] = pipeline.incremental_key
                     # T-N cutoff: cap the cursor's exclusive upper bound at
                     # `cutoff_days` whole days before the start of today UTC
@@ -148,13 +183,15 @@ def run_pipeline(
                     extraction_config["cutoff_days"] = settings.incremental_cutoff_days
                 if backfill_since:
                     extraction_config["initial_value"] = backfill_since
-                source = source_fn(connection, extraction_config)
 
-                # Build dlt destination wrapping DataPlane
+                # Build dlt destination wrapping DataPlane. Schedule runs write
+                # many target tables (per resource), so pass a per-table dedup
+                # map; legacy runs write one table with one unique_key.
                 from backend.pipelines.dlt_destination import make_dataplane_destination
                 destination, row_counter = make_dataplane_destination(
-                    plane, scope, pipeline.target_table,
+                    plane, scope, pipeline.target_table or "",
                     unique_key=tuple(pipeline.unique_key) if pipeline.unique_key else None,
+                    unique_key_by_table=unique_key_by_table,
                 )
 
                 # Run dlt. Use an ephemeral `pipeline_name` for backfills so
@@ -178,28 +215,58 @@ def run_pipeline(
                 #                 this table as a dedup risk).
                 # `incremental_key` is the cursor (watermark) column, applied
                 # in `sql_dlt_source`; it is NOT a merge primary key.
-                if pipeline.mode == "full":
-                    write_disposition = "replace"
-                elif pipeline.unique_key:
-                    write_disposition = "merge"
+                # Bytes: dlt LoadPackage job.file_size sums to the actual
+                # bytes written to the plane (Parquet on GCS / local fs).
+                def _bytes(load_info) -> int:
+                    n = 0
+                    for load_pkg in (load_info.load_packages or []):
+                        for job in (load_pkg.jobs.get("completed_jobs") or []):
+                            n += getattr(job, "file_size", 0) or 0
+                    return n
+
+                if schedule is not None:
+                    # Run tables in chunks of _CHUNK_SIZE — one dlt run per chunk
+                    # (each chunk = a single normalize/load cycle over its tables),
+                    # in schedule.tables order. Per-resource hints (table_name,
+                    # write_disposition, primary_key, incremental) are applied in
+                    # sql_dlt_source; resources within a chunk extract sequentially,
+                    # so concurrent source connections stay bounded by the celery
+                    # pipeline-worker cap. Best-effort: a failing chunk is logged and
+                    # skipped so later chunks still ingest; errors mark the run failed.
+                    table_errors: list[str] = []
+                    for i in range(0, len(specs), _CHUNK_SIZE):
+                        chunk = specs[i:i + _CHUNK_SIZE]
+                        ec = dict(extraction_config)
+                        ec["table_specs"] = chunk
+                        try:
+                            bytes_written += _bytes(dlt_pipeline.run(source_fn(connection, ec)))
+                        except Exception as exc:
+                            targets = ", ".join(s.get("target_table") for s in chunk)
+                            table_errors.append(f"[{targets}]: {exc}")
+                            logger.exception(
+                                "Pipeline %s schedule %s: chunk %d-%d failed",
+                                pipeline_id, schedule.id, i, i + len(chunk),
+                            )
+                    if table_errors:
+                        error_message = "; ".join(table_errors)[:2000]
                 else:
-                    write_disposition = "append"
-                load_info = dlt_pipeline.run(
-                    source,
-                    table_name=pipeline.target_table,
-                    write_disposition=write_disposition,
-                    primary_key=tuple(pipeline.unique_key) if pipeline.unique_key else None,
-                )
+                    if pipeline.mode == "full":
+                        write_disposition = "replace"
+                    elif pipeline.unique_key:
+                        write_disposition = "merge"
+                    else:
+                        write_disposition = "append"
+                    bytes_written += _bytes(dlt_pipeline.run(
+                        source_fn(connection, extraction_config),
+                        table_name=pipeline.target_table,
+                        write_disposition=write_disposition,
+                        primary_key=tuple(pipeline.unique_key) if pipeline.unique_key else None,
+                    ))
 
                 # Rows: closure counter from the custom destination is the
                 # only accurate source -- dlt LoadPackage exposes file_size
                 # (bytes), not row counts.
                 rows_written = row_counter["rows"]
-                # Bytes: dlt LoadPackage job.file_size sums to the actual
-                # bytes written to the plane (Parquet on GCS / local fs).
-                for load_pkg in (load_info.load_packages or []):
-                    for job in (load_pkg.jobs.get("completed_jobs") or []):
-                        bytes_written += getattr(job, "file_size", 0) or 0
 
                 # Persist dlt incremental state. Isolate this in its own
                 # try/except + rollback so a serialization gap (e.g. an
@@ -293,17 +360,27 @@ def run_pipeline(
             except Exception:
                 logger.warning("Failed to publish pipeline.run.failed for pipeline %s", pipeline_id)
 
-        # Chain profiling task on success
+        # Chain profiling + warm dashboards on success.
         if status == "success":
-            try:
-                from backend.tasks.profiling_tasks import profile_pipeline_output
-                profile_pipeline_output.delay(pipeline_id, run_id)
-            except Exception:
-                logger.warning("Failed to chain profile_pipeline_output for pipeline %s", pipeline_id)
-
-            # GAP-2f: warm dashboards backed by the freshly-written table.
             from backend.services.dashboard_cache import enqueue_dashboard_warm_for_table
-            enqueue_dashboard_warm_for_table(scope, pipeline.target_table)
+            if schedule is not None:
+                # New model: one run wrote many target tables — warm each.
+                # (Schema-drift profiling per target is a P1 follow-up; the
+                # legacy single-target diff path below doesn't apply here.)
+                for s in (schedule.tables or []):
+                    tgt = s.get("target_table")
+                    if tgt:
+                        try:
+                            enqueue_dashboard_warm_for_table(scope, tgt)
+                        except Exception:
+                            logger.warning("warm enqueue failed for %s", tgt)
+            else:
+                try:
+                    from backend.tasks.profiling_tasks import profile_pipeline_output
+                    profile_pipeline_output.delay(pipeline_id, run_id)
+                except Exception:
+                    logger.warning("Failed to chain profile_pipeline_output for pipeline %s", pipeline_id)
+                enqueue_dashboard_warm_for_table(scope, pipeline.target_table)
 
         return run_id
 
