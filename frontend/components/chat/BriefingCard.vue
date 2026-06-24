@@ -101,6 +101,7 @@
 <script setup lang="ts">
 import { Loader2, Newspaper } from 'lucide-vue-next'
 import type { BriefingKpi } from '~/composables/useBriefing'
+import { stripLeadingNumber } from '~/utils/stripLeadingNumber'
 
 const props = defineProps<{ briefingId: number }>()
 
@@ -113,9 +114,5 @@ function kpiColor(kpi: BriefingKpi, index: number): string {
   if (kpi.delta_direction === 'up') return '#22c55e'
   if (kpi.delta_direction === 'down') return '#ef4444'
   return KPI_COLORS[index % KPI_COLORS.length]
-}
-
-function stripLeadingNumber(heading: string) {
-  return heading.replace(/^\d+[\.\)\:\s]\s*/, '').trim()
 }
 </script>

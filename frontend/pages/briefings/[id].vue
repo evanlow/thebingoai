@@ -127,6 +127,8 @@
 </template>
 
 <script setup lang="ts">
+import { stripLeadingNumber } from '~/utils/stripLeadingNumber'
+
 const route = useRoute()
 const briefingId = computed(() => parseInt(route.params.id as string))
 const { briefing, loading, refresh } = useBriefing(briefingId)
@@ -144,11 +146,6 @@ watch(briefingId, () => resetWidgets())
 async function onExportPdf() {
   if (!briefing.value?.payload || !articleRef.value) return
   await exportPdf(articleRef.value, briefing.value.payload.headline, expectedWidgets.value)
-}
-
-// Strip leading "1.", "1)", "1:" or "1 " that the LLM sometimes includes in headings
-function stripLeadingNumber(heading: string) {
-  return heading.replace(/^\d+[\.\)\:\s]\s*/, '').trim()
 }
 
 function deltaClass(dir?: 'up' | 'down' | 'flat' | null) {

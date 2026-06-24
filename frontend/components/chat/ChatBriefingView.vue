@@ -101,6 +101,8 @@
 </template>
 
 <script setup lang="ts">
+import { stripLeadingNumber } from '~/utils/stripLeadingNumber'
+
 const props = defineProps<{ briefingId: number }>()
 const { briefing, loading, error } = useBriefing(props.briefingId)
 
@@ -123,11 +125,6 @@ function deltaClass(dir?: 'up' | 'down' | 'flat' | null) {
   if (dir === 'up') return 'text-emerald-600'
   if (dir === 'down') return 'text-rose-600'
   return 'text-neutral-500'
-}
-
-// Strip leading "1.", "1)", "1:" or "1 " that the LLM sometimes includes in headings
-function stripLeadingNumber(heading: string) {
-  return heading.replace(/^\d+[\.\)\:\s]\s*/, '').trim()
 }
 
 function formatRange(b: any) {
