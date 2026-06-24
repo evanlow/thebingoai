@@ -624,9 +624,10 @@ def backfill_templates_for_registrations(
     """Backfill templates against existing connections for the given registrations.
 
     Returns a mapping of `type_id` → number of connections that gained at least
-    one new Pipeline or DbtModel row. Caller owns commit lifecycle; this helper
-    commits per registration once at least one connection produced new rows so a
-    poisoned transaction from a single connection doesn't drag the whole batch.
+    one new Pipeline or DbtModel row. Caller owns the outer commit lifecycle;
+    this helper commits **per connection** (see the loop) so the
+    `uq_pipeline_scope_fingerprint` lock taken by each insert is released before
+    the next connection's (slow) introspection runs.
     """
     from backend.models.database_connection import DatabaseConnection
 
@@ -648,16 +649,30 @@ def backfill_templates_for_registrations(
         for conn in connections:
             try:
                 new_p, new_t = materialize_templates_for_connection(conn, reg, db)
-                if new_p or new_t:
-                    result[reg.type_id] += 1
             except Exception:
                 logger.exception(
                     "Template backfill failed for connection %s (%s)",
                     conn.id, reg.type_id,
                 )
                 db.rollback()
+                continue
+            # Commit (or release) per connection — NOT once per registration.
+            # Each insert takes a uq_pipeline_scope_fingerprint lock (via the
+            # SAVEPOINT in _try_insert) held until commit. Every pod runs this
+            # backfill at startup, so a deploy starting N pods together has them
+            # all INSERT the same fingerprints. Deferring the commit to the end
+            # of the registration loop holds that lock across the slow
+            # get_tables() introspection of *later* connections — turning a
+            # millisecond race into minutes of blocked, piled-up transactions
+            # that exhaust the DB connection cap. Committing here bounds the lock
+            # to one connection's inserts so concurrent pods resolve via
+            # IntegrityError instantly instead of stampeding.
+            if new_p or new_t:
+                db.commit()
+                result[reg.type_id] += 1
+            else:
+                db.rollback()  # nothing new — drop the read txn, don't hold it
         if result[reg.type_id]:
-            db.commit()
             logger.info(
                 "Backfilled templates for %d %s connection(s)",
                 result[reg.type_id], reg.type_id,
