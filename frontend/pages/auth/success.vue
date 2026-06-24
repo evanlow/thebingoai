@@ -25,6 +25,6 @@ onMounted(async () => {
 })
 
 definePageMeta({
-  layout: false
+  layout: 'blank'
 })
 </script>

@@ -52,6 +52,6 @@ const message = computed(
 const cardEl = ref<HTMLElement | null>(null)
 
 definePageMeta({
-  layout: false,
+  layout: 'blank',
 })
 </script>

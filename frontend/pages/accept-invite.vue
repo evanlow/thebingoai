@@ -54,6 +54,6 @@ async function goToWorkspace() {
 }
 
 definePageMeta({
-  layout: false,
+  layout: 'blank',
 })
 </script>

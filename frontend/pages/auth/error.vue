@@ -30,6 +30,6 @@ function tryAgain() {
 }
 
 definePageMeta({
-  layout: false
+  layout: 'blank'
 })
 </script>
