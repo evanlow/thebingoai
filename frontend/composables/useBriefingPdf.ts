@@ -1,10 +1,77 @@
+export interface PdfOp {
+  block: number
+  page: number
+  y: number
+  h: number
+  srcTop: number
+  srcBot: number
+}
+
+/**
+ * Compute page placements for a stack of blocks. Blocks flow top-to-bottom; a
+ * block that does not fit the remaining page moves whole to the next page. A
+ * block taller than one content page is the only thing that splits: it starts
+ * on a fresh page and is sliced into page-height bands.
+ */
+export function paginate(heights: number[], contentH: number, gap: number): PdfOp[] {
+  const ops: PdfOp[] = []
+  let page = 0
+  let cursorY = 0
+  for (let block = 0; block < heights.length; block++) {
+    const h = heights[block]
+    if (h <= contentH) {
+      // Won't fit remaining space and we're not already at the top → new page.
+      if (cursorY > 0 && cursorY + h > contentH) {
+        page++
+        cursorY = 0
+      }
+      ops.push({ block, page, y: cursorY, h, srcTop: 0, srcBot: h })
+      cursorY += h + gap
+    } else {
+      // Oversized: start on a fresh page if the current one isn't empty.
+      if (cursorY > 0) {
+        page++
+        cursorY = 0
+      }
+      let srcTop = 0
+      let bandH = 0
+      while (srcTop < h) {
+        bandH = Math.min(contentH, h - srcTop)
+        ops.push({ block, page, y: 0, h: bandH, srcTop, srcBot: srcTop + bandH })
+        srcTop += bandH
+        if (srcTop < h) page++
+      }
+      cursorY = bandH + gap
+    }
+  }
+  return ops
+}
+
+/** Crop a vertical band [srcTopMm, srcBotMm) of `src` (whose full height is
+ *  `fullMm`) into a new canvas, for oversized-block page splitting. */
+function cropCanvas(
+  src: HTMLCanvasElement,
+  srcTopMm: number,
+  srcBotMm: number,
+  fullMm: number,
+): HTMLCanvasElement {
+  const y0 = Math.round((srcTopMm / fullMm) * src.height)
+  const y1 = Math.round((srcBotMm / fullMm) * src.height)
+  const out = document.createElement('canvas')
+  out.width = src.width
+  out.height = y1 - y0
+  const ctx = out.getContext('2d')!
+  ctx.drawImage(src, 0, y0, src.width, y1 - y0, 0, 0, src.width, y1 - y0)
+  return out
+}
+
 /**
  * Briefing PDF export. Client-side only.
  *
- * Captures the already-rendered briefing <article> with html2pdf.js
- * (html2canvas + jsPDF) and triggers a download. Waits for async-loaded
- * section widgets (Chart.js canvases) before capturing, and strips dark
- * mode on the cloned document so the PDF is always light.
+ * Captures each [data-pdf-block] element with html2canvas, places them on a
+ * jsPDF document using the paginate() helper, and triggers a download. Waits
+ * for async-loaded section widgets (Chart.js canvases) before capturing, and
+ * strips dark mode on the cloned document so the PDF is always light.
  */
 export function useBriefingPdf() {
   const exporting = ref(false)
@@ -76,34 +143,57 @@ export function useBriefingPdf() {
       await nextFrame()
       await nextFrame()
 
-      const html2pdf = (await import('html2pdf.js')).default
+      const html2canvas = (await import('html2canvas')).default
+      const { jsPDF } = await import('jspdf')
 
-      await html2pdf()
-        .set({
-          margin: 12,
-          filename: `briefing-${slug(headline)}.pdf`,
-          image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: {
+      const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+      const margin = 12
+      const gap = 4
+      const pageW = doc.internal.pageSize.getWidth()
+      const pageH = doc.internal.pageSize.getHeight()
+      const contentW = pageW - margin * 2
+      const contentH = pageH - margin * 2
+
+      const blocks = Array.from(el.querySelectorAll<HTMLElement>('[data-pdf-block]'))
+      if (blocks.length === 0) return
+      const canvases = await Promise.all(
+        blocks.map((b) =>
+          html2canvas(b, {
             scale: 2,
             backgroundColor: '#ffffff',
             useCORS: true,
-            // Skip the action-button bar (tagged data-pdf-ignore in the page).
-            ignoreElements: (node: Element) =>
-              (node as HTMLElement).dataset?.pdfIgnore === 'true',
-            // Render the clone in light mode regardless of the live theme.
-            // <html> carries `dark` (color-mode) and a `theme-*` paper class
-            // (useAppTheme); strip both so the PDF is deterministically light.
-            onclone: (doc: Document) =>
-              doc.documentElement.classList.remove('dark', 'theme-kraft', 'theme-cool', 'theme-ink'),
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          // Don't use 'avoid-all' — it pushes any block that doesn't fully fit to
-          // the next page, leaving large gaps. Let prose/sections flow naturally;
-          // only keep charts and the (short) takeaways box from splitting.
-          pagebreak: { mode: ['css', 'legacy'], avoid: ['canvas', 'aside'] },
-        })
-        .from(el)
-        .save()
+            onclone: (doc2: Document) => {
+              doc2.documentElement.classList.remove('dark', 'theme-kraft', 'theme-cool', 'theme-ink')
+              // html2canvas can shave a few px off a block's bottom edge, clipping the
+              // last text line (the block's trailing margin lives outside its box, so
+              // text sits flush). Pad the box in the clone so the shave eats padding,
+              // not words. Clone-only — the live page is untouched.
+              const s = doc2.createElement('style')
+              s.textContent = '[data-pdf-block]{padding-bottom:10px}'
+              doc2.head.appendChild(s)
+            },
+          }),
+        ),
+      )
+
+      // Each block's rendered height in mm, scaled to the content width.
+      const heights = canvases.map((c) => (c.height * contentW) / c.width)
+      const ops = paginate(heights, contentH, gap)
+
+      const pageStarted = new Set<number>()
+      for (const op of ops) {
+        if (op.page > 0 && !pageStarted.has(op.page)) {
+          doc.addPage()
+          pageStarted.add(op.page)
+        }
+        const c = canvases[op.block]
+        const img = op.srcTop === 0 && op.srcBot >= heights[op.block]
+          ? c
+          : cropCanvas(c, op.srcTop, op.srcBot, heights[op.block])
+        doc.addImage(img, 'JPEG', margin, margin + op.y, contentW, op.h)
+      }
+
+      doc.save(`briefing-${slug(headline)}.pdf`)
     } catch (e) {
       console.error('Briefing PDF export failed', e)
     } finally {

@@ -11,11 +11,11 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
   const store = useDashboardStore()
   let refreshSeq = 0
 
-  const hasDataSource = computed(() => !!widget.value.dataSource)
-  const lastRefreshedAt = computed(() => widget.value.dataSource?.lastRefreshedAt ?? null)
-  const servedFrom = computed(() => widget.value.dataSource?.servedFrom ?? null)
+  const hasDataSource = computed(() => !!widget.value?.dataSource)
+  const lastRefreshedAt = computed(() => widget.value?.dataSource?.lastRefreshedAt ?? null)
+  const servedFrom = computed(() => widget.value?.dataSource?.servedFrom ?? null)
   // Also true while a bulk dashboard refresh covering this widget is in flight.
-  const loading = computed(() => localLoading.value || !!store.refreshingWidgets[widget.value.id])
+  const loading = computed(() => localLoading.value || !!store.refreshingWidgets[widget.value?.id])
 
   async function refresh() {
     const ds = widget.value.dataSource
