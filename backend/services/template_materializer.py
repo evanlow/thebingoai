@@ -582,6 +582,24 @@ def materialize_templates_for_connection(
                 tmpl.name, connection.id,
             )
 
+    # Commit the new pipeline rows NOW — before _apply_mysql_t1_schedule below
+    # queries the *source* DB (connector.get_table_schema). That call can hang on
+    # a slow/unreachable source, and we must not hold the
+    # uq_pipeline_scope_fingerprint lock (taken via the SAVEPOINT in _try_insert)
+    # across it: every pod runs this backfill at startup, so a held lock stalls
+    # concurrent pods idle-in-transaction for minutes and exhausts the managed
+    # PG's connection cap (the 2026-06-24 outage). The T-1 schedule below only
+    # UPDATEs these already-committed rows, so there is no insert-lock race left.
+    if new_pipelines:
+        try:
+            db.commit()
+        except Exception:
+            logger.warning(
+                "commit of new pipelines failed for connection %s; rolling back",
+                connection.id, exc_info=True,
+            )
+            db.rollback()
+
     # MySQL: make the new pipelines self-running daily T-1 snapshots (cron +
     # next_run_at + date-capped full snapshot). Schema-driven, template intact.
     try:
