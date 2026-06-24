@@ -73,7 +73,24 @@ def build_briefing_tools(
             if briefing.user_id != context.user_id:
                 return "briefing user mismatch"
 
-            briefing.payload = validated.model_dump()
+            payload_dump = validated.model_dump()
+            # Snapshot each referenced widget's rendered data now so the briefing
+            # view renders instantly instead of re-running every widget's SQL.
+            try:
+                from backend.models.dashboard import Dashboard
+                from backend.models.user import User
+                from backend.api.widget_data import render_widget_snapshots
+                dashboard = db.query(Dashboard).filter(Dashboard.id == briefing.dashboard_id).first()
+                user = db.query(User).filter(User.id == context.user_id).first()
+                widget_ids = [s.widget_id for s in validated.sections if s.widget_id]
+                if dashboard and user and widget_ids:
+                    payload_dump["widget_snapshots"] = await render_widget_snapshots(
+                        dashboard, widget_ids, user, db,
+                    )
+            except Exception as e:
+                logger.warning("Briefing %s snapshot step failed (non-fatal): %s", briefing_id, e)
+
+            briefing.payload = payload_dump
             briefing.status = "ready"
             briefing.error = None
 

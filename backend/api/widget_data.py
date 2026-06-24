@@ -885,6 +885,40 @@ async def refresh_widget(
         connector.close()
 
 
+async def render_widget_snapshots(dashboard, widget_ids, user, db) -> dict:
+    """Render data configs for the given widget ids by reusing refresh_widget.
+
+    Returns {str(widget_id): config} for the briefing snapshot — pays the live
+    widget SQL once at generation time so the briefing view renders without it.
+    Best-effort: a widget that lacks a dataSource or fails to render is skipped.
+    """
+    widgets_by_id = {str(w.get("id")): w for w in (dashboard.widgets or [])}
+    out: dict = {}
+    for wid in {str(w) for w in widget_ids if w}:
+        w = widgets_by_id.get(wid)
+        ds = (w or {}).get("dataSource") or {}
+        connection_id, sql, mapping = ds.get("connectionId"), ds.get("sql"), ds.get("mapping")
+        if not (connection_id and sql and mapping):
+            continue
+        # Mirror the frontend: fold the chart type into mapping so transforms match.
+        chart_type = (w.get("widget") or {}).get("config", {}).get("type")
+        if chart_type and "chartType" not in mapping:
+            mapping = {**mapping, "chartType": chart_type}
+        try:
+            resp = await refresh_widget(
+                WidgetRefreshRequest(
+                    connection_id=connection_id, sql=sql, mapping=mapping,
+                    filters=None, dashboard_id=dashboard.id, widget_id=wid,
+                    widget_sources=w.get("sources"),
+                ),
+                current_user=user, db=db,
+            )
+            out[wid] = resp.config
+        except Exception:
+            logger.warning("Briefing snapshot render failed for widget %s", wid, exc_info=True)
+    return out
+
+
 @router.post("/{dashboard_id}/refresh", response_model=BulkRefreshResponse)
 async def refresh_dashboard_widgets(
     dashboard_id: int,

@@ -52,9 +52,11 @@ const heartbeatJobs = [
   },
 ]
 
+const triggerRun = vi.fn().mockResolvedValue({ task_id: 't1', job_id: 'job-brief-1' })
 vi.stubGlobal('useApi', () => ({
   heartbeatJobs: {
     list: vi.fn().mockResolvedValue(heartbeatJobs),
+    triggerRun,
   },
   dashboards: { triggerRefresh: vi.fn(), listRefreshRuns: vi.fn() },
 }))
@@ -105,25 +107,30 @@ describe('SettingsJobs — kind badges + conditional pencil', () => {
     expect(text).toContain('Briefing')
   })
 
-  it('hides "Edit name & prompt" button on briefing-kind row', async () => {
+  it('shows a run-now button on both rows with a kind-specific title', async () => {
     const w = mount(SettingsJobs, { global: { stubs: globalStubs }, attachTo: document.body })
     await flush()
-    // Only one Edit button total — the briefing row must have it hidden
-    const editBtns = w.findAll('button[title="Edit name & prompt"]')
-    expect(editBtns).toHaveLength(1)
-    // Locate each row container by its job name and assert presence/absence
+    // briefing row → "Generate briefing now"; chat row → "Run now"
+    expect(w.findAll('button[title="Generate briefing now"]')).toHaveLength(1)
+    expect(w.findAll('button[title="Run now"]')).toHaveLength(1)
     const rows = w.findAll('div.rounded-lg.border')
-    const chatRow = rows.find(r => r.text().includes('Daily standup summary'))!
     const briefingRow = rows.find(r => r.text().includes('Dashboard Analysis'))!
-    expect(chatRow.find('button[title="Edit name & prompt"]').exists()).toBe(true)
-    expect(briefingRow.find('button[title="Edit name & prompt"]').exists()).toBe(false)
+    expect(briefingRow.find('button[title="Generate briefing now"]').exists()).toBe(true)
   })
 
-  it('keeps schedule chip, history, trigger, and delete on both rows', async () => {
+  it('clicking "Generate briefing now" triggers the briefing job', async () => {
+    const w = mount(SettingsJobs, { global: { stubs: globalStubs }, attachTo: document.body })
+    await flush()
+    await w.find('button[title="Generate briefing now"]').trigger('click')
+    await flush()
+    expect(triggerRun).toHaveBeenCalledWith('job-brief-1')
+  })
+
+  it('keeps schedule chip, history, edit, and delete on both rows', async () => {
     const w = mount(SettingsJobs, { global: { stubs: globalStubs }, attachTo: document.body })
     await flush()
     expect(w.findAll('button[title="View run history"]')).toHaveLength(2)
-    expect(w.findAll('button[title="Trigger now"]')).toHaveLength(2)
+    expect(w.findAll('button[title="Edit name"]')).toHaveLength(2)
     expect(w.findAll('button[title="Delete job"]')).toHaveLength(2)
   })
 })

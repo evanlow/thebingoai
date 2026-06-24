@@ -112,9 +112,8 @@
               Runs · {{ jobRunCount(job) }}
             </span>
             <button
-              v-if="job.kind !== 'briefing'"
               type="button"
-              title="Run now"
+              :title="job.kind === 'briefing' ? 'Generate briefing now' : 'Run now'"
               @click="handleTrigger(job)"
               class="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
             >

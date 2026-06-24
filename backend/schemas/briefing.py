@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, conlist, field_validator
 
 
@@ -30,6 +30,11 @@ class BriefingPayload(BaseModel):
     kpis: List[Kpi] = Field(default_factory=list, max_length=3)
     sections: conlist(Section, min_length=1)  # type: ignore[valid-type]
     key_takeaways: conlist(str, min_length=3, max_length=3)  # type: ignore[valid-type]
+    # Rendered widget data configs keyed by widget_id, snapshot at generation
+    # time so the briefing view renders instantly without re-running each
+    # widget's SQL. Injected by emit_briefing, not the LLM. Absent on briefings
+    # generated before this shipped → frontend falls back to a live refresh.
+    widget_snapshots: Optional[Dict[str, Any]] = None
 
 
 class BriefingResponse(BaseModel):

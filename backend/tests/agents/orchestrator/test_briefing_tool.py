@@ -1,6 +1,6 @@
 import asyncio
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from backend.agents.orchestrator.orchestrator_briefing_tool import build_briefing_tools
 from backend.agents.context import AgentContext
@@ -63,3 +63,39 @@ def test_emit_briefing_persists_valid_payload():
     assert persisted["briefing"].payload["headline"] == "Revenue held"
     post_msg.assert_called_once()
     emit_ws.assert_called_once()
+
+
+def test_emit_briefing_injects_widget_snapshots():
+    persisted = {}
+
+    def fake_factory():
+        s = MagicMock()
+        briefing = MagicMock(id=42, user_id="u1", dashboard_id=1, status="generating", payload=None)
+        # Dashboard + User lookups both resolve truthy so the snapshot block runs.
+        s.query.return_value.filter.return_value.first.return_value = briefing
+        persisted["briefing"] = briefing
+        return s
+
+    tools = build_briefing_tools(_ctx(), db_session_factory=fake_factory, briefing_id=42)
+    emit = next(t for t in tools if t.name == "emit_briefing")
+
+    good = {
+        "headline": "Revenue held",
+        "deck": "Topline tracked.",
+        "kpis": [],
+        "sections": [
+            {"heading": "1. Lift", "prose": "Strong.", "widget_id": "chart_x"},
+            {"heading": "2. No widget", "prose": "Text only."},
+        ],
+        "key_takeaways": ["a", "b", "c"],
+    }
+    render = AsyncMock(return_value={"chart_x": {"series": [1, 2]}})
+    with patch("backend.agents.orchestrator.orchestrator_briefing_tool._post_chat_message"), \
+         patch("backend.agents.orchestrator.orchestrator_briefing_tool._emit_ws"), \
+         patch("backend.api.widget_data.render_widget_snapshots", render):
+        result = asyncio.run(emit.ainvoke({"payload": good}))
+
+    assert "ready" in result.lower()
+    # Only the referenced widget id is passed to the renderer.
+    assert render.await_args.args[1] == ["chart_x"]
+    assert persisted["briefing"].payload["widget_snapshots"] == {"chart_x": {"series": [1, 2]}}

@@ -25,6 +25,15 @@
       </div>
     </div>
 
+    <!-- Generating (briefing exists but payload not written yet) — useBriefing polls every 3s -->
+    <div v-else-if="!briefing.payload" class="max-w-3xl mx-auto px-6 py-10 space-y-4">
+      <p class="text-xs uppercase tracking-wider text-neutral-500">Generating your briefing…</p>
+      <div class="h-10 w-3/4 bg-neutral-200 dark:bg-neutral-700 rounded animate-pulse" />
+      <div class="h-4 w-full bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+      <div class="h-4 w-5/6 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+      <div class="h-4 w-2/3 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+    </div>
+
     <!-- Ready -->
     <article v-else ref="articleRef" class="max-w-3xl mx-auto px-6 py-10">
       <div data-pdf-ignore="true" class="flex justify-end gap-2 mb-6">
@@ -96,6 +105,7 @@
           v-if="s.widget_id"
           :widget-id="s.widget_id"
           :dashboard-id="briefing.dashboard_id"
+          :snapshot="briefing.payload!.widget_snapshots?.[String(s.widget_id)]"
           class="mt-4"
           @loaded="markWidgetLoaded"
         />

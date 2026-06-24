@@ -25,6 +25,9 @@ export interface BriefingPayload {
   kpis: BriefingKpi[]
   sections: BriefingSection[]
   key_takeaways: string[]
+  // Rendered widget configs keyed by widget_id, snapshot at generation time.
+  // Absent on briefings generated before this shipped → embed refreshes live.
+  widget_snapshots?: Record<string, any>
 }
 
 export interface BriefingResponse {
@@ -70,6 +73,10 @@ export function useBriefing(briefingId: number | Ref<number>) {
 
       if (result.status === 'ready' || result.status === 'failed') {
         stopPolling()
+        // Credits are charged by briefing_runner when status flips to 'ready'.
+        // Refresh the shared balance so the sidebar reflects the spend without
+        // a page reload (mirrors chat refreshing on the 'done' SSE event).
+        if (result.status === 'ready') useCreditBalance().refresh()
       } else if (result.status === 'generating' && pollTimer === null) {
         pollTimer = setInterval(fetch, POLL_INTERVAL_MS)
       }
