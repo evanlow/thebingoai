@@ -155,6 +155,21 @@ class BaseConnector(ABC):
         """
         return "%s"
 
+    def _get_row_count(self, cursor, schema: str, table_name: str) -> int:
+        """
+        Row count for a table. Default does an exact COUNT(*) (a full scan).
+
+        Connectors override this to read the engine's cached row estimate so
+        schema discovery doesn't scan every table — critical for connections
+        with many large tables. The value is only shown as a size hint and is
+        never used in any computation, so an estimate is acceptable.
+        """
+        quoted_schema = self._quote_identifier(schema)
+        quoted_table = self._quote_identifier(table_name)
+        cursor.execute(f'SELECT COUNT(*) as count FROM {quoted_schema}.{quoted_table}')
+        result = cursor.fetchone()
+        return result['count'] if isinstance(result, dict) else result[0]
+
     def _foreign_key_query(self, schema: str, table: str) -> tuple:
         """
         Generate SQL query to fetch foreign keys for a table.
@@ -368,12 +383,10 @@ class BaseConnector(ABC):
         for col in columns:
             col['primary_key'] = col['name'] in primary_keys
 
-        # Get row count
-        quoted_schema = self._quote_identifier(schema)
-        quoted_table = self._quote_identifier(table_name)
-        cursor.execute(f'SELECT COUNT(*) as count FROM {quoted_schema}.{quoted_table}')
-        result = cursor.fetchone()
-        row_count = result['count'] if isinstance(result, dict) else result[0]
+        # Row count — uses the DB's cached estimate when the connector overrides
+        # `_get_row_count` (no full scan during schema discovery). row_count is a
+        # descriptive size hint only; it is never used in any computation.
+        row_count = self._get_row_count(cursor, schema, table_name)
 
         cursor.close()
 
