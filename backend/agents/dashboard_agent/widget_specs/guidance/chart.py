@@ -66,6 +66,49 @@ Use a single chart widget with `seriesType` per dataset column when you want one
 ```
 With a second Y-axis, add `yAxisRight: {"title": "Growth %"}` to options and set `alignBothAxesToZero: true` if both axes should start at 0.
 
+### Time-series Drill-down & Category Breakdown (mapping-driven — preferred)
+
+The transform buckets dates and pivots breakdown series **in Python**, so the SQL can return
+RAW timestamp/category/metric rows — you do **not** need `DATE_TRUNC` or a pivot. Set the
+mapping keys instead:
+
+- **`dateGranularity`** buckets the `labelColumn` timestamp: `year | quarter | month | week | day | hour`
+  (chronological periods) or `hour_of_day | day_of_week | month_of_year` (repeating "part" slices for
+  seasonality). When you set `dateGranularity`, do NOT also set `options.xAxisMode: "date"` — the
+  bucketed labels are pre-formatted categories.
+- **`breakdownColumn`** splits the FIRST metric into one series per distinct value. Combine with
+  `options.stacked: "standard"` (stacked) or `"percentage"` (100%-stacked) for composition over time.
+
+When a timestamp dimension AND a category both exist, prefer this multi-series form over a single
+aggregated line. Pick granularity from the date min/max span (hour/day for short ranges, month/quarter
+for multi-year). Use a "part" bucket when the user asks about timing patterns ("what hour sells best").
+
+**Best sales hour (hour_of_day part bucket):**
+```sql
+SELECT s.datetime, s.money
+FROM sales s
+```
+Mapping:
+```json
+{"type": "chart", "labelColumn": "datetime", "dateGranularity": "hour_of_day",
+ "datasetColumns": [{"column": "money", "label": "Sales", "aggregation": "sum"}]}
+```
+
+**Sales per product over months (multi-series / stacked):**
+```sql
+SELECT s.date, s.product_name, s.money
+FROM sales s
+```
+Mapping:
+```json
+{"type": "chart", "labelColumn": "date", "dateGranularity": "month",
+ "breakdownColumn": "product_name",
+ "datasetColumns": [{"column": "money", "label": "Sales", "aggregation": "sum"}],
+ "options": {"stacked": "standard"}}
+```
+Set `options.stacked: "percentage"` for a 100%-stacked share-over-time chart, or omit `stacked` for
+multi-line / grouped bars.
+
 ### SQL Patterns (use baseJoin from data context)
 
 IMPORTANT: Every chart must include the baseJoin from the dashboard data context so that

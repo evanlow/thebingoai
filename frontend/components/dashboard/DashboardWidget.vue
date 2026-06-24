@@ -168,10 +168,13 @@ import { useWidgetData } from '~/composables/useWidgetData'
 import { parseUtcDate } from '~/utils/format'
 import { hasRenderableData } from '~/utils/widgetRender'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   widget: DashboardWidget
   editMode: boolean
-}>()
+  // Briefing embeds render a generation-time snapshot and pass false to skip
+  // the live re-query. Dashboards leave it true (default) so widgets refresh.
+  autoRefresh?: boolean
+}>(), { autoRefresh: true })
 
 const emit = defineEmits<{
   remove: [id: string]
@@ -181,7 +184,7 @@ const emit = defineEmits<{
 }>()
 
 const widgetRef = toRef(props, 'widget')
-const { loading, error, lastRefreshedAt, servedFrom, hasDataSource, refresh } = useWidgetData(widgetRef)
+const { loading, error, lastRefreshedAt, servedFrom, hasDataSource, refresh } = useWidgetData(widgetRef, props.autoRefresh)
 
 const WIDGET_TYPE_LABELS: Record<string, string> = {
   kpi: 'KPI',

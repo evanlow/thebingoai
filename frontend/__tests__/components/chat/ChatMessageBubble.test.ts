@@ -76,7 +76,7 @@ describe('ChatMessageBubble', () => {
     expect(dark!.classes()).toContain('dark:block')
   })
 
-  it('does not declare an agentAvatarUrl prop', () => {
+  it('declares an agentAvatarUrl prop (custom agent avatar, passed by ChatThread)', () => {
     const wrapper = mount(ChatMessageBubble, {
       props: {
         message: assistantMsg,
@@ -88,10 +88,9 @@ describe('ChatMessageBubble', () => {
     })
     const propsDef = (wrapper.vm as any).$options.props ?? {}
     // Positive control — if propsDef ever collapses to {} due to a compiler change,
-    // this assertion will fail, preventing the absence check below from giving
-    // a false-positive pass.
+    // this assertion fails first, preventing a false-positive pass below.
     expect('message' in propsDef).toBe(true)
-    expect('agentAvatarUrl' in propsDef).toBe(false)
+    expect('agentAvatarUrl' in propsDef).toBe(true)
   })
 
   it('applies avatar-spin to the avatar wrapper when streaming and message empty (last bubble)', () => {
@@ -130,5 +129,82 @@ describe('ChatMessageBubble', () => {
     )!
     const avatarWrapper = lightImg.element.parentElement!
     expect(avatarWrapper.className).not.toContain('avatar-spin')
+  })
+})
+
+describe('ChatMessageBubble — reasoning steps toggle', () => {
+  const agentSteps = [
+    { step_type: 'reasoning', content: { text: 'thinking' } },
+    { step_type: 'tool_call', tool_name: 'get_table_schema', content: {} },
+    { step_type: 'tool_result', content: {} },
+  ]
+
+  beforeEach(() => {
+    vi.stubGlobal('useChatStore', () => ({ isStreaming: false, messages: [] }))
+  })
+
+  // ChatReasoningTree is auto-imported in the app; stub it explicitly (declaring the
+  // `message` prop) so we can both detect it and read the prop it receives.
+  const ChatReasoningTreeStub = {
+    name: 'ChatReasoningTree',
+    props: ['message'],
+    template: '<div class="crt-stub" />',
+  }
+
+  function mountBubble(message: any) {
+    return mount(ChatMessageBubble, {
+      props: { message, showActions: false, actionType: null, isLast: false, agentName: 'Bingo' },
+      global: { stubs: { ChatReasoningTree: ChatReasoningTreeStub } },
+    })
+  }
+
+  // The reasoning toggle is the only button rendered in this bare assistant bubble.
+  const reasoningButton = (wrapper: any) =>
+    wrapper.findAll('button').find((b: any) => b.text().includes('reasoning step'))
+
+  it('shows the step count, excluding tool_result steps', () => {
+    const wrapper = mountBubble({ ...assistantMsg, agent_steps: agentSteps })
+    const btn = reasoningButton(wrapper)
+    expect(btn).toBeTruthy()
+    // reasoning + tool_call = 2; tool_result filtered out
+    expect(btn!.text()).toContain('2 reasoning steps')
+  })
+
+  it('uses the singular label for a single step', () => {
+    const wrapper = mountBubble({
+      ...assistantMsg,
+      agent_steps: [{ step_type: 'reasoning', content: { text: 'x' } }],
+    })
+    expect(reasoningButton(wrapper)!.text()).toContain('1 reasoning step')
+    expect(reasoningButton(wrapper)!.text()).not.toContain('1 reasoning steps')
+  })
+
+  it('renders the tree collapsed by default and expands on click, collapses on second click', async () => {
+    const wrapper = mountBubble({ ...assistantMsg, agent_steps: agentSteps })
+    expect(wrapper.findComponent({ name: 'ChatReasoningTree' }).exists()).toBe(false)
+
+    await reasoningButton(wrapper)!.trigger('click')
+    const tree = wrapper.findComponent({ name: 'ChatReasoningTree' })
+    expect(tree.exists()).toBe(true)
+    expect(tree.props('message')).toMatchObject({ id: 'm1' })
+
+    await reasoningButton(wrapper)!.trigger('click')
+    expect(wrapper.findComponent({ name: 'ChatReasoningTree' }).exists()).toBe(false)
+  })
+
+  it('hides the reasoning button while steps_log is present (live streaming view)', () => {
+    const wrapper = mountBubble({
+      ...assistantMsg,
+      agent_steps: agentSteps,
+      steps_log: ['step a', 'step b'],
+    })
+    expect(reasoningButton(wrapper)).toBeUndefined()
+    // live steps_log block renders its own toggle instead
+    expect(wrapper.text()).toContain('2 steps')
+  })
+
+  it('renders no reasoning button when the message has no steps', () => {
+    const wrapper = mountBubble({ ...assistantMsg })
+    expect(reasoningButton(wrapper)).toBeUndefined()
   })
 })

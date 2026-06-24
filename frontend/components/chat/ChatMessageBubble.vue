@@ -139,14 +139,27 @@
       <!-- Agent steps / reasoning toggle (hidden when steps_log is present) -->
       <div v-if="hasSteps && !message.steps_log?.length" class="mt-3">
         <button
-          @click="openReasoning"
+          @click="reasoningExpanded = !reasoningExpanded"
           class="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
         >
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.15A4.98 4.98 0 0112 17a4.98 4.98 0 01-2.39-.606l-.347-.15z" />
           </svg>
           <span>{{ stepCount }} reasoning step{{ stepCount !== 1 ? 's' : '' }}</span>
+          <svg
+            class="w-3 h-3 transition-transform duration-200"
+            :class="{ 'rotate-180': reasoningExpanded }"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
+        <div
+          v-if="reasoningExpanded"
+          class="mt-2 bg-gray-50/80 dark:bg-neutral-800/60 border border-gray-100 dark:border-neutral-700 rounded-md px-3 py-2"
+        >
+          <ChatReasoningTree :message="message" />
+        </div>
       </div>
 
       <!-- User question: structured multi-question input (active or answered) -->
@@ -317,9 +330,7 @@ const stepCount = computed(() => {
   return props.message.thinking_steps?.length || 0
 })
 
-const openReasoning = () => {
-  chatStore.selectMessageForReasoning(props.message.id)
-}
+const reasoningExpanded = ref(false)
 
 const isQuestionAnswered = computed(() => {
   if (props.actionType !== 'user_question' && props.actionType !== 'dashboard_question') return false

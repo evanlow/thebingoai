@@ -308,11 +308,6 @@ export const useChatStore = defineStore('chat', {
       this.infoPanelSections[key] = !this.infoPanelSections[key]
     },
 
-    selectMessageForReasoning(messageId: string) {
-      this.selectedMessageId = messageId
-      this.infoPanelSections.reasoning = true
-    },
-
     clearReasoningSelection() {
       this.selectedMessageId = null
     },

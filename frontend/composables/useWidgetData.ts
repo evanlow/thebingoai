@@ -5,20 +5,23 @@ import { useApi } from '~/composables/useApi'
 import { useDashboardStore } from '~/stores/dashboard'
 import { mergeRefreshedConfig } from '~/utils/widgetMerge'
 
-export function useWidgetData(widget: Ref<DashboardWidget>) {
+export function useWidgetData(widget: Ref<DashboardWidget>, autoRefresh = true) {
   const localLoading = ref(false)
   const error = ref<string | null>(null)
   const store = useDashboardStore()
   let refreshSeq = 0
 
-  const hasDataSource = computed(() => !!widget.value.dataSource)
-  const lastRefreshedAt = computed(() => widget.value.dataSource?.lastRefreshedAt ?? null)
-  const servedFrom = computed(() => widget.value.dataSource?.servedFrom ?? null)
+  // widget.value may be null at setup — BriefingWidgetEmbed passes ref(null)
+  // and loads the widget async onMounted. Guard so the immediate watcher and
+  // these computeds don't deref null and crash the briefing view.
+  const hasDataSource = computed(() => !!widget.value?.dataSource)
+  const lastRefreshedAt = computed(() => widget.value?.dataSource?.lastRefreshedAt ?? null)
+  const servedFrom = computed(() => widget.value?.dataSource?.servedFrom ?? null)
   // Also true while a bulk dashboard refresh covering this widget is in flight.
-  const loading = computed(() => localLoading.value || !!store.refreshingWidgets[widget.value.id])
+  const loading = computed(() => localLoading.value || !!store.refreshingWidgets[widget.value?.id])
 
   async function refresh() {
-    const ds = widget.value.dataSource
+    const ds = widget.value?.dataSource
     if (!ds) return
 
     const seq = ++refreshSeq
@@ -42,12 +45,16 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
         filters,
         dashboard_id: store.currentDashboardId ?? undefined,
         widget_sources: widget.value.sources ?? undefined,
-      }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source' }
+      }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source'; source_columns?: string[]; source_rows?: any[][] }
 
       if (seq !== refreshSeq) return
       Object.assign(widget.value.widget.config, mergeRefreshedConfig(widget.value, response.config))
       ds.lastRefreshedAt = response.refreshed_at
       ds.servedFrom = response.served_from
+      // Cache raw columns/rows so the Edit Widget panel opens without re-running SQL.
+      if (response.source_columns) {
+        store.setWidgetSourceData(widget.value.id, response.source_columns, response.source_rows ?? [])
+      }
     } catch (err: any) {
       if (seq !== refreshSeq) return
       error.value = err?.data?.detail ?? err?.message ?? 'Refresh failed'
@@ -64,13 +71,18 @@ export function useWidgetData(widget: Ref<DashboardWidget>) {
   // With the per-Org bulk_widget_loading flag on, the dashboard orchestrates
   // one bulk refresh instead (openDashboard + the page-level filter watcher),
   // so the per-widget watcher stays quiet.
-  watch(
-    () => JSON.stringify(store.activeFilters),
-    () => {
-      if (hasDataSource.value && !store.bulkWidgetLoading) refresh()
-    },
-    { immediate: true },
-  )
+  // autoRefresh=false (briefing embeds with a generation-time snapshot) skips
+  // the watcher entirely — the snapshot already populated the config, so a live
+  // re-query would be redundant and slow.
+  if (autoRefresh) {
+    watch(
+      () => JSON.stringify(store.activeFilters),
+      () => {
+        if (hasDataSource.value && !store.bulkWidgetLoading) refresh()
+      },
+      { immediate: true },
+    )
+  }
 
   return { loading, error, lastRefreshedAt, servedFrom, hasDataSource, refresh }
 }

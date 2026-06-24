@@ -49,12 +49,10 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not sso_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is inactive",
-        )
-
+    # NOTE: the account-active check moved into _resolve_local_user
+    # (_enforce_account_active) so it can consult both SSO is_active AND the
+    # enterprise DB flag once the local user is known. Trial expiry no longer
+    # touches SSO is_active — it zeros workspace credits instead.
     if not sso_user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -99,6 +97,17 @@ def _resolve_local_user(request: Request, db: Session, sso_user) -> User:
             # Auto-create new user
             user = _create_user(db, sso_user)
 
+    _enforce_account_active(db, user, sso_user)
+    # Tombstoned (self-serve deleted) accounts are locked out. SSO already
+    # deactivates the old sso_id, but this guards against a stale local match
+    # resurrecting a renamed account. The fresh-signup path above never reaches
+    # here with is_active False (new rows default to True).
+    if user.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+
     # Multi-workspace: an X-Workspace-Id header selects the active workspace
     # when the user is a member of it. In-memory only; no commit happens here.
     user.active_role = "member"
@@ -120,6 +129,42 @@ def _resolve_local_user(request: Request, db: Session, sso_user) -> User:
             request.state.active_role = active_role
 
     return user
+
+
+def _enforce_account_active(db: Session, user: User, sso_user) -> None:
+    """Account-active gate. Blocks when EITHER source reports inactive.
+
+    - SSO ``is_active``: preserves admin deactivation done in the SSO console
+      (Bingo's own deactivate flow flips SSO too, so it is covered here).
+    - enterprise ``UserRole.is_active``: the DB flag, when the admin plugin is
+      installed.
+
+    Trial expiry no longer sets SSO inactive (it zeros workspace credits), so
+    trial users stay SSO-active and are gated only by their org credit pool.
+
+    Upgrade note: a deployment migrating off the old SSO-deactivating trial
+    task must run ``scripts/reactivate_trial_victims.py`` once to clear the
+    stale SSO ``is_active=False`` left on trial users (signature: SSO inactive
+    while ``UserRole.is_active`` is still True) — otherwise the SSO check below
+    keeps them locked out.
+    """
+    if not sso_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+
+    try:
+        from bingo_admin.models import UserRole
+    except ImportError:
+        return
+
+    role_row = db.query(UserRole).filter_by(user_id=user.id).first()
+    if role_row is not None and not role_row.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
 
 
 def _create_user(db: Session, sso_user) -> User:

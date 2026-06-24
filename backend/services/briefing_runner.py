@@ -91,31 +91,61 @@ async def run(briefing_id: int) -> None:
 
         from backend.agents.profile_llm import resolve_published_llm
         user_provider, profile_temperature, profile_max_tokens = resolve_published_llm(ctx.profile)
-        await run_orchestrator(
-            user_question=prompt,
-            context=ctx.agent_context,
-            history=[],
-            custom_agents=ctx.custom_agents or None,
-            db_session_factory=SessionLocal,
-            memory_context=ctx.memory_context,
-            user_skills=ctx.user_skills or None,
-            user_memories_context=ctx.user_memories_context,
-            soul_prompt=ctx.soul_prompt,
-            skill_suggestions=ctx.skill_suggestions,
-            profile=ctx.profile,
-            llm_provider=user_provider,
-            temperature=profile_temperature,
-            max_tokens=profile_max_tokens,
-        )
 
-        # Refresh the row — emit_briefing should have set status='ready'
-        db.refresh(briefing)
-        if briefing.status == "generating":
-            # Orchestrator returned but never called emit_briefing — that's a failure
-            briefing.status = "failed"
-            briefing.error = "Orchestrator did not emit a briefing payload"
-            db.commit()
-            logger.warning("Briefing %s: orchestrator returned without emit_briefing", briefing_id)
+        # --- Credit tracking ---
+        # Reuses CreditContextManager (enterprise: actual token cost; community:
+        # 1 credit). The credit_usage row it writes IS the credit-history entry.
+        # block_on_insufficient=False: the runner never hard-blocks — the manual
+        # API route pre-checks; scheduled briefings are best-effort.
+        _credit_mgr = None
+        try:
+            from backend.plugins.loader import get_loaded_plugins
+            if "bingo-admin" in get_loaded_plugins():
+                from bingo_admin.credit_context import CreditContextManager
+            else:
+                from backend.services.token_tracking_service import CreditContextManager
+            _credit_mgr = CreditContextManager(
+                db=db,
+                user_id=briefing.user_id,
+                title=f"Briefing: {dashboard.title}",
+                provider_name=None,
+                conversation_id=None,
+                block_on_insufficient=False,
+            )
+        except Exception as _credit_err:
+            logger.warning("Credit context setup failed for briefing: %s", _credit_err)
+            _credit_mgr = None
+
+        from contextlib import nullcontext
+        async with (_credit_mgr if _credit_mgr is not None else nullcontext()):
+            await run_orchestrator(
+                user_question=prompt,
+                context=ctx.agent_context,
+                history=[],
+                custom_agents=ctx.custom_agents or None,
+                db_session_factory=SessionLocal,
+                memory_context=ctx.memory_context,
+                user_skills=ctx.user_skills or None,
+                user_memories_context=ctx.user_memories_context,
+                soul_prompt=ctx.soul_prompt,
+                skill_suggestions=ctx.skill_suggestions,
+                profile=ctx.profile,
+                llm_provider=user_provider,
+                temperature=profile_temperature,
+                max_tokens=profile_max_tokens,
+            )
+
+            # Refresh the row — emit_briefing should have set status='ready'
+            db.refresh(briefing)
+            if briefing.status == "generating":
+                # Orchestrator returned but never called emit_briefing — that's a
+                # failure; don't charge for an undelivered briefing.
+                briefing.status = "failed"
+                briefing.error = "Orchestrator did not emit a briefing payload"
+                db.commit()
+                logger.warning("Briefing %s: orchestrator returned without emit_briefing", briefing_id)
+                if _credit_mgr is not None and hasattr(_credit_mgr, "void"):
+                    _credit_mgr.void("briefing not emitted")
 
     except Exception as e:
         logger.exception("Briefing %s generation raised: %s", briefing_id, e)

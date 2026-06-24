@@ -263,6 +263,18 @@ def _dialect_hints_for_target(
         return MYSQL_DIALECT_HINTS
     if db_type == "duckdb":
         return DUCKDB_DIALECT_HINTS
+    # dataset (CSV/Excel via bingo-csv-connector) — the connector's DataPlane
+    # engine decides dialect: DuckDB in dev, BigQuery in lockdown. We mirror
+    # the connector's own _csv_dialect_hint() so the agent emits SQL the
+    # DataPlane will actually run.
+    if db_type == "dataset":
+        try:
+            from backend.config import settings as _settings
+            if getattr(_settings, "disable_local_data_plane", False):
+                return BIGQUERY_DIALECT_HINTS
+        except Exception:
+            pass
+        return DUCKDB_DIALECT_HINTS
     # bigquery / bigquery_ga4 / unknown / None → established BigQuery default.
     return BIGQUERY_DIALECT_HINTS
 

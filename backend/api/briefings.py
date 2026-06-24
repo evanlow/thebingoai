@@ -59,6 +59,52 @@ async def create_briefing(
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
 
+    # Manual briefings are async (202 + poll), so the worker-side charge can't
+    # surface a sync error. Pre-check credits here and refuse with 402 when out.
+    # No credit is recorded here — the real charge happens in briefing_runner.
+    _InsufficientCreditsError = None
+    try:
+        from backend.plugins.loader import get_loaded_plugins
+        if "bingo-admin" in get_loaded_plugins():
+            from bingo_admin.credit_context import (
+                CreditContextManager,
+                InsufficientCreditsError as _InsufficientCreditsError,
+            )
+        else:
+            from backend.services.token_tracking_service import (
+                CreditContextManager,
+                InsufficientCreditsError as _InsufficientCreditsError,
+            )
+        _credit_mgr = CreditContextManager(
+            db=db,
+            user_id=current_user.id,
+            title="Briefing",
+            provider_name=None,
+            conversation_id=None,
+            block_on_insufficient=True,
+        )
+        await _credit_mgr.__aenter__()  # check only; never __aexit__ → no record
+    except Exception as _credit_err:
+        if _InsufficientCreditsError is not None and isinstance(_credit_err, _InsufficientCreditsError):
+            cap = getattr(_credit_err, "reason", "user_daily")
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error_code": "insufficient_credits",
+                    "cap": cap,
+                    "message": (
+                        "Workspace credit pool exhausted."
+                        if cap == "org_pool"
+                        else "Daily credits used up."
+                    ),
+                },
+            )
+        # Pre-check failed for a non-credit reason — roll back any aborted
+        # transaction so the request session stays usable, then proceed
+        # (credit wiring must never block a briefing).
+        db.rollback()
+        logger.warning("Briefing credit pre-check setup failed: %s", _credit_err)
+
     existing = (
         db.query(Briefing)
         .filter(

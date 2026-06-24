@@ -7,24 +7,9 @@
     >
       <label class="text-xs font-medium text-gray-500 dark:text-neutral-400 whitespace-nowrap">{{ control.label }}</label>
 
-      <!-- Single-select dropdown -->
-      <select
-        v-if="control.type === 'dropdown' && !control.multiple"
-        class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-gray-400 focus:outline-none dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:focus:border-neutral-500"
-        :value="store.filterValues[control.key] ?? ''"
-        @change="onDropdownChange(control.key, ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="">All</option>
-        <option
-          v-for="opt in getOptions(control)"
-          :key="opt"
-          :value="opt"
-        >{{ opt }}</option>
-      </select>
-
-      <!-- Multi-select dropdown -->
+      <!-- Dropdown — always checkbox multi-select (Data-Studio style) -->
       <div
-        v-else-if="control.type === 'dropdown' && control.multiple"
+        v-if="control.type === 'dropdown'"
         :ref="el => { if (el) multiDropdownRefs.set(control.key, el as HTMLElement) }"
         class="relative"
       >
@@ -41,8 +26,23 @@
           <div
             v-if="openMultiKey === control.key"
             :ref="el => { teleportedDropdownRef = el as HTMLElement }"
-            class="fixed z-[9999] w-48 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:bg-neutral-800 dark:border-neutral-700"
+            :style="dropdownStyle"
+            class="fixed z-[9999] w-48 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:bg-neutral-800 dark:border-neutral-700"
           >
+            <!-- Select all / Clear master row -->
+            <label
+              v-if="getOptions(control).length > 0"
+              class="sticky top-0 flex items-center gap-2 border-b border-gray-100 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 cursor-pointer dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+            >
+              <input
+                type="checkbox"
+                :checked="allSelectedState(control) === 'all'"
+                :indeterminate.prop="allSelectedState(control) === 'some'"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-300"
+                @change="toggleSelectAll(control)"
+              />
+              {{ allSelectedState(control) === 'all' ? 'Clear all' : 'Select all' }}
+            </label>
             <label
               v-for="opt in getOptions(control)"
               :key="opt"
@@ -156,11 +156,28 @@ function getOptions(control: FilterControl): string[] {
 
 function getSelectedMulti(key: string): string[] {
   const val = store.filterValues[key]
-  return Array.isArray(val) ? val : []
+  if (Array.isArray(val)) return val
+  // Back-compat: dashboards saved under the old single-select dropdown stored a scalar.
+  if (typeof val === 'string' && val) return [val]
+  return []
 }
 
-function onDropdownChange(key: string, value: string) {
-  store.setFilterValue(key, value || null)
+function allSelectedState(control: FilterControl): 'all' | 'some' | 'none' {
+  const opts = getOptions(control)
+  if (opts.length === 0) return 'none'
+  const selected = new Set(getSelectedMulti(control.key))
+  const hits = opts.filter(o => selected.has(o)).length
+  if (hits === 0) return 'none'
+  return hits >= opts.length ? 'all' : 'some'
+}
+
+function toggleSelectAll(control: FilterControl) {
+  if (allSelectedState(control) === 'all') {
+    store.setFilterValue(control.key, null)
+  } else {
+    const opts = getOptions(control)
+    store.setFilterValue(control.key, opts.length ? [...opts] : null)
+  }
 }
 
 function toggleMultiDropdown(key: string) {

@@ -146,6 +146,52 @@ async def logout(access_token: str, refresh_token: str) -> bool:
         return False
 
 
+async def delete_account(access_token: str, refresh_token: Optional[str] = None) -> Optional[dict]:
+    """
+    Delete the caller's OWN account on SSO and return the rename result.
+
+    SSO renames the email to bingo-<ts>@<original_domain>, deactivates the user
+    (so this token/sso_id can no longer authenticate), and blacklists the refresh
+    token. Authenticated by the user's own Bearer token (self-serve), mirroring
+    logout(). Renaming frees the original address so it can register again later.
+
+    Returns the SSO response body (e.g. {"new_email": "..."}) on success, or None
+    on failure. Always clears the local token cache so the now-deactivated token
+    stops resolving from cache.
+
+    X-API-Key uses sso_secret_key (enterprise) or sso_publishable_key (community).
+    """
+    redis = _get_redis_client()
+    await redis.delete(_cache_key(access_token))
+
+    try:
+        client = _get_http_client()
+        headers = {"Authorization": f"Bearer {access_token}"}
+        if settings.sso_secret_key:
+            headers["X-API-Key"] = settings.sso_secret_key
+        elif settings.sso_publishable_key:
+            headers["X-API-Key"] = settings.sso_publishable_key
+
+        payload = {}
+        if refresh_token:
+            payload["refresh_token"] = refresh_token
+
+        response = await client.post(
+            "/api/v1/auth/delete-account",
+            json=payload,
+            headers=headers,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"SSO delete-account failed: {e.response.status_code}")
+        return None
+    except Exception as e:
+        logger.error(f"SSO delete-account error: {e}")
+        return None
+
+
 def get_config() -> dict:
     """
     Return SSO config for the frontend.

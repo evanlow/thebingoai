@@ -5,15 +5,15 @@
     size="md"
   >
     <template #header>
-      <h3 class="text-lg font-normal text-gray-900 w-full text-center">Account Trial Expired</h3>
+      <h3 class="text-lg font-normal text-gray-900 w-full text-center">Account Deactivated</h3>
     </template>
     <div class="space-y-4">
       <p class="text-center text-gray-700">
-        Your trial period has ended. Thank you for trying out Bingo Enterprise!
+        Your account has been deactivated.
       </p>
 
       <p class="text-sm text-gray-600 text-center">
-        To continue using Bingo Enterprise, please contact our support team at
+        To restore access, please contact your administrator at
         <a href="mailto:support@thebingo.ai" class="text-purple-600 hover:text-purple-700 hover:underline">support@thebingo.ai</a>.
       </p>
     </div>

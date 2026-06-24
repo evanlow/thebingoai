@@ -35,6 +35,7 @@ export interface KpiWidgetConfig {
   label: string
   prefix?: string
   suffix?: string
+  format?: 'number' | 'currency' | 'percent' | 'date' | 'text'
   roundValue?: boolean
   decimalPlaces?: number
   // kept for back-compat with existing saved dashboards
@@ -229,6 +230,13 @@ export interface FilterWidgetConfig {
 // DataSource mapping types — one per refreshable widget type
 export type ChartAggregation = 'sum' | 'avg' | 'count' | 'countDistinct' | 'min' | 'max' | 'none'
 
+// Datetime drill-down buckets for time-series charts. Truncation buckets
+// (year…hour) collapse a timestamp to a period; "part" buckets
+// (hour_of_day / day_of_week / month_of_year) extract a repeating slice.
+export type ChartDateGranularity =
+  | 'none' | 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour'
+  | 'hour_of_day' | 'day_of_week' | 'month_of_year'
+
 export interface ChartDatasetColumn {
   column: string
   label: string
@@ -247,7 +255,10 @@ export interface ChartDataSourceMapping {
   xAggregation?: ChartAggregation
   yMetricColumn?: string
   yAggregation?: ChartAggregation
-  // Reserved for future stacked-bar breakdown (not in v1)
+  // Datetime drill-down: bucket the labelColumn (timestamp) before grouping
+  dateGranularity?: ChartDateGranularity
+  // Series breakdown: split the first metric into one series per distinct value
+  // of this column. Pair with options.stacked for stacked / 100%-stacked bars.
   breakdownColumn?: string
   options?: Record<string, any>
 }

@@ -12,6 +12,9 @@ class User(Base, TimestampMixin):
     hashed_password = Column(String, nullable=True)
     sso_id = Column(String, unique=True, nullable=True, index=True)
     auth_provider = Column(String, nullable=False, default="sso")
+    # False = account tombstoned via self-serve deletion (email masked to
+    # bingo-<ts>@<domain>). Used by the active-user filters (login guard, admin list).
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     org_id = Column(String, ForeignKey("organizations.id"), nullable=True)
     preferences = Column(JSON, nullable=True)  # {"name": "Ed", "role": "PM", "tone": "concise"}
     soul_prompt = Column(Text, nullable=True)

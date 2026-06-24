@@ -10,6 +10,7 @@ from backend.connectors.factory import get_connector_for_connection, get_connect
 import asyncio
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,56 @@ def _validate_widget_sql_schema(widgets: list) -> list[str]:
     return warnings
 
 
+# Chart types that operate on aggregated category data. Charts outside this
+# set (e.g. scatter) take raw X/Y metric pairs and must not be forced through
+# an aggregation check.
+_CATEGORY_CHART_TYPES = {"bar", "pie", "line", "area", "doughnut"}
+
+# Cheap pre-check for "does this SQL look aggregated?" — used by the
+# `chart_not_aggregated` rule. Match GROUP BY at any depth (incl. CTEs) and
+# any standard aggregate function. Intentionally permissive: a false negative
+# is fine (the LLM will get a violation to fix); a false positive would block
+# legitimate pre-aggregated charts.
+_AGGREGATE_FN_RE = re.compile(
+    r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(",
+    re.IGNORECASE,
+)
+_GROUP_BY_RE = re.compile(r"\bGROUP\s+BY\b", re.IGNORECASE)
+
+
+def _is_aggregated_sql(sql: str) -> bool:
+    """True if SQL already aggregates (GROUP BY or an aggregate fn)."""
+    if not isinstance(sql, str) or not sql.strip():
+        return False
+    return bool(_GROUP_BY_RE.search(sql) or _AGGREGATE_FN_RE.search(sql))
+
+
+def cfg_title_for(wcfg: dict, fallback: str) -> str:
+    """Best-effort human label for a widget's config — used in error messages
+    so the LLM knows which widget the violation refers to."""
+    if not isinstance(wcfg, dict):
+        return fallback
+    cfg = wcfg.get("config") or {}
+    return (
+        cfg.get("title")
+        or cfg.get("label")
+        or cfg.get("content", "").splitlines()[0][:40]
+        or fallback
+    )
+
+
+def _datasetcolumns_aggregation_present(ds: dict | None) -> bool:
+    """True if dataSource.mapping.datasetColumns declares an `aggregation` key
+    on every entry — the escape hatch for pre-aggregated source tables."""
+    if not isinstance(ds, dict):
+        return False
+    mapping = ds.get("mapping") or {}
+    cols = mapping.get("datasetColumns") or []
+    if not cols:
+        return False
+    return all(isinstance(c, dict) and "aggregation" in c for c in cols)
+
+
 def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
     """Pre-persistence verification gate for create_dashboard / update_dashboard.
 
@@ -285,6 +336,32 @@ def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
                     "code": "invalid_dataSource",
                     "message": ds_error,
                     "fix_hint": "Fix the dataSource shape per the create_dashboard schema.",
+                })
+
+            # Aggregation guard for category charts. A bar/pie/line/area/doughnut
+            # without GROUP BY, an aggregate fn, or `aggregation` on every
+            # datasetColumns entry will return raw row-level data and render as
+            # noise (thousands of repeated labels). Reject pre-execution so the
+            # LLM can fix & retry. Scatter is exempt — it takes metric pairs.
+            chart_type = (wcfg.get("config") or {}).get("type")
+            if chart_type in _CATEGORY_CHART_TYPES and not _is_aggregated_sql(
+                widget["dataSource"].get("sql") or ""
+            ) and not _datasetcolumns_aggregation_present(widget["dataSource"]):
+                violations.append({
+                    "widget_id": wid,
+                    "code": "chart_not_aggregated",
+                    "message": (
+                        f"Chart '{cfg_title_for(wcfg, wid)}' (type={chart_type}) "
+                        "has no GROUP BY, no aggregate function, and no "
+                        "datasetColumns[].aggregation — the SQL will return raw rows."
+                    ),
+                    "fix_hint": (
+                        "Either (a) use GROUP BY + COUNT/SUM/AVG in the SQL, "
+                        "or (b) set `aggregation` on each datasetColumns entry "
+                        "(e.g. \"sum\") so the transform groups-by labelColumn. "
+                        "Raw-row category charts (e.g. "
+                        "`SELECT role, left FROM t WHERE left=1`) are rejected."
+                    ),
                 })
 
     for rule_msg in verify_dashboard_widgets(widgets):
@@ -531,104 +608,71 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
         """
         Create a new dashboard with widgets and persist it to the database.
 
-        For SQL-backed widgets (chart/kpi/table with a dataSource field), the tool
-        automatically executes the SQL and populates widget.config with live data.
-        You only need to provide the SQL, mapping, and minimal config fields
-        (chart type, title, KPI label, table column definitions, etc.).
-        SQL execution errors are non-fatal — the dashboard is still created with
-        whatever config you provided.
+        Emit LEAN widgets — one flat param object per widget. The backend hydrates
+        them into full widget JSON: it wraps the type/config/dataSource envelope,
+        derives the dataSource mapping from your params, and assigns grid positions
+        automatically. Do NOT output position/x/y/w/h, the "widget" wrapper, or a
+        "mapping" object — those are added for you. For SQL-backed widgets the SQL
+        is auto-executed and the config is populated with live data.
 
         Args:
             title: Dashboard title (e.g. "Property Overview Dashboard")
             description: Brief description of what the dashboard shows
-            widgets: List of widget objects. CRITICAL: each widget.widget must have
-                a nested "config" sub-object. Layout uses a 12-column grid.
+            widgets: List of LEAN widget objects, in top-to-bottom reading order.
+                Each is a flat object: {"type": <widget_type>, ...params}. Call
+                get_widget_spec("all") for the full param list per type.
 
-                EXACT structure required:
+                EXACT shape (lean):
                 [
-                  {
-                    "id": "kpi_total_listings",
-                    "position": {"x": 0, "y": 0, "w": 3, "h": 2},
-                    "widget": {
-                      "type": "kpi",
-                      "config": {"label": "Total Listings"}
-                    },
-                    "dataSource": {
-                      "connectionId": <connection_id>,
-                      "sql": "SELECT COUNT(*) AS value FROM listings",
-                      "mapping": {"type": "kpi", "valueColumn": "value"}
-                    }
-                  },
-                  {
-                    "id": "chart_by_type",
-                    "position": {"x": 0, "y": 5, "w": 12, "h": 5},
-                    "widget": {
-                      "type": "chart",
-                      "config": {"type": "bar", "title": "Listings by Property Type"}
-                    },
-                    "dataSource": {
-                      "connectionId": <connection_id>,
-                      "sql": "SELECT property_type, COUNT(*) AS count FROM listings GROUP BY property_type",
-                      "mapping": {
-                        "type": "chart",
-                        "labelColumn": "property_type",
-                        "datasetColumns": [{"column": "count", "label": "Count"}]
-                      }
-                    }
-                  },
-                  {
-                    "id": "table_top",
-                    "position": {"x": 0, "y": 6, "w": 12, "h": 5},
-                    "widget": {
-                      "type": "table",
-                      "config": {
-                        "columns": [{"key": "address", "label": "Address"}, {"key": "price", "label": "Price", "sortable": true}]
-                      }
-                    },
-                    "dataSource": {
-                      "connectionId": <connection_id>,
-                      "sql": "SELECT address, price FROM listings ORDER BY price DESC LIMIT 20",
-                      "mapping": {
-                        "type": "table",
-                        "columnConfig": [{"column": "address", "label": "Address"}, {"column": "price", "label": "Price", "sortable": true}]
-                      }
-                    }
-                  }
+                  {"type": "filter", "controls": [
+                     {"type": "date_range", "label": "Date", "key": "date", "column": "order_date",
+                      "dateRangeSource": {"connectionId": 1, "sql": "SELECT MIN(o.order_date) AS min_date, MAX(o.order_date) AS max_date FROM orders o"},
+                      "dateRangeDefault": "full"}]},
+                  {"type": "kpi", "label": "Total Revenue", "prefix": "$", "valueColumn": "revenue",
+                   "aggregation": "sum", "connectionId": 1, "sql": "SELECT SUM(o.amount) AS revenue FROM orders o",
+                   "sources": ["orders"]},
+                  {"type": "chart", "chartType": "bar", "title": "Revenue by Region",
+                   "labelColumn": "region",
+                   "datasetColumns": [{"column": "revenue", "label": "Revenue", "aggregation": "sum"}],
+                   "options": {"sortBy": "value", "sortDirection": "desc"},
+                   "connectionId": 1, "sql": "SELECT o.region, SUM(o.amount) AS revenue FROM orders o GROUP BY o.region",
+                   "sources": ["orders"]},
+                  {"type": "text", "content": "## Detail"},
+                  {"type": "table", "title": "Top Orders",
+                   "columns": [{"column": "order_id", "label": "Order"},
+                               {"column": "amount", "label": "Amount", "sortable": true, "format": "currency"}],
+                   "connectionId": 1, "sql": "SELECT order_id, amount FROM orders ORDER BY amount DESC LIMIT 20",
+                   "sources": ["orders"]}
                 ]
 
-                Per-type config fields (non-data fields only — data is auto-populated from dataSource):
-                - kpi: label (string, required), prefix (optional), suffix (optional)
-                - chart: type ("bar"|"line"|"pie"|"doughnut"|"area"|"scatter"), title (optional),
-                    options (optional): {stacked, indexAxis, showValues, showLegend, legendPosition,
-                    showGrid, sortBy, sortDirection}
-                - table: columns: [{key, label, sortable?}] (defines headers; rows are auto-populated)
-                - pivot_table: title, rowDimensions: [{column, label}], columnDimensions (max 2),
-                    values: [{column, label, aggregation}] (SQL returns granular rows; pivot is computed client-side)
-                - text: content (markdown string), alignment (optional)
-                - filter: controls: [{type, label, key, column (required), optionsSource: {connectionId, sql} for dropdown}]
+                Per-type params (flat — no nested config/mapping):
+                - kpi: label*, valueColumn*, aggregation?, prefix?, suffix?, connectionId*, sql*, sources?
+                - chart: chartType*, title?, labelColumn?, datasetColumns* [{column,label}],
+                    options? {stacked, indexAxis, showValues, showLegend, legendPosition, sortBy,
+                    sortDirection}, connectionId*, sql*, sources?
+                - table: columns* [{column, label, sortable?, format?}] (write each column ONCE),
+                    title?, connectionId*, sql*, sources?
+                - pivot_table: rowDimensions* [{column,label}], columnDimensions? (max 2),
+                    values* [{column, label, aggregation}], title?, connectionId*, sql*, sources?
+                - text: content* (markdown), alignment?
+                - filter: controls* [{type, label, key, column*, optionsSource {connectionId, sql} for dropdown}]
+                  (filter has NO connectionId/sql/mapping at widget level)
+                * = required.
 
-                Layout guidelines (12-column grid, storytelling structure):
-                  Row width rule (HARD CONSTRAINT): widget widths in each row MUST sum to exactly 12.
-                  Section 1 — Filter bar (y=0, the very top row):
-                    w=12, h=2. Add dropdowns for key categories, date_range for time columns.
-                  Section 2 — KPI row (y=2):
-                    3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
-                  Section headers (text widgets):
-                    w=12, h=1. Place at y=4, y=10, or y=15 as dividers between sections.
-                  Section 3 — Analysis charts (y=5 to y=14):
-                    SIDE-BY-SIDE pairs: two w=6 h=5 at same y, or w=4+w=8.
-                    w=12 h=6 ONLY for time-series line/area. Pie/doughnut: w=4 or w=6 only.
-                    Use 2+ different chart types. Aim for 3-5 charts.
-                  Section 4 — Detail table (y=16+):
-                    w=12, h=5. A pivot_table here is w=12 alone, or w=8 paired with a w=4 chart.
-                  Target 9-13 widgets total (min 7, max 14).
+                Layout: emit widgets in the order they should read top-to-bottom
+                (filter → 3-4 KPIs → section header → 3-5 charts → 1-2 tables).
+                The backend packs each row to 12 columns. To emphasize ONE hero
+                chart, optionally set its "width" (e.g. 8) and the next chart's
+                "width" (e.g. 4); otherwise omit width. To preserve a widget across
+                an update, include its "id". Target 9-13 widgets (min 7, max 14).
 
-                Mapping types:
-                - chart:  { type, labelColumn, datasetColumns: [{column, label}] }
-                - kpi:    { type, valueColumn, trendValueColumn? (optional), sparklineXColumn? (optional), sparklineYColumn? (optional) }
-                - table:  { type, columnConfig: [{column, label, sortable?, format?}] }
-                - pivot_table: { type, columnConfig: [{column, label}] } (union of ALL columns referenced
-                    by rowDimensions + columnDimensions + values)
+                The backend fills only STRUCTURE (envelope, position, mapping wiring,
+                styling defaults). YOU must still make every design choice — chart
+                type, aggregation, chart options (sortBy/indexAxis/sliceLabel/stacked),
+                the 3-4 KPI exec-summary row — and emit them as params. Minimal
+                params ≠ skip design. Category charts (bar/pie/line/area) MUST
+                aggregate: either `GROUP BY` + `COUNT/SUM/AVG` in the SQL, OR set
+                `aggregation` on each `datasetColumns` entry (e.g. "sum").
 
             data_context: Optional dict from build_dashboard_context. If provided,
                 stored on the dashboard for dimension-aware filtering.
@@ -648,6 +692,11 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     "instead of calling create_dashboard."
                 ),
             })
+
+        # Hydrate lean agent params into full widget JSON (envelope + derived
+        # mapping + seed position) before any validation/SQL/persistence.
+        from backend.agents.dashboard_agent.widget_specs.widgets import build_widgets
+        widgets = build_widgets(widgets)
 
         # Pre-persistence verification gate (Bug 5).
         # Consolidates structural validation, KPI dedupe / count caps. Returns
@@ -802,9 +851,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
 
         Args:
             dashboard_id: ID of the dashboard to update (get from list_dashboards)
-            widgets: List of widget objects. Same format as create_dashboard — every widget
-                needs id, position, widget.type, widget.config, and optionally dataSource
-                with connectionId, sql, and mapping.
+            widgets: COMPLETE list of LEAN widget objects, same flat format as
+                create_dashboard ({"type": <type>, ...params}; no position/envelope/
+                mapping). Include each widget's "id" to preserve it across the update
+                (so unchanged widgets keep their identity for animation/diffing).
             title: New dashboard title (empty string keeps the existing title)
             description: New dashboard description (empty string keeps the existing description)
 
@@ -812,6 +862,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
             JSON with success, dashboard_id, and message
         """
         logger.info(f"update_dashboard called: dashboard_id={dashboard_id}, widget_count={len(widgets)}")
+
+        # Hydrate lean agent params into full widget JSON (same as create_dashboard).
+        from backend.agents.dashboard_agent.widget_specs.widgets import build_widgets
+        widgets = build_widgets(widgets)
 
         # Pre-persistence verification gate (Bug 5). Same gate as create_dashboard
         # so updates can't bypass the KPI / structural rules.

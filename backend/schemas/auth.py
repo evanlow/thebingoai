@@ -9,3 +9,7 @@ class TokenResponse(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token: str
+
+
+class DeleteAccountRequest(BaseModel):
+    refresh_token: str | None = None

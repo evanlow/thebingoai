@@ -1,0 +1,44 @@
+"""ChartWidget — lean chart params -> full widget JSON.
+
+Agent emits: chartType*, title?, labelColumn?, datasetColumns*, options?,
+            connectionId*, sql*, sources?
+Hydrates:    config{type:chartType, title, options, animation};
+            mapping{type:"chart", labelColumn, datasetColumns, chartType, ...}
+"""
+from .base import BaseWidget, _pick
+
+
+class ChartWidget(BaseWidget):
+    type = "chart"
+    has_data_source = True
+    default_position = {"w": 6, "h": 5, "minW": 3, "minH": 3}
+    params_doc = (
+        "## Chart params\n"
+        "- `chartType`* (bar|line|pie|doughnut|area|scatter)\n"
+        "- `title` (string), `description` (string)\n"
+        "- `options` (object): stacked, indexAxis, xAxisMode, showValues, showLegend,\n"
+        "  legendPosition, showGrid, sortBy, sortDirection, referenceLines, sliceLabel, ...\n"
+        "- `animation` (object)\n"
+        "- `labelColumn` (string): x-axis / slice names (all types except pure scatter)\n"
+        "- `datasetColumns` (array of {column, label, aggregation?, seriesType?, yAxisID?, ...})\n"
+        "- `dateGranularity` (string): bucket a timestamp labelColumn (year|quarter|month|week|day|hour|hour_of_day|day_of_week|month_of_year)\n"
+        "- `breakdownColumn` (string): split the first metric into one series per distinct value\n"
+        "- scatter: `xMetricColumn`, `yMetricColumn`, `xAggregation`, `yAggregation`\n"
+        "- `connectionId`* (int), `sql`* (string), `sources` (string[])\n"
+    )
+
+    _CONFIG_KEYS = ("title", "description", "options", "animation")
+    _MAPPING_KEYS = ("labelColumn", "datasetColumns", "dateGranularity",
+                     "breakdownColumn", "xMetricColumn",
+                     "yMetricColumn", "xAggregation", "yAggregation")
+
+    def _config(self, params: dict) -> dict:
+        return {"type": params.get("chartType"), **_pick(params, self._CONFIG_KEYS)}
+
+    def _mapping(self, params: dict) -> dict:
+        # chartType is required by transform_widget_data (scatter {x,y} depends on it).
+        return {
+            "type": "chart",
+            "chartType": params.get("chartType"),
+            **_pick(params, self._MAPPING_KEYS),
+        }

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { stripLeadingNumber } from '~/utils/stripLeadingNumber'
 
 // ── kpiColor ──────────────────────────────────────────────────────────
 // Mirrors BriefingCard.vue: delta_direction drives color; index cycles
@@ -15,13 +16,10 @@ function kpiColor(kpi: BriefingKpi, index: number): string {
 }
 
 // ── stripLeadingNumber ────────────────────────────────────────────────
-// Mirrors the function used in BriefingCard.vue and ChatBriefingView.vue.
-// Must strip LLM-generated number prefixes so the component's own
-// counter (e.g. "1.") doesn't produce "1. 1) Heading".
-
-function stripLeadingNumber(heading: string) {
-  return heading.replace(/^\d+[\.\)\:\s]\s*/, '').trim()
-}
+// Real function (imported above) — shared by BriefingCard.vue,
+// ChatBriefingView.vue and pages/briefings/[id].vue. Strips LLM-generated
+// number prefixes so the component's own counter (e.g. "1.") doesn't
+// produce "1. 1) Heading".
 
 // ── formatShort ───────────────────────────────────────────────────────
 // Mirrors the timestamp formatter used in InfoPanelBriefings.vue.

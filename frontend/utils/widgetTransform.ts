@@ -23,6 +23,41 @@ function stripTime(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
 }
 
+const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * Bucket a raw label value by date granularity for time-series charts.
+ * Returns [sortKey, display]. Mirrors backend widget_transform._bucket_label.
+ * Falls back to [value, value] when not a parseable date or granularity is none.
+ */
+function bucketLabel(value: any, granularity?: string): [any, any] {
+  if (!granularity || granularity === 'none') return [value, value]
+  const dt = parseDate(value)
+  if (!dt) return [value, value]
+  const y = dt.getFullYear()
+  const mo = dt.getMonth() + 1
+  const pad = (n: number) => String(n).padStart(2, '0')
+  switch (granularity) {
+    case 'year': return [y, String(y)]
+    case 'quarter': { const q = Math.floor((mo - 1) / 3) + 1; return [y * 10 + q, `${y}-Q${q}`] }
+    case 'month': return [y * 100 + mo, `${y}-${pad(mo)}`]
+    case 'week': {
+      // ISO-ish week start (Monday) as the chronological key + display
+      const dow = (dt.getDay() + 6) % 7 // 0 = Monday
+      const start = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - dow)
+      const key = start.getTime()
+      return [key, `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`]
+    }
+    case 'day': return [new Date(y, dt.getMonth(), dt.getDate()).getTime(), `${y}-${pad(mo)}-${pad(dt.getDate())}`]
+    case 'hour': return [new Date(y, dt.getMonth(), dt.getDate(), dt.getHours()).getTime(), `${y}-${pad(mo)}-${pad(dt.getDate())} ${pad(dt.getHours())}:00`]
+    case 'hour_of_day': return [dt.getHours(), `${pad(dt.getHours())}:00`]
+    case 'day_of_week': { const d = (dt.getDay() + 6) % 7; return [d, DOW_LABELS[d]] }
+    case 'month_of_year': return [mo, MONTH_LABELS[mo - 1]]
+    default: return [value, value]
+  }
+}
+
 function periodRanges(periodLabel: string, ref: Date): [Date, Date, Date, Date] {
   const today = stripTime(ref)
   const y = today.getFullYear(), m = today.getMonth(), d = today.getDate()
@@ -142,25 +177,68 @@ function transformChart(result: SqliteQueryResult, mapping: Record<string, any>)
 
   const hasAggregation = datasetCols.some(ds => ds.aggregation && ds.aggregation !== 'none')
   const missingData = opts.missingData as string | undefined
+  const granularity = mapping.dateGranularity as string | undefined
+  const hasGranularity = !!(granularity && granularity !== 'none')
+  const breakdownCol = mapping.breakdownColumn as string | undefined
+
+  const bucket = (v: any): [any, any] => hasGranularity ? bucketLabel(toJsonSafe(v), granularity) : [toJsonSafe(v), toJsonSafe(v)]
 
   let labels: any[]
   let datasets: any[]
 
-  if (hasAggregation) {
-    // Group rows by labelColumn, aggregate per group
+  if (breakdownCol) {
+    // Series breakdown: pivot the FIRST metric into one dataset per distinct
+    // breakdown value (mirrors backend transform_chart breakdown block).
+    const breakdownIdx = result.columns.indexOf(breakdownCol)
+    if (breakdownIdx === -1) throw new Error(`Column '${breakdownCol}' not found in query results`)
+    const measure = datasetCols[0]
+    const mIdx = result.columns.indexOf(measure.column)
+    if (mIdx === -1) throw new Error(`Column '${measure.column}' not found in query results`)
+    let agg = measure.aggregation || 'sum'
+    if (agg === 'none') agg = 'sum'
+
+    const labelKeys = new Map<any, any>()
+    labels = []
+    const seriesSeq: any[] = []
+    const seriesSeen = new Set<any>()
+    const cells = new Map<string, any[]>()
+    for (const row of result.rows) {
+      const [sk, disp] = bucket(row[labelIdx])
+      if (!labelKeys.has(disp)) { labelKeys.set(disp, sk); labels.push(disp) }
+      const bv = toJsonSafe(row[breakdownIdx])
+      if (!seriesSeen.has(bv)) { seriesSeen.add(bv); seriesSeq.push(bv) }
+      const ck = `${disp} ${bv}`
+      if (!cells.has(ck)) cells.set(ck, [])
+      cells.get(ck)!.push(toJsonSafe(row[mIdx]))
+    }
+    if (hasGranularity) labels.sort((a, b) => (labelKeys.get(a) > labelKeys.get(b) ? 1 : labelKeys.get(a) < labelKeys.get(b) ? -1 : 0))
+
+    datasets = seriesSeq.map(bv => {
+      let data: any[] = labels.map(d => {
+        const vals = cells.get(`${d} ${bv}`) ?? []
+        return vals.length ? (aggregateValues(vals, agg) ?? null) : null
+      })
+      if (missingData === 'lineToZero') data = data.map((v: any) => v == null ? 0 : v)
+      return { label: bv == null ? '(null)' : String(bv), data }
+    })
+  } else if (hasAggregation || hasGranularity) {
+    // Group rows by (bucketed) labelColumn, aggregate per group
     const labelOrder: any[] = []
+    const labelKeys = new Map<any, any>()
     const groups = new Map<any, any[][]>()
     for (const row of result.rows) {
-      const lv = toJsonSafe(row[labelIdx])
-      if (!groups.has(lv)) { groups.set(lv, []); labelOrder.push(lv) }
+      const [sk, lv] = bucket(row[labelIdx])
+      if (!groups.has(lv)) { groups.set(lv, []); labelOrder.push(lv); labelKeys.set(lv, sk) }
       groups.get(lv)!.push(row)
     }
+    if (hasGranularity) labelOrder.sort((a, b) => (labelKeys.get(a) > labelKeys.get(b) ? 1 : labelKeys.get(a) < labelKeys.get(b) ? -1 : 0))
     labels = labelOrder
 
     datasets = datasetCols.map(ds => {
       const colIdx = result.columns.indexOf(ds.column)
       if (colIdx === -1) throw new Error(`Column '${ds.column}' not found in query results`)
-      const agg = ds.aggregation || 'sum'
+      let agg = ds.aggregation || 'sum'
+      if (agg === 'none' && hasGranularity) agg = 'sum'
       let data: any[] = labels.map(lv => {
         const rows = groups.get(lv) ?? []
         const vals = rows.map(row => toJsonSafe(row[colIdx]))

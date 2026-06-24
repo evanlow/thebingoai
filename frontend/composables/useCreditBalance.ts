@@ -10,6 +10,7 @@ interface BalanceResponse {
   used_today: number
   remaining: number
   resets_at: string
+  org_exhausted?: boolean
 }
 
 export const useCreditBalance = () => {
@@ -22,6 +23,9 @@ export const useCreditBalance = () => {
   const resetsAt = useState<string>('credit:resetsAt', () => '')
   const loading = useState<boolean>('credit:loading', () => false)
   const error = useState<string | null>('credit:error', () => null)
+  // Workspace (org) credit pool drained — distinct from the daily quota so the
+  // banner can show a workspace-specific message instead of "resets at midnight".
+  const orgExhausted = useState<boolean>('credit:orgExhausted', () => false)
 
   const isExhausted = computed(() => remaining.value <= 0)
 
@@ -36,6 +40,7 @@ export const useCreditBalance = () => {
       usedToday.value = data.used_today
       remaining.value = data.remaining
       resetsAt.value = data.resets_at
+      orgExhausted.value = data.org_exhausted ?? false
     } catch (err: any) {
       error.value = err?.message ?? 'Failed to fetch credit balance'
     } finally {
@@ -54,6 +59,7 @@ export const useCreditBalance = () => {
     remaining,
     resetsAt,
     isExhausted,
+    orgExhausted,
     loading,
     error,
     refresh: fetchBalance,

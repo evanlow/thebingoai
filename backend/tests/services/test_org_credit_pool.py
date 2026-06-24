@@ -139,3 +139,34 @@ class TestCreditContextManagerOrgPool:
         # No exception — pool branch skipped.
         mgr._check()
         mgr._record()
+
+
+class TestSpendOrgPool:
+    def _org(self, db, *, recurring, topup):
+        import uuid
+        from backend.models.organization import Organization
+        # recurring is derived; seed via credit_balance(total) + topup_balance
+        org = Organization(
+            id=str(uuid.uuid4()), name=f"o-{uuid.uuid4()}",
+            credit_balance=recurring + topup, topup_balance=topup,
+        )
+        db.add(org); db.commit()
+        return org
+
+    def test_spend_drains_recurring_first(self, db_session):
+        from backend.services.org_credit_pool import spend_org_pool, read_org_pool_breakdown
+        org = self._org(db_session, recurring=10, topup=5)
+        assert spend_org_pool(db_session, org.id, 3) == 12  # new total
+        assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 7, "topup": 5, "total": 12}
+
+    def test_spend_spills_into_topup(self, db_session):
+        from backend.services.org_credit_pool import spend_org_pool, read_org_pool_breakdown
+        org = self._org(db_session, recurring=2, topup=5)
+        assert spend_org_pool(db_session, org.id, 4) == 3
+        assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 0, "topup": 3, "total": 3}
+
+    def test_spend_blocks_when_total_insufficient(self, db_session):
+        from backend.services.org_credit_pool import spend_org_pool, read_org_pool_breakdown
+        org = self._org(db_session, recurring=1, topup=1)
+        assert spend_org_pool(db_session, org.id, 3) is None
+        assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 1, "topup": 1, "total": 2}

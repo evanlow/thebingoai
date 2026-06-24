@@ -79,25 +79,6 @@
 
         <!-- Row 3: Dropdown-specific options -->
         <template v-if="control.type === 'dropdown'">
-          <!-- Multi-select toggle -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-xs text-gray-600">Allow multiple</span>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="!!control.multiple"
-              :disabled="!editMode"
-              class="relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-              :class="control.multiple ? 'bg-indigo-600' : 'bg-gray-200'"
-              @click="editMode && (control.multiple = !control.multiple, emitUpdate())"
-            >
-              <span
-                class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5"
-                :class="control.multiple ? 'translate-x-3 ml-0.5' : 'translate-x-0 ml-0.5'"
-              />
-            </button>
-          </div>
-
           <!-- Options source toggle -->
           <div class="flex items-center gap-2">
             <button
