@@ -65,6 +65,23 @@ class MySQLConnector(BaseConnector):
         """MySQL default schema is the connected database."""
         return self.database
 
+    def _get_row_count(self, cursor, schema: str, table_name: str) -> int:
+        """Use information_schema.tables.table_rows (InnoDB estimate, no scan).
+        Falls back to an exact COUNT(*) when the estimate is missing/zero."""
+        try:
+            cursor.execute(
+                "SELECT table_rows AS count FROM information_schema.tables "
+                "WHERE table_schema = %s AND table_name = %s",
+                (schema, table_name),
+            )
+            row = cursor.fetchone()
+            est = (row['count'] if isinstance(row, dict) else row[0]) if row else None
+            if est is not None and est > 0:
+                return int(est)
+        except Exception:
+            pass
+        return super()._get_row_count(cursor, schema, table_name)
+
 
 def dlt_source_for(connection, extraction_config: dict | None = None):
     from backend.connectors.sql_dlt import sql_dlt_source
