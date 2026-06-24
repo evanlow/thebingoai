@@ -1,0 +1,61 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { ref, computed, watch } from 'vue'
+
+// Regression: a briefing whose status is 'generating' has payload === null.
+// The Ready branch derefs briefing.payload!.headline, so without a dedicated
+// generating branch the page crashes on render (bit twice). Lock both states.
+
+vi.stubGlobal('ref', ref)
+vi.stubGlobal('computed', computed)
+vi.stubGlobal('watch', watch)
+vi.stubGlobal('useRoute', () => ({ params: { id: '48' } }))
+
+let briefingValue: any = null
+vi.stubGlobal('useBriefing', () => ({
+  briefing: ref(briefingValue),
+  loading: ref(false),
+  refresh: vi.fn(),
+}))
+vi.stubGlobal('useBriefingPdf', () => ({
+  exporting: ref(false),
+  markWidgetLoaded: vi.fn(),
+  resetWidgets: vi.fn(),
+  exportPdf: vi.fn(),
+}))
+
+import BriefingPage from '~/pages/briefings/[id].vue'
+
+const mountPage = () =>
+  mount(BriefingPage, {
+    attachTo: document.body,
+    global: { stubs: { BriefingWidgetEmbed: true } },
+  })
+
+describe('briefings/[id]', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('renders the generating skeleton without crashing when payload is null', () => {
+    briefingValue = { id: 48, status: 'generating', payload: null, dashboard_id: 40, created_at: '2026-06-19T00:00:00Z' }
+    expect(() => mountPage()).not.toThrow()
+    expect(document.body.textContent).toContain('Generating your briefing')
+    expect(document.body.textContent).not.toContain('Compiled by Bingo')
+  })
+
+  it('renders the headline once the briefing is ready', () => {
+    briefingValue = {
+      id: 48,
+      status: 'ready',
+      dashboard_id: 40,
+      created_at: '2026-06-19T00:00:00Z',
+      date_range_from: null,
+      date_range_to: null,
+      payload: { headline: 'Sales up 12%', deck: 'Strong quarter', kpis: [], sections: [], key_takeaways: ['Grow'] },
+    }
+    mountPage()
+    expect(document.body.textContent).toContain('Sales up 12%')
+    expect(document.body.textContent).toContain('Compiled by Bingo')
+  })
+})

@@ -1,7 +1,7 @@
 <template>
-  <button class="hdr-btn" :disabled="busy" @click="onClick">
+  <button class="hdr-btn" @click="onClick">
     <Sparkles class="h-3.5 w-3.5" />
-    <span class="hidden sm:inline">{{ busy ? 'Briefing…' : 'Brief me' }}</span>
+    <span class="hidden sm:inline">Brief me</span>
   </button>
 </template>
 
@@ -9,21 +9,11 @@
 import { Sparkles } from 'lucide-vue-next'
 
 const props = defineProps<{ dashboardId: number }>()
-const busy = ref(false)
-const { fetchWithRefresh } = useApi()
-const { refresh: refreshBriefingsList } = useBriefingsList()
 
-async function onClick() {
-  busy.value = true
-  try {
-    const resp = await fetchWithRefresh(
-      `/api/dashboards/${props.dashboardId}/brief`,
-      { method: 'POST' },
-    )
-    refreshBriefingsList()
-    navigateTo(`/chat?briefing=${resp.briefing_id}`)
-  } finally {
-    busy.value = false
-  }
+// Navigate to the generating page immediately. The briefing is created there
+// (POST /brief), so the click feels instant instead of blocking on a POST that
+// queues behind the dashboard's in-flight widget-refresh requests.
+function onClick() {
+  navigateTo(`/briefings/new?dashboard_id=${props.dashboardId}`)
 }
 </script>

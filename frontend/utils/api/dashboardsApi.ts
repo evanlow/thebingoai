@@ -74,5 +74,16 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
         method: 'POST',
       }) as Promise<{ briefing_id: number; status: string }>
     },
+    async setBriefSchedule(id: number, data: { schedule_type: string; schedule_value: string; timezone?: string }) {
+      return fetchWithRefresh(`/api/dashboards/${id}/analysis-schedule`, {
+        method: 'POST',
+        body: data,
+      })
+    },
+    async removeBriefSchedule(id: number) {
+      return fetchWithRefresh(`/api/dashboards/${id}/analysis-schedule`, {
+        method: 'DELETE',
+      })
+    },
   }
 }

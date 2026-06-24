@@ -59,3 +59,36 @@ def test_get_briefing_404_when_owned_by_another_user(authenticated_client, db_se
     db_session.add(b); db_session.commit()
     resp = authenticated_client.get(f"/api/briefings/{b.id}")
     assert resp.status_code == 404
+
+
+def test_post_brief_402_when_out_of_credits(authenticated_client, db_session, sample_dashboard):
+    from backend.services.token_tracking_service import InsufficientCreditsError
+
+    class _OutOfCredits:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            raise InsufficientCreditsError("no credits", reason="user_daily")
+
+        async def __aexit__(self, *a):
+            return False
+
+    with patch("backend.plugins.loader.get_loaded_plugins", return_value=set()), \
+         patch("backend.services.token_tracking_service.CreditContextManager", _OutOfCredits), \
+         patch("backend.api.briefings.generate_briefing") as task_mock:
+        resp = authenticated_client.post(f"/api/dashboards/{sample_dashboard.id}/brief")
+
+    assert resp.status_code == 402
+    detail = resp.json()["detail"]
+    assert detail["error_code"] == "insufficient_credits"
+    assert detail["cap"] == "user_daily"
+    task_mock.delay.assert_not_called()
+
+    from backend.models.briefing import Briefing
+    count = (
+        db_session.query(Briefing)
+        .filter(Briefing.dashboard_id == sample_dashboard.id)
+        .count()
+    )
+    assert count == 0

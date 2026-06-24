@@ -16,6 +16,9 @@ vi.stubGlobal('watch', (_src: any, cb: any, opts?: any) => {
 const mockFetch = vi.fn()
 vi.stubGlobal('useApi', () => ({ fetchWithRefresh: mockFetch }))
 
+const mockCreditRefresh = vi.fn()
+vi.stubGlobal('useCreditBalance', () => ({ refresh: mockCreditRefresh }))
+
 import { useBriefing } from '~/composables/useBriefing'
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -80,6 +83,22 @@ describe('useBriefing', () => {
     )
     expect(pollingCalls).toHaveLength(0)
     setIntervalSpy.mockRestore()
+  })
+
+  it('refreshes the credit balance when a briefing turns ready', async () => {
+    mockCreditRefresh.mockClear()
+    mockFetch.mockResolvedValue(makeBriefing({ status: 'ready' }))
+    useBriefing(1)
+    await tick()
+    expect(mockCreditRefresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not refresh credits for a still-generating briefing', async () => {
+    mockCreditRefresh.mockClear()
+    mockFetch.mockResolvedValue(makeBriefing({ status: 'generating' }))
+    useBriefing(1)
+    await tick()
+    expect(mockCreditRefresh).not.toHaveBeenCalled()
   })
 
   it('handles reactive briefingId changes', async () => {

@@ -1,6 +1,8 @@
 """Verify HeartbeatJobResponse exposes the `kind` discriminator
 (needed by the Settings → Jobs UI to badge briefing-kind jobs)."""
 
+from unittest.mock import MagicMock, patch
+
 from backend.models.heartbeat_job import HeartbeatJob
 
 
@@ -52,3 +54,26 @@ def test_create_job_defaults_kind_to_chat(authenticated_client):
     )
     assert resp.status_code == 201
     assert resp.json()["kind"] == "chat"
+
+
+def test_trigger_run_briefing_kind_dispatches_briefing_task(authenticated_client, db_session, sample_user):
+    """Run now on a briefing-kind job must generate a real briefing, not a summary."""
+    job = _create_job(db_session, sample_user.id, kind="briefing", name="Dashboard Analysis: X")
+    with patch("backend.tasks.heartbeat_tasks.execute_heartbeat_briefing.delay",
+               return_value=MagicMock(id="t1")) as brief_delay, \
+         patch("backend.tasks.heartbeat_tasks.execute_heartbeat_job.delay") as orch_delay:
+        resp = authenticated_client.post(f"/api/heartbeat-jobs/{job.id}/run")
+    assert resp.status_code == 202
+    brief_delay.assert_called_once_with(job.id)
+    orch_delay.assert_not_called()
+
+
+def test_trigger_run_chat_kind_dispatches_orchestrator(authenticated_client, db_session, sample_user):
+    job = _create_job(db_session, sample_user.id, kind="chat", name="standup")
+    with patch("backend.tasks.heartbeat_tasks.execute_heartbeat_job.delay",
+               return_value=MagicMock(id="t2")) as orch_delay, \
+         patch("backend.tasks.heartbeat_tasks.execute_heartbeat_briefing.delay") as brief_delay:
+        resp = authenticated_client.post(f"/api/heartbeat-jobs/{job.id}/run")
+    assert resp.status_code == 202
+    orch_delay.assert_called_once_with(job.id)
+    brief_delay.assert_not_called()

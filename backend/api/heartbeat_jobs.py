@@ -245,6 +245,18 @@ async def trigger_run(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    from backend.tasks.heartbeat_tasks import execute_heartbeat_job
-    task = execute_heartbeat_job.delay(job_id)
+    # Route by kind, mirroring dispatch_heartbeat_jobs — a briefing-kind job must
+    # generate a real Briefing (execute_heartbeat_briefing), not the generic
+    # orchestrator chat summary (execute_heartbeat_job).
+    from backend.tasks.heartbeat_tasks import (
+        execute_heartbeat_job,
+        execute_heartbeat_briefing,
+        execute_agent_heartbeat_job,
+    )
+    if getattr(job, "kind", "chat") == "briefing":
+        task = execute_heartbeat_briefing.delay(job_id)
+    elif job.agent_type and job.agent_type != "orchestrator":
+        task = execute_agent_heartbeat_job.delay(job_id)
+    else:
+        task = execute_heartbeat_job.delay(job_id)
     return {"task_id": task.id, "job_id": job_id}
