@@ -50,6 +50,12 @@ def _try_insert(db: Session, row) -> bool:
     except IntegrityError:
         sp.rollback()
         return False
+    # Release the SAVEPOINT on success. Without this every inserted row leaves an
+    # open nested savepoint; the outer commit then releases them recursively and
+    # a large connection (~2000 pipeline+transform rows) overflows Python's
+    # recursion limit -> RecursionError. RELEASE keeps nesting flat; the outer
+    # transaction still controls the final commit/rollback.
+    sp.commit()
     return True
 
 
@@ -61,6 +67,38 @@ def _resolve_extraction_config(template: PipelineTemplate, connection) -> dict:
 def _resolve_target_table(template: PipelineTemplate, connection) -> str:
     tt = template.target_table
     return tt(connection) if callable(tt) else tt
+
+
+def _spec_from_template(template: PipelineTemplate, connection) -> Optional[dict]:
+    """Map a per-table PipelineTemplate to a PipelineSchedule.tables spec dict."""
+    src_tables = (_resolve_extraction_config(template, connection).get("tables") or [])
+    if not src_tables:
+        return None
+    return {
+        "source_table": src_tables[0],
+        "target_table": _resolve_target_table(template, connection),
+        "mode": template.mode,
+        "incremental_key": template.incremental_key,
+        "unique_key": list(template.unique_key) if template.unique_key else None,
+        "enabled": True,
+    }
+
+
+def build_specs_for_tables(connection, reg, db: Session, selected: list[str]) -> list[dict]:
+    """Re-derive PipelineSchedule.tables specs for `selected` source tables.
+
+    Reuses the same per-table introspection as connection-create materialization
+    (`_build_sql_pipeline_templates` → watermark / PK / target naming) so a schedule
+    edit produces specs identical to what create would. Returns specs in `selected`
+    order; unknown table names are skipped.
+    """
+    templates = _build_sql_pipeline_templates(connection, reg, db)
+    by_source: dict[str, dict] = {}
+    for tmpl in templates:
+        spec = _spec_from_template(tmpl, connection)
+        if spec is not None:
+            by_source[spec["source_table"]] = spec
+    return [by_source[t] for t in selected if t in by_source]
 
 
 def _materialize_pipeline(
@@ -549,6 +587,91 @@ def _apply_mysql_t1_schedule(new_pipelines: list[Pipeline], connection, db: Sess
                 pass
 
 
+def _materialize_sql_pipeline_v2(
+    connection,
+    scope: OwnerScope,
+    connection_fp: Optional[str],
+    dynamic_templates: list[PipelineTemplate],
+    db: Session,
+) -> list[Pipeline]:
+    """New model: collapse the per-table detection templates into ONE Pipeline
+    (cron null) + ONE default daily schedule whose `tables` JSON carries every
+    table's ingest spec. Returns [pipeline] when newly created, else [].
+
+    Idempotent: if a new-model pipeline (cron null) already exists for this
+    (scope, connection), leaves it and its schedules untouched — avoids
+    clobbering any schedules the user has since customised.
+    """
+    from backend.models.pipeline import PipelineSchedule
+    from backend.utils.cron import compute_next_run
+
+    specs: list[dict] = []
+    for tmpl in dynamic_templates:
+        spec = _spec_from_template(tmpl, connection)
+        if spec is not None:
+            specs.append(spec)
+    if not specs:
+        return []
+
+    # Already has a new-model pipeline (cron null) → idempotent, leave it.
+    existing = db.query(Pipeline).filter(
+        Pipeline.owner_scope_kind == scope.kind,
+        Pipeline.owner_scope_id == scope.id,
+        Pipeline.source_connection_id == connection.id,
+        Pipeline.cron.is_(None),
+    ).first()
+    if existing is not None:
+        return []
+
+    # Already has LEGACY pipelines (cron set) → don't mix models, or both the
+    # legacy cron rows and the new schedule would ingest the same tables.
+    # Existing connections are migrated in a separate step.
+    legacy = db.query(Pipeline).filter(
+        Pipeline.owner_scope_kind == scope.kind,
+        Pipeline.owner_scope_id == scope.id,
+        Pipeline.source_connection_id == connection.id,
+        Pipeline.cron.isnot(None),
+    ).first()
+    if legacy is not None:
+        return []
+
+    pipeline = Pipeline(
+        id=str(_uuid.uuid4()),
+        owner_scope_kind=scope.kind,
+        owner_scope_id=scope.id,
+        source_connection_id=connection.id,
+        target_table=None,
+        name=getattr(connection, "name", None) or f"conn_{connection.id}",
+        cron=None,
+        mode="full",
+        extraction_config={},
+        pipeline_fingerprint=compute_pipeline_fingerprint(
+            connection_fp, {"connection_id": connection.id},
+        ),
+        enabled=True,
+        created_by_user_id=connection.user_id,
+    )
+    if not _try_insert(db, pipeline):
+        return []  # race: another worker created it
+
+    cron = "0 2 * * *"
+    sched = PipelineSchedule(
+        id=str(_uuid.uuid4()),
+        pipeline_id=pipeline.id,
+        name="Daily",
+        cron=cron,
+        timezone="UTC",
+        tables=specs,
+        enabled=True,
+    )
+    try:
+        sched.next_run_at = compute_next_run(cron, "UTC")
+    except Exception:
+        logger.debug("compute_next_run failed for default schedule", exc_info=True)
+    _try_insert(db, sched)
+    return [pipeline]
+
+
 def materialize_templates_for_connection(
     connection,
     registration: ConnectorRegistration,
@@ -568,46 +691,52 @@ def materialize_templates_for_connection(
     if _is_dynamic_sql_registration(registration):
         dynamic_templates = _build_sql_pipeline_templates(connection, registration, db)
 
-    pipeline_templates = dynamic_templates or list(registration.pipeline_templates or [])
-
     new_pipelines: list[Pipeline] = []
-    for tmpl in pipeline_templates:
-        try:
-            row = _materialize_pipeline(tmpl, connection, scope, connection_fp, db)
-            if row is not None:
-                new_pipelines.append(row)
-        except Exception:
-            logger.exception(
-                "Failed to materialize pipeline template '%s' for connection %s",
-                tmpl.name, connection.id,
-            )
+    if dynamic_templates:
+        # New model: one Pipeline + one default schedule for the whole
+        # connection (per-table specs live in the schedule's `tables` JSON).
+        new_pipelines = _materialize_sql_pipeline_v2(
+            connection, scope, connection_fp, dynamic_templates, db,
+        )
+    else:
+        # Static-template connectors (GA4, etc.) keep per-template pipelines.
+        for tmpl in list(registration.pipeline_templates or []):
+            try:
+                row = _materialize_pipeline(tmpl, connection, scope, connection_fp, db)
+                if row is not None:
+                    new_pipelines.append(row)
+            except Exception:
+                logger.exception(
+                    "Failed to materialize pipeline template '%s' for connection %s",
+                    tmpl.name, connection.id,
+                )
 
-    # Commit the new pipeline rows NOW — before _apply_mysql_t1_schedule below
-    # queries the *source* DB (connector.get_table_schema). That call can hang on
-    # a slow/unreachable source, and we must not hold the
-    # uq_pipeline_scope_fingerprint lock (taken via the SAVEPOINT in _try_insert)
-    # across it: every pod runs this backfill at startup, so a held lock stalls
-    # concurrent pods idle-in-transaction for minutes and exhausts the managed
-    # PG's connection cap (the 2026-06-24 outage). The T-1 schedule below only
-    # UPDATEs these already-committed rows, so there is no insert-lock race left.
-    if new_pipelines:
+        # Commit the new pipeline rows NOW — before _apply_mysql_t1_schedule below
+        # queries the *source* DB (connector.get_table_schema). That call can hang on
+        # a slow/unreachable source, and we must not hold the
+        # uq_pipeline_scope_fingerprint lock (taken via the SAVEPOINT in _try_insert)
+        # across it: every pod runs this backfill at startup, so a held lock stalls
+        # concurrent pods idle-in-transaction for minutes and exhausts the managed
+        # PG's connection cap (the 2026-06-24 outage). The T-1 schedule below only
+        # UPDATEs these already-committed rows, so there is no insert-lock race left.
+        if new_pipelines:
+            try:
+                db.commit()
+            except Exception:
+                logger.warning(
+                    "commit of new pipelines failed for connection %s; rolling back",
+                    connection.id, exc_info=True,
+                )
+                db.rollback()
+
+        # MySQL: make the new pipelines self-running daily T-1 snapshots (cron +
+        # next_run_at + date-capped full snapshot). No-op for static templates.
         try:
-            db.commit()
+            _apply_mysql_t1_schedule(new_pipelines, connection, db)
         except Exception:
             logger.warning(
-                "commit of new pipelines failed for connection %s; rolling back",
-                connection.id, exc_info=True,
+                "MySQL T-1 schedule application failed for connection %s", connection.id, exc_info=True
             )
-            db.rollback()
-
-    # MySQL: make the new pipelines self-running daily T-1 snapshots (cron +
-    # next_run_at + date-capped full snapshot). Schema-driven, template intact.
-    try:
-        _apply_mysql_t1_schedule(new_pipelines, connection, db)
-    except Exception:
-        logger.warning(
-            "MySQL T-1 schedule application failed for connection %s", connection.id, exc_info=True
-        )
 
     # Dynamic SQL transforms = one stg_<table> view per dynamic pipeline.
     dynamic_transforms: list[TransformTemplate] = (
