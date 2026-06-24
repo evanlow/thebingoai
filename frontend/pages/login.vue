@@ -167,6 +167,6 @@ function handleGoogleLogin() {
 }
 
 definePageMeta({
-  layout: false
+  layout: 'blank'
 })
 </script>
