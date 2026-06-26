@@ -27,6 +27,32 @@ def compute_pipeline_fingerprint(connection_fingerprint: str | None, extraction_
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _run_chunks(specs, extraction_config, dlt_pipeline, source_fn, connection,
+                pipeline_id, schedule_id, _bytes) -> tuple[int, str | None]:
+    """Run `specs` in `_CHUNK_SIZE` chunks — one dlt run per chunk, in order.
+
+    Best-effort: a failing chunk is logged and skipped so later chunks still
+    ingest. Returns (bytes_written, error_message) where error_message is None
+    when every chunk succeeded.
+    """
+    bytes_written = 0
+    table_errors: list[str] = []
+    for i in range(0, len(specs), _CHUNK_SIZE):
+        chunk = specs[i:i + _CHUNK_SIZE]
+        ec = dict(extraction_config)
+        ec["table_specs"] = chunk
+        try:
+            bytes_written += _bytes(dlt_pipeline.run(source_fn(connection, ec)))
+        except Exception as exc:
+            targets = ", ".join(s.get("target_table") for s in chunk)
+            table_errors.append(f"[{targets}]: {exc}")
+            logger.exception(
+                "Pipeline %s schedule %s: chunk %d-%d failed",
+                pipeline_id, schedule_id, i, i + len(chunk),
+            )
+    return bytes_written, ("; ".join(table_errors)[:2000] if table_errors else None)
+
+
 def run_pipeline(
     pipeline_id: str,
     triggered_by: Literal["cron", "manual", "api", "bootstrap", "manual-backfill"],
@@ -233,22 +259,12 @@ def run_pipeline(
                     # so concurrent source connections stay bounded by the celery
                     # pipeline-worker cap. Best-effort: a failing chunk is logged and
                     # skipped so later chunks still ingest; errors mark the run failed.
-                    table_errors: list[str] = []
-                    for i in range(0, len(specs), _CHUNK_SIZE):
-                        chunk = specs[i:i + _CHUNK_SIZE]
-                        ec = dict(extraction_config)
-                        ec["table_specs"] = chunk
-                        try:
-                            bytes_written += _bytes(dlt_pipeline.run(source_fn(connection, ec)))
-                        except Exception as exc:
-                            targets = ", ".join(s.get("target_table") for s in chunk)
-                            table_errors.append(f"[{targets}]: {exc}")
-                            logger.exception(
-                                "Pipeline %s schedule %s: chunk %d-%d failed",
-                                pipeline_id, schedule.id, i, i + len(chunk),
-                            )
-                    if table_errors:
-                        error_message = "; ".join(table_errors)[:2000]
+                    _b, _err = _run_chunks(specs, extraction_config, dlt_pipeline,
+                                           source_fn, connection, pipeline_id,
+                                           schedule.id, _bytes)
+                    bytes_written += _b
+                    if _err:
+                        error_message = _err
                 else:
                     if pipeline.mode == "full":
                         write_disposition = "replace"
