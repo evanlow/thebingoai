@@ -265,6 +265,12 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                 with get_connector_for_connection(connection) as connector:
                     result = connector.execute_query(sql)
 
+            logger.info(
+                "[LATENCY][execute_query] SQL exec: %sms rows=%s connection=%s",
+                result.execution_time_ms,
+                result.row_count,
+                connection_id,
+            )
             # Build full result payload for frontend delivery
             full_result = {
                 "columns": result.columns,

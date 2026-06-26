@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -111,6 +112,7 @@ async def judge_response(
         if settings.judge_highlight_enabled:
             system_prompt += _HIGHLIGHT_RULES
 
+        _t0 = time.perf_counter()
         verdict: JudgeVerdict = await asyncio.wait_for(
             structured_llm.ainvoke(
                 [
@@ -122,6 +124,12 @@ async def judge_response(
                 ]
             ),
             timeout=settings.judge_timeout_seconds,
+        )
+        logger.info(
+            "[LATENCY][judge] LLM call: %dms (model=%s resolved=%s)",
+            int((time.perf_counter() - _t0) * 1000),
+            settings.judge_llm_model,
+            verdict.resolved,
         )
         return verdict
     except asyncio.TimeoutError:
