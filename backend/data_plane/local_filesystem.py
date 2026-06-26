@@ -16,6 +16,7 @@ from typing import Any, Iterator
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+import threading
 
 from backend.connectors.base import QueryResult, TableSchema
 from .scope import OwnerScope
@@ -31,6 +32,8 @@ class LocalFilesystemDataPlane:
     def __init__(self, root_path: str = _DEFAULT_ROOT) -> None:
         self._root = root_path
         self._conn: duckdb.DuckDBPyConnection | None = None
+        self._conn_lock = threading.RLock()
+        self._loaded_tables: set[tuple[str, str]] = set()
 
     # ── Internal path helpers ─────────────────────────────────────────────
 
@@ -109,12 +112,12 @@ class LocalFilesystemDataPlane:
     # ── DuckDB connection ─────────────────────────────────────────────────
 
     def _get_conn(self) -> duckdb.DuckDBPyConnection:
-        if self._conn is None:
-            from .duckdb_exec import apply_memory_guardrails
-
-            self._conn = duckdb.connect()
-            apply_memory_guardrails(self._conn)
-        return self._conn
+        with self._conn_lock:
+            if self._conn is None:
+                from .duckdb_exec import apply_memory_guardrails
+                self._conn = duckdb.connect()
+                apply_memory_guardrails(self._conn)
+            return self._conn
 
     def close(self) -> None:
         if self._conn is not None:
@@ -183,6 +186,7 @@ class LocalFilesystemDataPlane:
             raise
 
         logger.debug("Wrote parquet %s → %s", table, part_path)
+        self.invalidate_table(scope, table)
 
     def register_table(self, scope: OwnerScope, table: str, path: str, schema: pa.Schema) -> None:
         pass  # no-op for local: DuckDB reads files directly
@@ -229,9 +233,10 @@ class LocalFilesystemDataPlane:
     ) -> QueryResult:
         from .duckdb_exec import run_duckdb_query
 
-        conn = self._get_conn()
-        self._register_scope_views(conn, scope)
-        return run_duckdb_query(conn, sql, params)
+        with self._conn_lock:
+            conn = self._get_conn()
+            self._register_scope_views(conn, scope)
+            return run_duckdb_query(conn, sql, params)
 
     def list_tables(self, scope: OwnerScope, namespace: str | None = None) -> list[str]:
         scope_root = self._scope_root(scope)
@@ -311,8 +316,26 @@ class LocalFilesystemDataPlane:
 
     # ── Internal helpers ──────────────────────────────────────────────────
 
+    def invalidate_table(self, scope: OwnerScope, table: str) -> None:
+        """Drop the in-memory table for *scope/table* so it is reloaded on next query.
+
+        Called after a Parquet write so cached agents see fresh data.
+        """
+        key = (scope.as_path(), table)
+        self._loaded_tables.discard(key)
+        if self._conn is not None:
+            safe = table.replace("-", "_")
+            try:
+                self._conn.execute(f"DROP TABLE IF EXISTS {safe}")
+            except Exception:
+                pass
+
     def _register_scope_views(self, conn: duckdb.DuckDBPyConnection, scope: OwnerScope) -> None:
-        """Create/replace DuckDB VIEWs for every table in scope so SQL can use bare names."""
+        """Materialize each scope table into an in-memory DuckDB TABLE on first access.
+
+        Uses TABLE (not VIEW) so subsequent queries read from RAM, not Parquet on disk.
+        The _loaded_tables set prevents re-loading on every query call.
+        """
         from .duckdb_exec import build_scope_view_sql
 
         scope_root = self._scope_root(scope)
@@ -322,6 +345,12 @@ class LocalFilesystemDataPlane:
             table_root = os.path.join(scope_root, table)
             if not os.path.isdir(table_root):
                 continue
+            cache_key = (scope.as_path(), table)
+            if cache_key in self._loaded_tables:
+                continue
             glob_pattern = os.path.join(table_root, "dt=*", "*.parquet")
             unique_key = self._resolve_view_key(scope, table)
-            conn.execute(build_scope_view_sql(table, glob_pattern, unique_key))
+            view_sql = build_scope_view_sql(table, glob_pattern, unique_key)
+            table_sql = view_sql.replace("CREATE OR REPLACE VIEW ", "CREATE OR REPLACE TABLE ", 1)
+            conn.execute(table_sql)
+            self._loaded_tables.add(cache_key)

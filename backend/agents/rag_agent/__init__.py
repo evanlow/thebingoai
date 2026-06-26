@@ -29,7 +29,8 @@ async def invoke_rag_agent(
         result = await run_rag_query(
             question=question,
             thread_id=context.thread_id or "default",
-            namespace=namespace
+            namespace=namespace,
+            user_id=context.user_id,
         )
 
         return {

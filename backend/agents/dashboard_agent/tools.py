@@ -5,6 +5,9 @@ from backend.agents.context import AgentContext
 from backend.agents.data_agent.tools import build_data_agent_tools
 from backend.agents.dashboard_tools import build_inline_dashboard_tools
 from backend.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @tool
@@ -23,6 +26,7 @@ def get_widget_spec(widget_type: str) -> str:
     Returns:
         Complete configuration spec(s), separated by "---" when multiple
     """
+    logger.info("[C5_AUDIT] get_widget_spec called with type=%r", widget_type)
     from backend.agents.dashboard_agent.widget_specs import (
         get_widget_spec as _get_spec,
         get_available_types,

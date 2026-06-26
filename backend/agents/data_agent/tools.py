@@ -10,6 +10,7 @@ from backend.models.database_connection import DatabaseConnection
 from backend.connectors.factory import get_connector_registration
 from backend.agents.context import AgentContext
 from backend.services.query_result_store import store_query_result, publish_query_result
+import time
 import uuid
 import logging
 
@@ -260,14 +261,17 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
             # tables are materialized to the plane and `duckdb_widget_serving`
             # is on, run the query via DuckDB-over-DataPlane (Parquet) instead
             # of hammering the source DB. Cold/missing data → fall through.
+            _t0 = time.perf_counter()
             result = _serve_query_via_dataplane(connection, sql, db)
             if result is None:
                 with get_connector_for_connection(connection) as connector:
                     result = connector.execute_query(sql)
+            _total_ms = (time.perf_counter() - _t0) * 1000
 
             logger.info(
-                "[LATENCY][execute_query] SQL exec: %sms rows=%s connection=%s",
-                result.execution_time_ms,
+                "[LATENCY][execute_query] SQL exec: %sms total: %sms rows=%s connection=%s",
+                round(result.execution_time_ms),
+                round(_total_ms),
                 result.row_count,
                 connection_id,
             )

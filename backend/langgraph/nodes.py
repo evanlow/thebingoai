@@ -67,12 +67,15 @@ async def retrieve_context(state: ConversationState) -> ConversationState:
     }
 
 
-async def generate_response(state: ConversationState) -> ConversationState:
+async def generate_response(state: ConversationState, config=None) -> ConversationState:
     """
     Generate answer using LLM with retrieved context.
 
     Node: generate_response
     """
+    from langchain_core.messages import SystemMessage
+    from langchain_core.runnables import RunnableConfig
+
     question = state["question"]
     context = state["context"]
     provider = state["provider"]
@@ -92,25 +95,23 @@ async def generate_response(state: ConversationState) -> ConversationState:
     else:
         system_content = NO_CONTEXT_PROMPT
 
-    # Get LLM provider
-    llm = get_provider(provider, model)
+    # Use get_langchain_llm() so LangGraph propagates parent callbacks (e.g. Langfuse)
+    # into the LLM call. llm.chat() bypasses LangChain's callback chain entirely.
+    lc_llm = get_provider(provider, model).get_langchain_llm(temperature=temperature)
 
-    # Build messages for LLM
-    llm_messages = [
-        {"role": "system", "content": system_content},
-        {"role": "user", "content": question}
-    ]
+    # Build LangChain messages
+    lc_messages = [SystemMessage(content=system_content)]
 
     # Include recent conversation history for context
     history_limit = settings.rag_conversation_history_messages
     for msg in messages[-history_limit:]:
-        if isinstance(msg, HumanMessage):
-            llm_messages.insert(-1, {"role": "user", "content": msg.content})
-        elif isinstance(msg, AIMessage):
-            llm_messages.insert(-1, {"role": "assistant", "content": msg.content})
+        lc_messages.append(msg)
 
-    # Generate response
-    answer = await llm.chat(llm_messages, temperature=temperature)
+    lc_messages.append(HumanMessage(content=question))
+
+    # Invoke via LangChain runnable so config callbacks propagate
+    result = await lc_llm.ainvoke(lc_messages, config=config or RunnableConfig())
+    answer = result.content
 
     # Add to message history
     new_messages = [
