@@ -25,7 +25,7 @@
         ? 'flex items-center gap-2 overflow-x-auto px-4 pb-3 border-b border-gray-200 dark:border-neutral-700 shrink-0'
         : 'w-56 border-r border-gray-200 dark:border-neutral-700 flex flex-col justify-between flex-shrink-0 overflow-hidden'"
     >
-      <nav :class="isMobile ? 'flex gap-1' : 'flex-1 min-h-0 overflow-y-auto space-y-1'">
+      <nav :class="isMobile ? 'flex gap-1' : 'flex-1 min-h-0 overflow-y-auto space-y-1 settings-nav-scroll'" style="scrollbar-width: none;">
         <template v-for="(section, index) in sections" :key="section.id">
           <div
             v-if="!isMobile && section.group && (index === 0 || sections[index - 1].group !== section.group)"
@@ -221,3 +221,7 @@ definePageMeta({
   middleware: 'auth'
 })
 </script>
+
+<style scoped>
+.settings-nav-scroll::-webkit-scrollbar { display: none; }
+</style>

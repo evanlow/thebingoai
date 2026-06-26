@@ -81,7 +81,15 @@ export function createPipelinesApi(fetchWithRefresh: Function) {
     async listForConnection(connectionId: number): Promise<Pipeline[]> {
       // Server endpoint doesn't filter; we filter client-side. Lists are small.
       const all: Pipeline[] = await fetchWithRefresh('/api/pipelines', {})
-      return all.filter((p) => p.source_connection_id === connectionId)
+      const filtered = all.filter((p) => p.source_connection_id === connectionId)
+      // Prefer new-model pipelines (have schedules) over legacy rows. Falls back
+      // to newest-first within each group. SettingsConnectionSync picks list[0].
+      return [...filtered].sort((a, b) => {
+        const aNew = (a.schedules?.length ?? 0) > 0 ? 1 : 0
+        const bNew = (b.schedules?.length ?? 0) > 0 ? 1 : 0
+        if (aNew !== bNew) return bNew - aNew
+        return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+      })
     },
     async get(id: string): Promise<Pipeline> {
       return fetchWithRefresh(`/api/pipelines/${id}`, {})

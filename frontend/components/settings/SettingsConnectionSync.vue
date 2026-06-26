@@ -27,7 +27,7 @@
     >
       <div class="text-sm text-gray-900 dark:text-neutral-100 font-medium">{{ pipeline.name }}</div>
       <dl class="text-xs text-gray-600 dark:text-neutral-400 space-y-1">
-        <div class="flex justify-between"><dt>Tables</dt><dd class="font-mono">{{ (isNewModel ? scheduleTableNames : (pipeline.extraction_config?.tables ?? [])).join(', ') || pipeline.target_table }}</dd></div>
+        <div class="flex justify-between"><dt>Tables</dt><dd class="font-mono">{{ tableCountLabel }}</dd></div>
         <div class="flex justify-between"><dt>Schedule</dt><dd class="font-mono">{{ (isNewModel ? activeSchedule?.cron : pipeline.cron) ?? 'manual only' }} <span class="text-gray-400">{{ isNewModel ? activeSchedule?.timezone : pipeline.timezone }}</span></dd></div>
         <div class="flex justify-between"><dt>Last run</dt><dd>{{ pipeline.last_run_at ? formatRelative(pipeline.last_run_at) : '—' }}<template v-if="pipeline.last_run_status"> · {{ pipeline.last_run_status }}</template><template v-if="!effectiveEnabled"> · disabled</template></dd></div>
         <div class="flex justify-between"><dt>Next run</dt><dd>{{ pipeline.next_run_at ? formatRelative(pipeline.next_run_at) : '—' }}</dd></div>
@@ -236,6 +236,21 @@ const scheduleTableNames = computed<string[]>(
 const effectiveEnabled = computed<boolean>(
   () => (isNewModel.value ? !!activeSchedule.value?.enabled : !!pipeline.value?.enabled),
 )
+
+// Summary shown in the Parquet sync panel — never the raw list. The Database
+// Schema panel above renders the full tree with row counts; this row just
+// reports how many tables the pipeline covers.
+const tableCountLabel = computed<string>(() => {
+  if (!pipeline.value) return '—'
+  if (isNewModel.value) {
+    const n = scheduleTableNames.value.length
+    return n === 1 ? '1 table' : `${n} tables`
+  }
+  const cfg = pipeline.value.extraction_config || {}
+  const list = Array.isArray(cfg.tables) ? cfg.tables : []
+  if (list.length) return list.length === 1 ? '1 table' : `${list.length} tables`
+  return pipeline.value.target_table || '—'
+})
 
 // Columns of the first selected table — drive cursor dropdown + PK check.
 // `schema.schemas[<schemaName>].tables[<table>].columns` is the canonical
