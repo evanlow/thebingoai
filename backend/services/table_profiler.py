@@ -142,96 +142,125 @@ def profile_table(
             text_cols.append(col["name"])
 
     result_columns: Dict[str, Any] = {}
-
-    # Query A: Numeric stats
-    if numeric_cols:
-        try:
-            parts = []
-            for col in numeric_cols:
-                qc = q(col)
-                parts += [
-                    f"MIN({qc})",
-                    f"MAX({qc})",
-                    f"AVG({qc})",
-                    f"SUM(CASE WHEN {qc} IS NULL THEN 1 ELSE 0 END)",
-                ]
-            res = connector.execute_query(
-                f"SELECT {', '.join(parts)} FROM {qualified_table} {bq_where}".strip()
-            )
-            if res.rows:
-                row = res.rows[0]
-                for i, col in enumerate(numeric_cols):
-                    b = i * 4
-                    result_columns[col] = {
-                        "type": "numeric",
-                        "min": _safe(row[b]),
-                        "max": _safe(row[b + 1]),
-                        "avg": _safe(row[b + 2]),
-                        "null_count": _safe(row[b + 3]),
-                    }
-        except Exception as e:
-            logger.warning("profile_table numeric stats failed for %s: %s", table_name, e)
-            for col in numeric_cols:
-                result_columns[col] = {"type": "numeric", "error": str(e)}
-
-    # Query B: Date stats
-    if date_cols:
-        try:
-            parts = []
-            for col in date_cols:
-                qc = q(col)
-                parts += [
-                    f"MIN({qc})",
-                    f"MAX({qc})",
-                    f"SUM(CASE WHEN {qc} IS NULL THEN 1 ELSE 0 END)",
-                ]
-            res = connector.execute_query(
-                f"SELECT {', '.join(parts)} FROM {qualified_table} {bq_where}".strip()
-            )
-            if res.rows:
-                row = res.rows[0]
-                for i, col in enumerate(date_cols):
-                    b = i * 3
-                    result_columns[col] = {
-                        "type": "date",
-                        "min": _safe(row[b]),
-                        "max": _safe(row[b + 1]),
-                        "null_count": _safe(row[b + 2]),
-                    }
-        except Exception as e:
-            logger.warning("profile_table date stats failed for %s: %s", table_name, e)
-            for col in date_cols:
-                result_columns[col] = {"type": "date", "error": str(e)}
-
-    # Query C: Categorical distinct counts
     distinct_counts: Dict[str, int] = {}
-    if text_cols:
-        try:
-            parts = []
-            for col in text_cols:
-                qc = q(col)
-                parts += [
-                    f"COUNT(DISTINCT {qc})",
-                    f"SUM(CASE WHEN {qc} IS NULL THEN 1 ELSE 0 END)",
-                ]
-            res = connector.execute_query(
-                f"SELECT {', '.join(parts)} FROM {qualified_table} {bq_where}".strip()
-            )
+
+    # Per-type stat builders. Each returns the SELECT expressions for its columns
+    # and an assigner that reads them back out of a result row starting at `base`,
+    # returning the next free offset. Shared by the single combined scan below and
+    # the per-type fallback, so both paths stay in sync.
+    def _numeric_parts() -> list[str]:
+        parts: list[str] = []
+        for col in numeric_cols:
+            qc = q(col)
+            parts += [
+                f"MIN({qc})", f"MAX({qc})", f"AVG({qc})",
+                f"SUM(CASE WHEN {qc} IS NULL THEN 1 ELSE 0 END)",
+            ]
+        return parts
+
+    def _assign_numeric(row, base: int) -> int:
+        for i, col in enumerate(numeric_cols):
+            b = base + i * 4
+            result_columns[col] = {
+                "type": "numeric",
+                "min": _safe(row[b]), "max": _safe(row[b + 1]),
+                "avg": _safe(row[b + 2]), "null_count": _safe(row[b + 3]),
+            }
+        return base + len(numeric_cols) * 4
+
+    def _date_parts() -> list[str]:
+        parts: list[str] = []
+        for col in date_cols:
+            qc = q(col)
+            parts += [
+                f"MIN({qc})", f"MAX({qc})",
+                f"SUM(CASE WHEN {qc} IS NULL THEN 1 ELSE 0 END)",
+            ]
+        return parts
+
+    def _assign_date(row, base: int) -> int:
+        for i, col in enumerate(date_cols):
+            b = base + i * 3
+            result_columns[col] = {
+                "type": "date",
+                "min": _safe(row[b]), "max": _safe(row[b + 1]),
+                "null_count": _safe(row[b + 2]),
+            }
+        return base + len(date_cols) * 3
+
+    def _cat_parts() -> list[str]:
+        parts: list[str] = []
+        for col in text_cols:
+            qc = q(col)
+            parts += [
+                f"COUNT(DISTINCT {qc})",
+                f"SUM(CASE WHEN {qc} IS NULL THEN 1 ELSE 0 END)",
+            ]
+        return parts
+
+    def _assign_cat(row, base: int) -> int:
+        for i, col in enumerate(text_cols):
+            b = base + i * 2
+            d_count = int(row[b]) if row[b] is not None else 0
+            distinct_counts[col] = d_count
+            result_columns[col] = {
+                "type": "categorical",
+                "distinct_count": d_count,
+                "null_count": _safe(row[b + 1]),
+            }
+        return base + len(text_cols) * 2
+
+    def _run(parts: list[str]):
+        return connector.execute_query(
+            f"SELECT {', '.join(parts)} FROM {qualified_table} {bq_where}".strip()
+        )
+
+    # One scan for numeric + date + categorical stats (exact, no sampling).
+    # On any failure, fall back to the three separate per-type queries so a
+    # single bad column doesn't wipe out the whole table's stats.
+    try:
+        parts = _numeric_parts() + _date_parts() + _cat_parts()
+        if parts:
+            res = _run(parts)
             if res.rows:
                 row = res.rows[0]
-                for i, col in enumerate(text_cols):
-                    b = i * 2
-                    d_count = int(row[b]) if row[b] is not None else 0
-                    distinct_counts[col] = d_count
-                    result_columns[col] = {
-                        "type": "categorical",
-                        "distinct_count": d_count,
-                        "null_count": _safe(row[b + 1]),
-                    }
-        except Exception as e:
-            logger.warning("profile_table categorical stats failed for %s: %s", table_name, e)
-            for col in text_cols:
-                result_columns[col] = {"type": "categorical", "error": str(e)}
+                base = _assign_numeric(row, 0)
+                base = _assign_date(row, base)
+                _assign_cat(row, base)
+    except Exception as e:
+        logger.warning(
+            "profile_table combined stats failed for %s: %s — falling back to per-type",
+            table_name, e,
+        )
+        result_columns.clear()
+        distinct_counts.clear()
+        if numeric_cols:
+            try:
+                res = _run(_numeric_parts())
+                if res.rows:
+                    _assign_numeric(res.rows[0], 0)
+            except Exception as e2:
+                logger.warning("profile_table numeric stats failed for %s: %s", table_name, e2)
+                for col in numeric_cols:
+                    result_columns[col] = {"type": "numeric", "error": str(e2)}
+        if date_cols:
+            try:
+                res = _run(_date_parts())
+                if res.rows:
+                    _assign_date(res.rows[0], 0)
+            except Exception as e2:
+                logger.warning("profile_table date stats failed for %s: %s", table_name, e2)
+                for col in date_cols:
+                    result_columns[col] = {"type": "date", "error": str(e2)}
+        if text_cols:
+            try:
+                res = _run(_cat_parts())
+                if res.rows:
+                    _assign_cat(res.rows[0], 0)
+            except Exception as e2:
+                logger.warning("profile_table categorical stats failed for %s: %s", table_name, e2)
+                for col in text_cols:
+                    result_columns[col] = {"type": "categorical", "error": str(e2)}
 
     # Query D: Top values per categorical column (only if distinct_count <= threshold)
     for col in text_cols:

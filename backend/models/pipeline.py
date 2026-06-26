@@ -2,7 +2,7 @@
 import uuid as _uuid
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, ForeignKey,
-    Index, Integer, String, Text, UniqueConstraint,
+    Index, Integer, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -17,7 +17,10 @@ class Pipeline(Base, TimestampMixin):
     owner_scope_id = Column(String, nullable=False)
     source_connection_id = Column(Integer, ForeignKey("database_connections.id"), nullable=False)
     data_plane_id = Column(String(36), ForeignKey("data_planes.id"), nullable=True)
-    target_table = Column(String(255), nullable=False)
+    # Legacy (one-pipeline-per-table) rows set target_table; new-model rows
+    # (one pipeline per connection) leave it null and carry per-table targets
+    # inside their schedules' `tables` JSON.
+    target_table = Column(String(255), nullable=True)
     name = Column(String(255), nullable=False)
     cron = Column(String(64), nullable=True)               # null = run-on-demand
     timezone = Column(String(64), nullable=False, server_default="UTC")
@@ -41,11 +44,21 @@ class Pipeline(Base, TimestampMixin):
 
     runs = relationship("PipelineRun", back_populates="pipeline", cascade="all, delete-orphan")
     dlt_states = relationship("DltPipelineState", back_populates="pipeline", cascade="all, delete-orphan")
+    schedules = relationship("PipelineSchedule", back_populates="pipeline", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("owner_scope_kind", "owner_scope_id", "pipeline_fingerprint",
                          name="uq_pipeline_scope_fingerprint"),
         Index("ix_pipeline_enabled_next_run_at", "enabled", "next_run_at"),
+        # New-model rows are one-per-connection. Partial unique index so this is
+        # enforced only for new rows (cron IS NULL) — legacy connections keep
+        # many pipelines (cron set) without colliding.
+        Index(
+            "uq_new_pipeline_per_connection",
+            "owner_scope_kind", "owner_scope_id", "source_connection_id",
+            unique=True,
+            postgresql_where=text("cron IS NULL"),
+        ),
     )
 
 
@@ -54,6 +67,8 @@ class PipelineRun(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(_uuid.uuid4()))
     pipeline_id = Column(String(36), ForeignKey("pipelines.id"), nullable=False)
+    # Which schedule fired this run (new model). Null for legacy / whole-pipeline runs.
+    schedule_id = Column(String(36), ForeignKey("pipeline_schedules.id"), nullable=True)
     started_at = Column(DateTime, nullable=False)
     finished_at = Column(DateTime, nullable=True)
     status = Column(String(16), nullable=False, default="running")  # running | success | failed
@@ -67,6 +82,35 @@ class PipelineRun(Base):
 
     __table_args__ = (
         Index("ix_pipeline_run_pipeline_started", "pipeline_id", "started_at"),
+    )
+
+
+class PipelineSchedule(Base, TimestampMixin):
+    """A cadence bucket within a (new-model) pipeline.
+
+    Each schedule owns a disjoint subset of the connection's tables (one table
+    belongs to exactly one schedule) and fires them on its own cron. Per-table
+    ingest config lives in `tables` JSON so materializing many tables is not a
+    per-row insert storm.
+    """
+    __tablename__ = "pipeline_schedules"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid.uuid4()))
+    pipeline_id = Column(String(36), ForeignKey("pipelines.id"), nullable=False)
+    name = Column(String(255), nullable=True)
+    cron = Column(String(64), nullable=True)               # null = manual only
+    timezone = Column(String(64), nullable=False, server_default="UTC")
+    # List of per-table config dicts:
+    #   {source_table, target_table, mode, incremental_key, unique_key, enabled}
+    tables = Column(JSONB, nullable=False, server_default="[]")
+    next_run_at = Column(DateTime, nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+
+    pipeline = relationship("Pipeline", back_populates="schedules")
+
+    __table_args__ = (
+        Index("ix_pipeline_schedule_enabled_next_run_at", "enabled", "next_run_at"),
+        Index("ix_pipeline_schedule_pipeline", "pipeline_id"),
     )
 
 

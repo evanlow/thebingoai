@@ -54,7 +54,7 @@ from backend.models.conversation_summary import ConversationSummary
 from backend.models.data_plane import DataPlaneModel
 
 # Phase 2: Pipelines
-from backend.models.pipeline import Pipeline, PipelineRun, DltPipelineState
+from backend.models.pipeline import Pipeline, PipelineRun, DltPipelineState, PipelineSchedule
 
 # Phase 4: dbt Transforms
 from backend.models.transforms import DbtModel, DbtRun

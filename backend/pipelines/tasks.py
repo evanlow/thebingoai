@@ -32,7 +32,7 @@ def dispatch_pipelines():
     """
     from sqlalchemy import text
     from backend.database.session import SessionLocal
-    from backend.models.pipeline import Pipeline
+    from backend.models.pipeline import Pipeline, PipelineSchedule
     from backend.config.feature_flags import enabled as flag_enabled
     from backend.utils.cron import compute_next_run
 
@@ -73,6 +73,31 @@ def dispatch_pipelines():
             except Exception as exc:
                 logger.error("dispatch_pipelines: failed for pipeline %s: %s", pipeline.id, exc)
 
+        # New model: fire due schedules (each runs its own table subset).
+        due_schedules = (
+            db.query(PipelineSchedule, Pipeline)
+            .join(Pipeline, Pipeline.id == PipelineSchedule.pipeline_id)
+            .filter(
+                PipelineSchedule.enabled == True,
+                PipelineSchedule.next_run_at <= now,
+                PipelineSchedule.cron.isnot(None),
+                Pipeline.enabled == True,
+            )
+            .all()
+        )
+        for sched, pipeline in due_schedules:
+            try:
+                if pipeline.owner_scope_kind == "org":
+                    if not flag_enabled(pipeline.owner_scope_id, "new_pipelines"):
+                        continue
+                run_pipeline_task.delay(pipeline.id, "cron", None, schedule_id=sched.id)
+                dispatched += 1
+                sched.next_run_at = compute_next_run(
+                    sched.cron, sched.timezone or "UTC", now_utc=now,
+                )
+            except Exception as exc:
+                logger.error("dispatch_pipelines: failed for schedule %s: %s", sched.id, exc)
+
         if dispatched:
             logger.info("dispatch_pipelines: dispatched %d pipeline run(s)", dispatched)
 
@@ -91,16 +116,19 @@ def run_pipeline_task(
     triggered_by: str,
     triggered_by_user_id: str | None,
     backfill_since: str | None = None,
+    schedule_id: str | None = None,
 ):
     """Execute a single pipeline run. Delegates to runner.run_pipeline().
 
     `backfill_since` (ISO-8601 datetime string; Celery args must be JSON-safe)
     → "Load history" / bootstrap run: overrides the dlt incremental cursor for
     this run only, does not advance the schedule.
+    `schedule_id` → new-model run: extracts only that schedule's table subset.
     """
     from backend.pipelines.runner import run_pipeline
     run_id = run_pipeline(
-        pipeline_id, triggered_by, triggered_by_user_id, backfill_since=backfill_since,
+        pipeline_id, triggered_by, triggered_by_user_id,
+        backfill_since=backfill_since, schedule_id=schedule_id,
     )
     if run_id:
         logger.info("Pipeline %s run completed: run_id=%s", pipeline_id, run_id)
@@ -145,12 +173,21 @@ def first_ingest_task(connection_id: int, triggered_by_user_id: str | None):
             if p.first_ingest_done:
                 continue
             try:
-                run_pipeline(
-                    p.id, "bootstrap", triggered_by_user_id,
-                    # Full-snapshot tables ignore this; incremental ones use it
-                    # as the dlt `initial_value` for their cursor.
-                    backfill_since=backfill_since_iso,
-                )
+                schedules = list(getattr(p, "schedules", []) or [])
+                if schedules:
+                    # New model: seed each schedule's table subset.
+                    for s in schedules:
+                        run_pipeline(
+                            p.id, "bootstrap", triggered_by_user_id,
+                            backfill_since=backfill_since_iso, schedule_id=s.id,
+                        )
+                else:
+                    run_pipeline(
+                        p.id, "bootstrap", triggered_by_user_id,
+                        # Full-snapshot tables ignore this; incremental ones use it
+                        # as the dlt `initial_value` for their cursor.
+                        backfill_since=backfill_since_iso,
+                    )
                 ran += 1
             except Exception:
                 logger.exception("first_ingest_task: pipeline %s failed", p.id)

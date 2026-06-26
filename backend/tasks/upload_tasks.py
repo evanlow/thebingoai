@@ -37,6 +37,12 @@ celery_app.conf.update(
     include=["backend.tasks.memory_tasks", "backend.tasks.heartbeat_tasks", "backend.tasks.skill_detection_tasks", "backend.tasks.dashboard_refresh_tasks", "backend.tasks.agent_tasks", "backend.tasks.profiling_tasks", "backend.tasks.briefing_tasks", "backend.tasks.watermark_tasks", "backend.pipelines.tasks", "backend.transforms.tasks"],
 )
 
+# Pipeline runs go to a dedicated queue drained by a worker capped at
+# --concurrency=10, so at most 10 pipelines run concurrently. dispatch_pipelines
+# (beat) and first_ingest_task stay on the default queue — they only enqueue /
+# bootstrap; the heavy per-table work happens inside run_pipeline_task.
+celery_app.conf.task_routes = {"run_pipeline_task": {"queue": "pipelines"}}
+
 celery_app.conf.beat_schedule = {
     "generate-daily-memories": {
         "task": "generate_daily_memories",

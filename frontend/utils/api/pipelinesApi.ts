@@ -1,10 +1,29 @@
+export interface PipelineScheduleTable {
+  source_table: string
+  target_table: string
+  mode: string
+  incremental_key: string | null
+  unique_key: string[] | null
+  enabled: boolean
+}
+
+export interface PipelineSchedule {
+  id: string
+  name: string | null
+  cron: string | null
+  timezone: string
+  enabled: boolean
+  next_run_at: string | null
+  tables: PipelineScheduleTable[]
+}
+
 export interface Pipeline {
   id: string
   name: string
   source_connection_id: number
   owner_scope_kind: string
   owner_scope_id: string
-  target_table: string
+  target_table: string | null
   cron: string | null
   timezone: string
   mode: string
@@ -18,6 +37,14 @@ export interface Pipeline {
   created_by_user_id: string
   created_at?: string | null
   updated_at?: string | null
+  schedules?: PipelineSchedule[]
+}
+
+export interface ScheduleUpdate {
+  cron?: string | null
+  timezone?: string | null
+  enabled?: boolean
+  tables?: string[]
 }
 
 export interface PipelineCreate {
@@ -54,7 +81,15 @@ export function createPipelinesApi(fetchWithRefresh: Function) {
     async listForConnection(connectionId: number): Promise<Pipeline[]> {
       // Server endpoint doesn't filter; we filter client-side. Lists are small.
       const all: Pipeline[] = await fetchWithRefresh('/api/pipelines', {})
-      return all.filter((p) => p.source_connection_id === connectionId)
+      const filtered = all.filter((p) => p.source_connection_id === connectionId)
+      // Prefer new-model pipelines (have schedules) over legacy rows. Falls back
+      // to newest-first within each group. SettingsConnectionSync picks list[0].
+      return [...filtered].sort((a, b) => {
+        const aNew = (a.schedules?.length ?? 0) > 0 ? 1 : 0
+        const bNew = (b.schedules?.length ?? 0) > 0 ? 1 : 0
+        if (aNew !== bNew) return bNew - aNew
+        return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+      })
     },
     async get(id: string): Promise<Pipeline> {
       return fetchWithRefresh(`/api/pipelines/${id}`, {})
@@ -67,6 +102,12 @@ export function createPipelinesApi(fetchWithRefresh: Function) {
     },
     async update(id: string, data: PipelineUpdate): Promise<Pipeline> {
       return fetchWithRefresh(`/api/pipelines/${id}`, {
+        method: 'PATCH',
+        body: data,
+      })
+    },
+    async updateSchedule(pipelineId: string, scheduleId: string, data: ScheduleUpdate): Promise<Pipeline> {
+      return fetchWithRefresh(`/api/pipelines/${pipelineId}/schedules/${scheduleId}`, {
         method: 'PATCH',
         body: data,
       })
