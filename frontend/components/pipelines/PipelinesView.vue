@@ -15,7 +15,7 @@
       </div>
     </div>
     <div class="flex-1 overflow-y-auto px-7 py-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400 max-w-2xl mb-6">
+      <p class="text-base text-gray-500 dark:text-neutral-400 max-w-2xl mb-6">
         Manage scheduled data sync pipelines from your connections.
       </p>
 
@@ -53,12 +53,12 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-[var(--line)] bg-[var(--paper-1)]">
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Pipeline</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Source</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Target</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Schedule</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Status</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Last run</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Pipeline</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Source</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Target</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Schedule</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Status</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Last run</th>
             <th class="px-4 py-2.5"></th>
           </tr>
         </thead>
@@ -78,7 +78,7 @@
             <td class="px-4 py-3 max-w-[200px]">
               <div class="flex items-center gap-2 min-w-0">
                 <span
-                  class="grid place-items-center h-6 w-6 rounded-md text-[11px] font-semibold text-white shrink-0"
+                  class="grid place-items-center h-6 w-6 rounded-md text-sm font-semibold text-white shrink-0"
                   :class="avatarColor(pipeline.source_connection_id)"
                 >
                   {{ sourceInitial(pipeline.source_connection_id) }}
@@ -86,17 +86,17 @@
                 <span class="text-[var(--ink-1)] truncate" :title="sourceLabel(pipeline.source_connection_id)">{{ sourceLabel(pipeline.source_connection_id) }}</span>
               </div>
             </td>
-            <td class="px-4 py-3 font-mono text-xs text-[var(--ink-2)]">{{ pipeline.target_table }}</td>
+            <td class="px-4 py-3 font-mono text-sm text-[var(--ink-2)]">{{ pipeline.target_table }}</td>
             <td class="px-4 py-3">
-              <span v-if="pipeline.cron" class="font-mono text-xs text-[var(--ink-2)]">{{ pipeline.cron }}</span>
-              <span v-else class="text-xs italic text-[var(--ink-3)]">Manual only</span>
+              <span v-if="pipeline.cron" class="font-mono text-sm text-[var(--ink-2)]">{{ pipeline.cron }}</span>
+              <span v-else class="text-sm italic text-[var(--ink-3)]">Manual only</span>
             </td>
             <td class="px-4 py-3">
               <UiBadge :variant="statusVariant(pipeline.last_run_status)" size="sm" :dot="true">
                 {{ statusLabel(pipeline.last_run_status) }}
               </UiBadge>
             </td>
-            <td class="px-4 py-3 text-xs text-[var(--ink-3)] whitespace-nowrap">
+            <td class="px-4 py-3 text-sm text-[var(--ink-3)] whitespace-nowrap">
               {{ pipeline.last_run_at ? formatRelative(pipeline.last_run_at) : '—' }}
             </td>
             <td class="px-4 py-3 text-right">

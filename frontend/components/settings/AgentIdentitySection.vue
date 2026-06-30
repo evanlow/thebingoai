@@ -9,12 +9,12 @@
         </div>
         <div>
           <h2 class="font-serif italic text-xl font-bold text-[var(--ember)]">Identity</h2>
-          <p class="text-[11px] text-[var(--ink-2)] mt-0.5 leading-snug max-w-md">
+          <p class="text-sm text-[var(--ink-2)] mt-0.5 leading-snug max-w-md">
             The name and voice the model presents with. Affects greeting, signature, and how the agent introduces itself in new threads or scheduled digests.
           </p>
         </div>
       </div>
-      <span class="text-[10px] font-semibold px-2.5 py-1 rounded-full border"
+      <span class="text-sm font-semibold px-2.5 py-1 rounded-full border"
         :class="isPublished
           ? 'text-[var(--ok)] bg-[oklch(0.97_0.04_150)] border-[oklch(0.88_0.08_150)]'
           : 'text-[var(--ink-2)] bg-[var(--paper-2)] border-[var(--line)]'">
@@ -34,37 +34,37 @@
       </div>
       <div class="flex-1">
         <p class="text-sm font-semibold text-[var(--ink-0)]">{{ localData.display_name || 'Bingo' }}</p>
-        <p class="text-[10px] text-[var(--ink-3)] mt-0.5">Avatar follows theme (light / dark)</p>
+        <p class="text-sm text-[var(--ink-3)] mt-0.5">Avatar follows theme (light / dark)</p>
       </div>
     </div>
 
     <!-- Name + Pronouns -->
     <div class="grid grid-cols-2 gap-5 mb-5">
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Name</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Name</label>
         <input v-model="localData.display_name" @input="onIdentityChange"
-               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-[13px] text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
-        <p class="text-[9px] text-[var(--ink-3)] mt-1">Used in greetings · email signatures · push titles</p>
+               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-sm text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
+        <p class="text-sm text-[var(--ink-3)] mt-1">Used in greetings · email signatures · push titles</p>
       </div>
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Pronouns</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Pronouns</label>
         <input v-model="localData.pronouns" @input="onIdentityChange"
-               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-[13px] text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
+               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-sm text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
       </div>
     </div>
 
     <!-- Tagline + Model -->
     <div class="grid grid-cols-2 gap-5 mb-5">
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Tagline</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Tagline</label>
         <input v-model="localData.tagline" @input="onIdentityChange"
-               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-[13px] text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
-        <p class="text-[9px] text-[var(--ink-3)] mt-1">Shown under the name on first run</p>
+               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-sm text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
+        <p class="text-sm text-[var(--ink-3)] mt-1">Shown under the name on first run</p>
       </div>
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Default Model</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Default Model</label>
         <select v-model="localData.default_model" @change="onIdentityChange"
-                class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-[13px] text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors">
+                class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-sm text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors">
           <!-- Empty / "use system default" -->
           <option value="">
             System default{{ models?.default_model ? ` (${models.default_model})` : '' }}
@@ -85,39 +85,39 @@
     <!-- Temperature + Max tokens -->
     <div class="grid grid-cols-2 gap-5 mb-5">
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Temperature</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Temperature</label>
         <div class="flex items-center gap-3 mt-1.5">
           <input type="range" min="0" max="1" step="0.05"
                  v-model.number="localData.temperature" @input="onIdentityChange"
                  class="flex-1 accent-[var(--ember)] h-1 cursor-pointer" />
-          <span class="text-[13px] font-semibold text-[var(--ink-1)] font-mono w-8 text-right">
+          <span class="text-sm font-semibold text-[var(--ink-1)] font-mono w-8 text-right">
             {{ localData.temperature?.toFixed(2) ?? '0.40' }}
           </span>
         </div>
         <div class="flex justify-between mt-1">
-          <span class="text-[9px] text-[var(--ink-3)]">0 = deterministic</span>
-          <span class="text-[9px] text-[var(--ink-3)]">1 = exploratory</span>
+          <span class="text-sm text-[var(--ink-3)]">0 = deterministic</span>
+          <span class="text-sm text-[var(--ink-3)]">1 = exploratory</span>
         </div>
       </div>
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Max Output Tokens</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Max Output Tokens</label>
         <input v-model.number="localData.max_output_tokens" @input="onIdentityChange"
                type="number" min="256" max="32768"
-               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-[13px] text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
+               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-sm text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
       </div>
     </div>
 
     <!-- Tone slider -->
     <div class="mb-5">
-      <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Tone</label>
+      <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">Tone</label>
       <div class="flex items-center gap-3 mt-1.5">
-        <span class="text-[9px] text-[var(--ink-3)] w-6">low</span>
+        <span class="text-sm text-[var(--ink-3)] w-6">low</span>
         <input type="range" min="0" max="1" step="0.05"
                :value="localData.tone ?? 0.5"
                @input="onToneInput"
                class="flex-1 accent-[var(--ember)] h-1 cursor-pointer" />
-        <span class="text-[9px] text-[var(--ink-3)] w-6 text-right">high</span>
-        <span class="text-[13px] font-semibold text-[var(--ink-1)] font-mono w-8 text-right">
+        <span class="text-sm text-[var(--ink-3)] w-6 text-right">high</span>
+        <span class="text-sm font-semibold text-[var(--ink-1)] font-mono w-8 text-right">
           {{ (localData.tone ?? 0.5).toFixed(2) }}
         </span>
       </div>
@@ -127,10 +127,10 @@
     <div class="grid grid-cols-2 gap-5">
       <!-- Style traits -->
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-2">Style</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-2">Style</label>
         <div class="flex flex-wrap gap-1.5">
           <span v-for="(trait, idx) in localData.style_traits" :key="trait"
-                class="inline-flex items-center gap-1 text-[10px] bg-[var(--ember-wash)] border border-[color-mix(in_oklch,var(--ember)_25%,var(--line))] text-[var(--ember)] px-2 py-0.5 rounded-full">
+                class="inline-flex items-center gap-1 text-sm bg-[var(--ember-wash)] border border-[color-mix(in_oklch,var(--ember)_25%,var(--line))] text-[var(--ember)] px-2 py-0.5 rounded-full">
             {{ trait }}
             <button @click="removeStyleTrait(idx)" class="text-[var(--ember)] hover:opacity-60 leading-none">✕</button>
           </span>
@@ -142,20 +142,20 @@
                    @blur="commitStyleTrait"
                    maxlength="32"
                    placeholder="trait…"
-                   class="text-[10px] w-20 px-2 py-0.5 border border-[var(--ember)] rounded-full outline-none bg-[var(--paper-0)] text-[var(--ink-0)]" />
+                   class="text-sm w-20 px-2 py-0.5 border border-[var(--ember)] rounded-full outline-none bg-[var(--paper-0)] text-[var(--ink-0)]" />
           </template>
           <button v-else @click="startAddStyleTrait"
-                  class="text-[10px] px-2 py-0.5 rounded-full border border-dashed border-[var(--line-2)] text-[var(--ink-2)] hover:text-[var(--ember)] hover:border-[var(--ember)] transition-colors">
+                  class="text-sm px-2 py-0.5 rounded-full border border-dashed border-[var(--line-2)] text-[var(--ink-2)] hover:text-[var(--ember)] hover:border-[var(--ember)] transition-colors">
             + add trait
           </button>
         </div>
       </div>
       <!-- Format traits -->
       <div>
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-2">Format</label>
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-2">Format</label>
         <div class="flex flex-wrap gap-1.5">
           <span v-for="(trait, idx) in localData.format_traits" :key="trait"
-                class="inline-flex items-center gap-1 text-[10px] bg-[var(--paper-2)] border border-[var(--line)] text-[var(--ink-1)] px-2 py-0.5 rounded-full">
+                class="inline-flex items-center gap-1 text-sm bg-[var(--paper-2)] border border-[var(--line)] text-[var(--ink-1)] px-2 py-0.5 rounded-full">
             {{ trait }}
             <button @click="removeFormatTrait(idx)" class="text-[var(--ink-2)] hover:opacity-60 leading-none">✕</button>
           </span>
@@ -167,10 +167,10 @@
                    @blur="commitFormatTrait"
                    maxlength="32"
                    placeholder="trait…"
-                   class="text-[10px] w-20 px-2 py-0.5 border border-[var(--line)] rounded-full outline-none bg-[var(--paper-0)] text-[var(--ink-0)]" />
+                   class="text-sm w-20 px-2 py-0.5 border border-[var(--line)] rounded-full outline-none bg-[var(--paper-0)] text-[var(--ink-0)]" />
           </template>
           <button v-else @click="startAddFormatTrait"
-                  class="text-[10px] px-2 py-0.5 rounded-full border border-dashed border-[var(--line-2)] text-[var(--ink-2)] hover:text-[var(--ember)] hover:border-[var(--ember)] transition-colors">
+                  class="text-sm px-2 py-0.5 rounded-full border border-dashed border-[var(--line-2)] text-[var(--ink-2)] hover:text-[var(--ember)] hover:border-[var(--ember)] transition-colors">
             + add trait
           </button>
         </div>

@@ -41,7 +41,7 @@
 
       <!-- Column picker -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Column</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Column</label>
         <div class="flex gap-2">
           <select
             :value="local.column"
@@ -67,7 +67,7 @@
 
       <!-- Label -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Label</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Label</label>
         <input
           :value="local.label ?? ''"
           type="text"

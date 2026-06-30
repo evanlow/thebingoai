@@ -15,7 +15,7 @@
 
         <!-- Daily Credits -->
         <div class="rounded-xl border border-gray-200 dark:border-neutral-700 p-6 flex flex-col gap-3">
-          <p class="text-[10px] font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Daily Credits</p>
+          <p class="text-sm font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Daily Credits</p>
           <div class="flex items-baseline gap-2">
             <span class="text-5xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ Math.round(remaining) }}</span>
             <span class="text-sm text-gray-500 dark:text-neutral-400">of {{ Math.round(dailyLimit) }} remaining</span>
@@ -27,14 +27,14 @@
               :style="{ width: `${usedPercent}%` }"
             />
           </div>
-          <p class="text-xs text-gray-400 dark:text-neutral-500">
+          <p class="text-sm text-gray-400 dark:text-neutral-500">
             {{ Math.round(usedToday) }} used today · resets at 00:00 UTC<span v-if="resetCountdown"> · {{ resetCountdown }}</span>
           </p>
         </div>
 
         <!-- Daily Consumption -->
         <div class="rounded-xl border border-gray-200 dark:border-neutral-700 p-6 flex flex-col gap-3">
-          <p class="text-[10px] font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Daily Consumption · Last 14 Days</p>
+          <p class="text-sm font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Daily Consumption · Last 14 Days</p>
           <div class="flex-1 min-h-[160px] flex flex-col justify-center">
             <div v-if="dailyTotalsLoading" class="h-40 rounded-lg bg-gray-100 dark:bg-neutral-700 animate-pulse" />
             <div v-else-if="dailyTotals.length === 0" class="h-40 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-500">
@@ -61,7 +61,7 @@
             class="flex items-center justify-between py-3"
           >
             <div class="flex items-center gap-3 min-w-0 flex-1">
-              <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 dark:bg-neutral-700 text-white text-xs font-semibold shrink-0">
+              <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 dark:bg-neutral-700 text-white text-sm font-semibold shrink-0">
                 {{ key.provider.charAt(0).toUpperCase() }}
               </span>
               <div class="min-w-0">
@@ -69,19 +69,19 @@
                   <p class="text-sm font-medium text-gray-700 dark:text-neutral-200 capitalize">{{ key.provider }}</p>
                   <span
                     v-if="(key as any).is_active"
-                    class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                    class="text-sm font-medium px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
                   >in use</span>
                 </div>
-                <p class="text-xs font-mono text-gray-400 dark:text-neutral-500">{{ key.masked_key }}</p>
-                <p v-if="key.api_base_url" class="text-xs text-gray-400 dark:text-neutral-500">{{ key.api_base_url }}</p>
-                <p v-if="(key as any).last_used_at" class="text-xs text-gray-400 dark:text-neutral-500">
+                <p class="text-sm font-mono text-gray-400 dark:text-neutral-500">{{ key.masked_key }}</p>
+                <p v-if="key.api_base_url" class="text-sm text-gray-400 dark:text-neutral-500">{{ key.api_base_url }}</p>
+                <p v-if="(key as any).last_used_at" class="text-sm text-gray-400 dark:text-neutral-500">
                   Last used {{ formatDate((key as any).last_used_at) }}
                 </p>
               </div>
             </div>
             <button
               @click="handleDeleteKey(key.provider)"
-              class="text-xs text-red-500 hover:text-red-700 transition-colors shrink-0 ml-4"
+              class="text-sm text-red-500 hover:text-red-700 transition-colors shrink-0 ml-4"
             >
               Remove
             </button>
@@ -91,10 +91,10 @@
 
         <!-- Add new key -->
         <div class="pt-4 border-t border-gray-100 dark:border-neutral-700 space-y-3">
-          <p class="text-[10px] font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Add a new key</p>
+          <p class="text-sm font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Add a new key</p>
           <form @submit.prevent="handleSaveKey" class="grid grid-cols-1 sm:grid-cols-[180px_1fr_1fr_auto] gap-3 items-end">
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-neutral-300 mb-1">Provider</label>
+              <label class="block text-sm font-medium text-gray-600 dark:text-neutral-300 mb-1">Provider</label>
               <select
                 v-model="newProvider"
                 class="w-full rounded-lg border border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-gray-900 dark:text-neutral-100 px-3 py-2 text-sm focus:outline-none focus:border-gray-400 dark:[color-scheme:dark]"
@@ -104,7 +104,7 @@
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-neutral-300 mb-1">
+              <label class="block text-sm font-medium text-gray-600 dark:text-neutral-300 mb-1">
                 Base URL <span class="text-gray-400 dark:text-neutral-500">(optional)</span>
               </label>
               <input
@@ -115,7 +115,7 @@
               />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-neutral-300 mb-1">API Key</label>
+              <label class="block text-sm font-medium text-gray-600 dark:text-neutral-300 mb-1">API Key</label>
               <input
                 v-model="newApiKey"
                 type="password"
@@ -141,7 +141,7 @@
           <h3 class="text-base font-medium text-gray-900 dark:text-white">Usage History</h3>
           <button
             @click="handleExportCsv"
-            class="text-xs px-3 py-1.5 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors"
+            class="text-sm px-3 py-1.5 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors"
           >
             Export CSV
           </button>
@@ -157,7 +157,7 @@
 
         <table v-else class="w-full text-sm">
           <thead>
-            <tr class="text-left text-xs text-gray-400 dark:text-neutral-500 border-b border-gray-100 dark:border-neutral-700">
+            <tr class="text-left text-sm text-gray-400 dark:text-neutral-500 border-b border-gray-100 dark:border-neutral-700">
               <th class="pb-2 font-normal">Title</th>
               <th v-if="hasModelField" class="pb-2 font-normal">Model</th>
               <th v-if="hasTokensField" class="pb-2 font-normal text-right">Tokens</th>
@@ -168,8 +168,8 @@
           <tbody class="divide-y divide-gray-50 dark:divide-neutral-700/50">
             <tr v-for="item in historyItems" :key="item.id" class="py-2">
               <td class="py-2 text-gray-700 dark:text-neutral-300 truncate max-w-xs">{{ item.title }}</td>
-              <td v-if="hasModelField" class="py-2 text-xs text-gray-500 dark:text-neutral-400 font-mono">{{ (item as any).model }}</td>
-              <td v-if="hasTokensField" class="py-2 text-right tabular-nums text-xs text-gray-500 dark:text-neutral-400">{{ (item as any).tokens }}</td>
+              <td v-if="hasModelField" class="py-2 text-sm text-gray-500 dark:text-neutral-400 font-mono">{{ (item as any).model }}</td>
+              <td v-if="hasTokensField" class="py-2 text-right tabular-nums text-sm text-gray-500 dark:text-neutral-400">{{ (item as any).tokens }}</td>
               <td class="py-2 text-right tabular-nums text-gray-600 dark:text-neutral-300">{{ item.credits_used }}</td>
               <td class="py-2 text-right text-gray-400 dark:text-neutral-500 whitespace-nowrap">{{ formatDate(item.created_at) }}</td>
             </tr>
@@ -185,7 +185,7 @@
           >
             Previous
           </button>
-          <span class="text-xs text-gray-400 dark:text-neutral-500">{{ historyPage }} / {{ historyTotalPages }}</span>
+          <span class="text-sm text-gray-400 dark:text-neutral-500">{{ historyPage }} / {{ historyTotalPages }}</span>
           <button
             :disabled="historyPage >= historyTotalPages"
             @click="nextPage"

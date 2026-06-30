@@ -50,7 +50,7 @@
           <div class="mb-4 flex items-center justify-between">
             <div>
               <h3 class="text-base font-medium text-gray-900">Tool Policies</h3>
-              <p class="text-xs text-gray-500 mt-0.5">Control which tools this team can use</p>
+              <p class="text-sm text-gray-500 mt-0.5">Control which tools this team can use</p>
             </div>
             <UiButton size="sm" :loading="savingTools" @click="saveToolPolicy">
               Save Changes
@@ -63,7 +63,7 @@
 
           <div v-else class="space-y-5">
             <div v-for="group in catalogByCategory" :key="group.category">
-              <h4 class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+              <h4 class="mb-2 text-sm font-medium uppercase tracking-wide text-gray-500">
                 {{ group.category }}
               </h4>
               <div class="space-y-2">
@@ -74,7 +74,7 @@
                 >
                   <div class="min-w-0 flex-1 pr-4">
                     <p class="text-sm font-medium text-gray-900">{{ tool.display_name }}</p>
-                    <p v-if="tool.description" class="text-xs text-gray-500 mt-0.5 truncate">{{ tool.description }}</p>
+                    <p v-if="tool.description" class="text-sm text-gray-500 mt-0.5 truncate">{{ tool.description }}</p>
                   </div>
                   <button
                     type="button"
@@ -98,7 +98,7 @@
           <div class="mb-4 flex items-center justify-between">
             <div>
               <h3 class="text-base font-medium text-gray-900">Connection Policies</h3>
-              <p class="text-xs text-gray-500 mt-0.5">Control which database connections this team can access</p>
+              <p class="text-sm text-gray-500 mt-0.5">Control which database connections this team can access</p>
             </div>
             <UiButton size="sm" :loading="savingConnections" @click="saveConnectionPolicy">
               Save Changes
@@ -117,7 +117,7 @@
             >
               <div class="min-w-0 flex-1 pr-4">
                 <p class="text-sm font-medium text-gray-900">{{ conn.name }}</p>
-                <p class="text-xs text-gray-500">{{ conn.db_type }} · {{ conn.host }}</p>
+                <p class="text-sm text-gray-500">{{ conn.db_type }} · {{ conn.host }}</p>
               </div>
               <button
                 type="button"

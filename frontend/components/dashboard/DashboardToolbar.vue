@@ -88,7 +88,7 @@ const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
 <style scoped>
 .add-label {
   font-family: var(--font-sans);
-  font-size: 11.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ink-3);
   white-space: nowrap;
@@ -101,7 +101,7 @@ const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
   padding: 4px 10px;
   border-radius: 20px;
   font-family: var(--font-sans);
-  font-size: 11.5px;
+  font-size: 14px;
   font-weight: 500;
   border: 1px solid var(--line);
   background: var(--paper-0);
@@ -118,7 +118,7 @@ const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
 
 .widget-count {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 14px;
   color: var(--ink-3);
 }
 </style>

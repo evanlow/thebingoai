@@ -1,7 +1,7 @@
 <template>
   <div class="h-full overflow-y-auto p-5 space-y-5">
     <div class="space-y-1.5">
-      <label class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Content (Markdown)</label>
+      <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Content (Markdown)</label>
       <textarea
         v-model="localContent"
         :readonly="!editMode"
@@ -13,7 +13,7 @@
     </div>
 
     <div class="space-y-1.5">
-      <label class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Alignment</label>
+      <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Alignment</label>
       <div class="flex rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button
           v-for="opt in alignOptions"

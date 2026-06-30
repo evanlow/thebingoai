@@ -38,7 +38,7 @@
     <article v-else-if="briefing?.payload" ref="articleRef" class="max-w-3xl mx-auto px-6 py-10">
       <div data-pdf-ignore="true" class="flex justify-end mb-6">
         <button
-          class="text-xs px-3 py-1 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          class="text-sm px-3 py-1 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="exporting"
           @click="onExportPdf"
         >
@@ -47,7 +47,7 @@
       </div>
 
       <div data-pdf-block>
-        <p class="text-xs uppercase tracking-wider text-neutral-500 mb-3">
+        <p class="text-sm uppercase tracking-wider text-neutral-500 mb-3">
           Dashboard #{{ briefing.dashboard_id }}
           <template v-if="briefing.date_range_from">  · {{ formatRange(briefing) }}</template>
         </p>
@@ -68,9 +68,9 @@
       <div v-if="briefing.payload.kpis.length" data-pdf-block class="grid gap-3 p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg mb-7"
         :style="{ gridTemplateColumns: `repeat(${briefing.payload.kpis.length}, minmax(0,1fr))` }">
         <div v-for="(k, i) in briefing.payload.kpis" :key="i" class="pl-3" :class="{ 'border-l border-neutral-200 dark:border-neutral-700': i > 0 }">
-          <div class="text-[11px] uppercase tracking-wide text-neutral-500">{{ k.label }}</div>
+          <div class="text-sm uppercase tracking-wide text-neutral-500">{{ k.label }}</div>
           <div class="text-2xl font-semibold mt-1">{{ k.value }}</div>
-          <div v-if="k.delta_vs_prev" class="text-xs mt-1" :class="deltaClass(k.delta_direction)">{{ k.delta_vs_prev }}</div>
+          <div v-if="k.delta_vs_prev" class="text-sm mt-1" :class="deltaClass(k.delta_direction)">{{ k.delta_vs_prev }}</div>
         </div>
       </div>
 
@@ -91,7 +91,7 @@
       </section>
 
       <aside data-pdf-block class="rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-5 mt-4">
-        <p class="text-[11px] uppercase tracking-wider font-semibold text-yellow-900 dark:text-yellow-200 mb-2">Key takeaways</p>
+        <p class="text-sm uppercase tracking-wider font-semibold text-yellow-900 dark:text-yellow-200 mb-2">Key takeaways</p>
         <ul class="list-disc pl-5 space-y-1 text-yellow-950 dark:text-yellow-200">
           <li v-for="(t, i) in briefing.payload.key_takeaways" :key="i" class="text-sm">{{ t }}</li>
         </ul>

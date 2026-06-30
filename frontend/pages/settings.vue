@@ -41,8 +41,8 @@
             @click="selectSection(section.id)"
             :class="[
               isMobile
-                ? 'whitespace-nowrap px-3 py-1.5 text-xs rounded-full'
-                : 'w-full rounded-lg px-3 py-2 text-left text-sm font-light',
+                ? 'whitespace-nowrap px-3 py-1.5 text-sm rounded-full'
+                : 'w-full rounded-lg px-3 py-2 text-left text-base font-light',
               currentSection === section.id ? 'bg-gray-100 dark:bg-neutral-700 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-800'
             ]"
           >
@@ -52,7 +52,7 @@
       </nav>
 
       <div v-if="!isMobile" class="px-4 py-3 border-t border-gray-200 dark:border-neutral-700 flex-shrink-0">
-        <p class="text-[11px] text-gray-400 dark:text-neutral-500">
+        <p class="text-sm text-gray-400 dark:text-neutral-500">
           {{ appInfo?.edition || 'Community' }} Edition · v{{ appInfo?.version || '1.0.0' }}
         </p>
       </div>

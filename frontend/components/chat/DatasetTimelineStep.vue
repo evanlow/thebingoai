@@ -30,15 +30,15 @@
     <!-- Right: label + timestamp -->
     <div class="flex-1 min-w-0 pt-px">
       <div class="flex items-center gap-1.5">
-        <span class="text-[10px] font-medium" :class="labelColor">
+        <span class="text-sm font-medium" :class="labelColor">
           {{ status === 'active' ? activeLabel : (status === 'failed' ? failedLabel : label) }}
         </span>
-        <span v-if="formattedTime" class="text-[9px] text-gray-300 ml-auto shrink-0">
+        <span v-if="formattedTime" class="text-sm text-gray-300 ml-auto shrink-0">
           {{ formattedTime }}
         </span>
       </div>
       <!-- Error message -->
-      <p v-if="error && status === 'failed'" class="text-[9px] text-red-400 mt-0.5">
+      <p v-if="error && status === 'failed'" class="text-sm text-red-400 mt-0.5">
         {{ error }}
       </p>
     </div>

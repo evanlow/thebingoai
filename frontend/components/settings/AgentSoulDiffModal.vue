@@ -9,7 +9,7 @@
       <div class="flex items-center justify-between px-5 py-3.5 border-b border-[var(--line)] flex-shrink-0">
         <div>
           <h3 class="font-serif italic text-lg font-bold text-[var(--ember)]">Diff vs published</h3>
-          <p class="text-[10px] text-[var(--ink-3)] mt-0.5">Lines that changed since the last publish.</p>
+          <p class="text-sm text-[var(--ink-3)] mt-0.5">Lines that changed since the last publish.</p>
         </div>
         <button @click="$emit('close')"
                 class="text-[var(--ink-2)] hover:text-[var(--ink-0)] text-lg leading-none px-2">✕</button>
@@ -18,15 +18,15 @@
       <!-- Column labels -->
       <div class="grid grid-cols-2 border-b border-[var(--line)] flex-shrink-0">
         <div class="px-4 py-2 bg-[oklch(0.97_0.02_25)] border-r border-[var(--line)]">
-          <span class="text-[9px] font-bold uppercase tracking-[.08em] text-[oklch(0.55_0.15_25)]">Published</span>
+          <span class="text-sm font-bold uppercase tracking-[.08em] text-[oklch(0.55_0.15_25)]">Published</span>
         </div>
         <div class="px-4 py-2 bg-[oklch(0.97_0.04_150)]">
-          <span class="text-[9px] font-bold uppercase tracking-[.08em] text-[oklch(0.45_0.15_150)]">Current draft</span>
+          <span class="text-sm font-bold uppercase tracking-[.08em] text-[oklch(0.45_0.15_150)]">Current draft</span>
         </div>
       </div>
 
       <!-- Diff rows -->
-      <div class="overflow-y-auto flex-1 font-mono text-[11px] leading-relaxed">
+      <div class="overflow-y-auto flex-1 font-mono text-sm leading-relaxed">
         <div v-for="(row, idx) in diffRows" :key="idx"
              class="grid grid-cols-2 border-b border-[var(--paper-3)] last:border-0"
              :class="row.changed ? 'bg-[var(--paper-1)]' : ''">
@@ -54,7 +54,7 @@
       <!-- Footer -->
       <div class="flex justify-end px-5 py-3.5 border-t border-[var(--line)] flex-shrink-0">
         <button @click="$emit('close')"
-                class="text-[11px] font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
+                class="text-sm font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
           Close
         </button>
       </div>

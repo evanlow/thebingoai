@@ -35,7 +35,7 @@
           </span>
           <div class="flex-1 min-w-0">
             <div
-              class="sidebar-title text-[13px] tracking-[-0.005em] truncate"
+              class="sidebar-title text-sm tracking-[-0.005em] truncate"
               :class="isPermActive ? 'font-semibold text-[var(--ink-0)] text-glow-orange' : 'font-medium text-[var(--ink-0)]'"
             >
               <span class="marquee-inner">
@@ -44,11 +44,11 @@
                 <span>{{ chatStore.permanentConversation.title || 'Bingo' }}</span>
               </span>
             </div>
-            <div class="text-[10.5px] text-[var(--ink-2)] mt-0.5">personal assistant</div>
+            <div class="text-sm text-[var(--ink-2)] mt-0.5">personal assistant</div>
           </div>
           <span
             v-if="chatStore.permanentConversation.unread_count && chatStore.permanentConversation.unread_count > 0"
-            class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-[var(--ink-0)] px-1 text-[10px] font-medium text-[var(--paper-0)]"
+            class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-[var(--ink-0)] px-1 text-sm font-medium text-[var(--paper-0)]"
           >
             {{ chatStore.permanentConversation.unread_count > 99 ? '99+' : chatStore.permanentConversation.unread_count }}
           </span>
@@ -67,7 +67,7 @@
           <LayoutDashboard class="h-3.5 w-3.5" />
         </span>
         <span
-          class="text-[13px] tracking-[-0.005em]"
+          class="text-sm tracking-[-0.005em]"
           :class="route.path === '/dashboard' ? 'font-semibold text-[var(--ink-0)]' : 'font-medium text-[var(--ink-0)]'"
         >Dashboards</span>
       </button>
@@ -85,7 +85,7 @@
           <Plus class="h-3.5 w-3.5" />
         </span>
         <span
-          class="text-[13px] tracking-[-0.005em]"
+          class="text-sm tracking-[-0.005em]"
           :class="isNewTaskActive ? 'font-semibold text-[var(--ink-0)]' : 'font-medium text-[var(--ink-1)]'"
         >New task</span>
       </button>
@@ -100,13 +100,13 @@
           <ChevronRight v-else class="h-3 w-3" />
           Recent tasks
         </button>
-        <span class="font-mono text-[10px] text-[var(--ink-3)]">{{ chatStore.taskConversations.length }}</span>
+        <span class="font-mono text-sm text-[var(--ink-3)]">{{ chatStore.taskConversations.length }}</span>
       </div>
 
       <!-- Task list -->
       <div ref="taskListRef" class="flex-1 overflow-y-auto pb-2 min-h-0" @scroll="onTaskListScroll">
         <div v-show="isRecentExpanded">
-          <div v-if="chatStore.taskConversations.length === 0" class="px-4 py-3 text-[12px] text-[var(--ink-3)]">
+          <div v-if="chatStore.taskConversations.length === 0" class="px-4 py-3 text-sm text-[var(--ink-3)]">
             No tasks yet
           </div>
           <template v-for="group in groupedTasks" :key="group.label">
@@ -124,7 +124,7 @@
             >
               <button
                 @click="handleSelectConversation(conv.id)"
-                class="sidebar-title flex-1 min-w-0 text-[12.5px] text-left overflow-hidden text-ellipsis whitespace-nowrap"
+                class="sidebar-title flex-1 min-w-0 text-sm text-left overflow-hidden text-ellipsis whitespace-nowrap"
                 :class="chatStore.currentThreadId === conv.id ? 'font-semibold text-[var(--ink-0)]' : 'font-normal text-[var(--ink-1)]'"
               >
                 <span class="marquee-inner">
@@ -142,7 +142,7 @@
               </button>
             </div>
           </template>
-          <div v-if="chatStore.isLoadingMoreConversations" class="px-4 py-2 text-[11px] text-[var(--ink-3)]">
+          <div v-if="chatStore.isLoadingMoreConversations" class="px-4 py-2 text-sm text-[var(--ink-3)]">
             Loading…
           </div>
         </div>
@@ -158,13 +158,13 @@
           Notifications
           <span
             v-if="incomingInvites.length"
-            class="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--ember)] text-white text-[10px] font-semibold leading-none"
+            class="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[var(--ember)] text-white text-sm font-semibold leading-none"
           >
             {{ incomingInvites.length }}
           </span>
         </button>
         <div v-show="isNotificationsExpanded" class="mt-1 max-h-48 overflow-y-auto">
-          <div v-if="incomingInvites.length === 0" class="py-2 text-[11px] text-[var(--ink-3)]">
+          <div v-if="incomingInvites.length === 0" class="py-2 text-sm text-[var(--ink-3)]">
             No notifications
           </div>
           <div
@@ -173,13 +173,13 @@
             class="flex w-full items-center gap-2 py-1.5 rounded-md px-1 -mx-1 hover:bg-[var(--paper-2)]"
           >
             <div class="flex-1 min-w-0">
-              <div class="truncate text-[12px] text-[var(--ink-1)]">{{ invite.org_name ?? 'A workspace' }}</div>
-              <div class="text-[10px] text-[var(--ink-3)]">invited you as Viewer</div>
+              <div class="truncate text-sm text-[var(--ink-1)]">{{ invite.org_name ?? 'A workspace' }}</div>
+              <div class="text-sm text-[var(--ink-3)]">invited you as Viewer</div>
             </div>
             <button
               @click.stop="handleAcceptInvite(invite)"
               :disabled="acceptingInviteId === invite.id"
-              class="flex-shrink-0 text-[11px] font-medium px-2 py-1 rounded-md bg-[var(--ember)] text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              class="flex-shrink-0 text-sm font-medium px-2 py-1 rounded-md bg-[var(--ember)] text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {{ acceptingInviteId === invite.id ? 'Joining…' : 'Accept' }}
             </button>
@@ -197,7 +197,7 @@
           Archived
         </button>
         <div v-show="isArchivedExpanded" class="mt-1 max-h-48 overflow-y-auto">
-          <div v-if="chatStore.archivedConversations.length === 0" class="py-2 text-[11px] text-[var(--ink-3)]">
+          <div v-if="chatStore.archivedConversations.length === 0" class="py-2 text-sm text-[var(--ink-3)]">
             No archived tasks
           </div>
           <div
@@ -205,7 +205,7 @@
             :key="conv.id"
             class="group flex w-full items-center py-1 rounded-md px-1 -mx-1 hover:bg-[var(--paper-2)]"
           >
-            <button @click="handleSelectConversation(conv.id)" class="flex-1 min-w-0 truncate text-[12px] text-[var(--ink-1)] text-left">
+            <button @click="handleSelectConversation(conv.id)" class="flex-1 min-w-0 truncate text-sm text-[var(--ink-1)] text-left">
               {{ conv.title }}
             </button>
             <button
@@ -225,12 +225,12 @@
         class="border-t border-[var(--line)] bg-[var(--paper-0)] px-[18px] py-3.5 hover:bg-[var(--paper-1)] transition-colors w-full text-left flex-shrink-0"
       >
         <div class="flex items-center gap-2.5">
-          <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] text-[12px] font-semibold">
+          <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] text-sm font-semibold">
             {{ userInitial }}
           </div>
           <div class="flex-1 min-w-0">
-            <p class="text-[12.5px] font-medium text-[var(--ink-0)] truncate">{{ authStore.user?.email }}</p>
-            <p v-if="featureConfig?.credits_enabled !== false" class="font-mono text-[11px] text-[var(--ink-2)]">
+            <p class="text-sm font-medium text-[var(--ink-0)] truncate">{{ authStore.user?.email }}</p>
+            <p v-if="featureConfig?.credits_enabled !== false" class="font-mono text-sm text-[var(--ink-2)]">
               <span class="text-[var(--ember)]">●</span> {{ Math.round(remaining) }} credits
             </p>
           </div>
@@ -303,7 +303,7 @@
         class="flex h-12 w-full items-center justify-center border-t border-[var(--line)] bg-[var(--paper-0)] hover:bg-[var(--paper-1)] transition-colors flex-shrink-0"
         :title="featureConfig?.credits_enabled !== false ? `${Math.round(remaining)} credits` : 'Settings'"
       >
-        <div class="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] text-[11px] font-semibold">
+        <div class="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] text-sm font-semibold">
           {{ userInitial }}
         </div>
       </button>
@@ -335,31 +335,31 @@
         :class="isPermActive ? 'border-[var(--ember)] bg-[var(--ember-wash)]' : 'border-transparent hover:bg-[var(--paper-2)]'"
       >
         <Sparkles class="h-3.5 w-3.5 flex-shrink-0" :class="isPermActive ? 'text-[var(--ember)]' : 'text-[var(--ink-1)]'" />
-        <span class="text-[13px] font-medium text-[var(--ink-0)] truncate">{{ chatStore.permanentConversation.title || 'Bingo' }}</span>
+        <span class="text-sm font-medium text-[var(--ink-0)] truncate">{{ chatStore.permanentConversation.title || 'Bingo' }}</span>
       </button>
     </div>
     <button @click="router.push('/dashboard'); closeSidebarOnMobile()" class="flex w-full items-center gap-2.5 px-4 py-2.5 border-l-2 border-transparent hover:bg-[var(--paper-2)]">
       <LayoutDashboard class="h-3.5 w-3.5 text-[var(--ink-1)]" />
-      <span class="text-[13px] font-medium text-[var(--ink-0)]">Dashboards</span>
+      <span class="text-sm font-medium text-[var(--ink-0)]">Dashboards</span>
     </button>
     <button v-if="!ws.isViewer" @click="handleNewTask" class="flex w-full items-center gap-2.5 px-4 py-2.5 border-l-2 border-transparent hover:bg-[var(--paper-2)]">
       <Plus class="h-3.5 w-3.5 text-[var(--ink-2)]" />
-      <span class="text-[13px] font-medium text-[var(--ink-1)]">New task</span>
+      <span class="text-sm font-medium text-[var(--ink-1)]">New task</span>
     </button>
 
     <div class="flex-1 overflow-y-auto px-2 py-2">
       <template v-for="conv in chatStore.taskConversations" :key="conv.id">
-        <button @click="handleSelectConversation(conv.id)" class="w-full text-left px-2 py-1.5 text-[12.5px] text-[var(--ink-1)] hover:bg-[var(--paper-2)] rounded-md truncate">
+        <button @click="handleSelectConversation(conv.id)" class="w-full text-left px-2 py-1.5 text-sm text-[var(--ink-1)] hover:bg-[var(--paper-2)] rounded-md truncate">
           {{ conv.title }}
         </button>
       </template>
     </div>
 
     <button v-if="!ws.isViewer" @click="router.push('/settings'); closeSidebarOnMobile()" class="border-t border-[var(--line)] px-4 py-3 flex items-center gap-2.5 hover:bg-[var(--paper-1)]">
-      <div class="h-8 w-8 rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] flex items-center justify-center text-[12px] font-semibold flex-shrink-0">{{ userInitial }}</div>
+      <div class="h-8 w-8 rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] flex items-center justify-center text-sm font-semibold flex-shrink-0">{{ userInitial }}</div>
       <div class="min-w-0">
-        <span class="text-[12.5px] text-[var(--ink-0)] truncate block">{{ authStore.user?.email }}</span>
-        <span v-if="featureConfig?.credits_enabled !== false" class="font-mono text-[10px] text-[var(--ink-2)]">
+        <span class="text-sm text-[var(--ink-0)] truncate block">{{ authStore.user?.email }}</span>
+        <span v-if="featureConfig?.credits_enabled !== false" class="font-mono text-sm text-[var(--ink-2)]">
           <span class="text-[var(--ember)]">●</span> {{ Math.round(remaining) }} credits
         </span>
       </div>

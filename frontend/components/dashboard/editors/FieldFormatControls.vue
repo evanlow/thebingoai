@@ -2,7 +2,7 @@
   <div class="flex items-end gap-2 flex-wrap">
     <!-- Format select -->
     <div v-if="showFormat" class="space-y-1" style="min-width:86px;">
-      <label class="text-[10px] text-gray-400 dark:text-neutral-500">Format</label>
+      <label class="text-sm text-gray-400 dark:text-neutral-500">Format</label>
       <select
         :value="modelValue.format ?? ''"
         :disabled="!editMode"
@@ -21,7 +21,7 @@
 
     <!-- Align segmented -->
     <div v-if="showAlign" class="space-y-1">
-      <label class="text-[10px] text-gray-400 dark:text-neutral-500">Align</label>
+      <label class="text-sm text-gray-400 dark:text-neutral-500">Align</label>
       <div class="flex gap-0.5">
         <button
           v-for="a in (['left', 'center', 'right'] as const)"
@@ -44,14 +44,14 @@
 
     <!-- Decimal places: None / .0 / .00 segmented -->
     <div v-if="showDecimals && isNumeric" class="space-y-1">
-      <label class="text-[10px] text-gray-400 dark:text-neutral-500">Decimals</label>
+      <label class="text-sm text-gray-400 dark:text-neutral-500">Decimals</label>
       <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button
           v-for="opt in decimalOpts"
           :key="String(opt.value)"
           type="button"
           :disabled="!editMode"
-          class="px-2 py-1 text-[10px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          class="px-2 py-1 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
           :class="effectiveDecimals === opt.value
             ? 'bg-indigo-600 text-white'
             : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"

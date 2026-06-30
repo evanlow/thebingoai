@@ -3,7 +3,7 @@
 
     <!-- Title -->
     <div class="space-y-1.5">
-      <label class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</label>
+      <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</label>
       <input
         v-model="localTitle"
         type="text"
@@ -20,8 +20,8 @@
       <!-- Row dimensions -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Row Dimensions</h3>
-          <button v-if="editMode" type="button" class="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Row Dimensions</h3>
+          <button v-if="editMode" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addDim('row')">+ Add</button>
         </div>
         <p v-if="!localRowDims.length" class="text-xs text-gray-400 dark:text-neutral-500">Add a dimension to break down the rows.</p>
@@ -59,8 +59,8 @@
       <!-- Column dimensions -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Column Dimensions</h3>
-          <button v-if="editMode && localColDims.length < 2" type="button" class="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Column Dimensions</h3>
+          <button v-if="editMode && localColDims.length < 2" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addDim('col')">+ Add</button>
         </div>
         <p v-if="!localColDims.length" class="text-xs text-gray-400 dark:text-neutral-500">Optional. Each distinct value becomes a column group (max 2).</p>
@@ -78,8 +78,8 @@
       <!-- Values / metrics -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Metrics</h3>
-          <button v-if="editMode" type="button" class="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Metrics</h3>
+          <button v-if="editMode" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addValue()">+ Add</button>
         </div>
         <p v-if="!localValues.length" class="text-xs text-gray-400 dark:text-neutral-500">Add at least one metric to show in the cells.</p>
@@ -96,7 +96,7 @@
 
       <!-- Totals -->
       <div class="space-y-2">
-        <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Totals</h3>
+        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Totals</h3>
         <div class="flex items-center justify-between py-0.5">
           <span class="text-xs text-gray-700 dark:text-neutral-200">Row totals (grand-total column)</span>
           <button type="button" role="switch" :aria-checked="localShowRowTotals" :disabled="!editMode"
@@ -121,7 +121,7 @@
 
       <!-- Sort & limits -->
       <div class="space-y-2">
-        <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Sort &amp; Limits</h3>
+        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Sort &amp; Limits</h3>
         <div class="flex items-center justify-between">
           <span class="text-xs text-gray-700 dark:text-neutral-200">Sort rows by</span>
           <select v-model="localSortBy" :disabled="!editMode"

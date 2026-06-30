@@ -83,7 +83,7 @@ const statusClass = computed(() =>
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-1.5 mb-1">
           <span class="h-2 w-2 rounded-full shrink-0" :style="{ background: dotColor }" />
-          <span class="text-[10px] font-semibold tracking-widest uppercase text-gray-400 dark:text-neutral-500">
+          <span class="text-sm font-semibold tracking-widest uppercase text-gray-400 dark:text-neutral-500">
             {{ kindLabel }}
           </span>
         </div>
@@ -102,9 +102,9 @@ const statusClass = computed(() =>
     <!-- Detail rows -->
     <div class="p-4 space-y-3 text-sm">
       <div v-if="meta.last_run_status">
-        <div class="text-xs text-gray-500 dark:text-neutral-400">Status</div>
+        <div class="text-sm text-gray-500 dark:text-neutral-400">Status</div>
         <span
-          class="inline-block mt-0.5 px-2 py-0.5 rounded text-xs font-medium"
+          class="inline-block mt-0.5 px-2 py-0.5 rounded text-sm font-medium"
           :class="statusClass"
         >
           {{ meta.last_run_status }}
@@ -112,37 +112,37 @@ const statusClass = computed(() =>
       </div>
 
       <div v-if="meta.materialization">
-        <div class="text-xs text-gray-500 dark:text-neutral-400">Materialization</div>
+        <div class="text-sm text-gray-500 dark:text-neutral-400">Materialization</div>
         <div class="text-gray-900 dark:text-neutral-100 mt-0.5">{{ meta.materialization }}</div>
       </div>
 
       <div v-if="meta.last_run_at">
-        <div class="text-xs text-gray-500 dark:text-neutral-400">Last build</div>
+        <div class="text-sm text-gray-500 dark:text-neutral-400">Last build</div>
         <div class="text-gray-900 dark:text-neutral-100 mt-0.5">{{ lastBuild }}</div>
       </div>
 
       <div v-if="neighbors.upstream.length">
-        <div class="text-xs text-gray-500 dark:text-neutral-400">Upstream</div>
+        <div class="text-sm text-gray-500 dark:text-neutral-400">Upstream</div>
         <div class="text-gray-900 dark:text-neutral-100 mt-0.5 space-y-0.5">
-          <div v-for="n in neighbors.upstream" :key="n" class="text-[13px]">· {{ n }}</div>
+          <div v-for="n in neighbors.upstream" :key="n" class="text-sm">· {{ n }}</div>
         </div>
       </div>
 
       <div v-if="neighbors.downstream.length">
-        <div class="text-xs text-gray-500 dark:text-neutral-400">Downstream</div>
+        <div class="text-sm text-gray-500 dark:text-neutral-400">Downstream</div>
         <div class="text-gray-900 dark:text-neutral-100 mt-0.5 space-y-0.5">
-          <div v-for="n in neighbors.downstream" :key="n" class="text-[13px]">· {{ n }}</div>
+          <div v-for="n in neighbors.downstream" :key="n" class="text-sm">· {{ n }}</div>
         </div>
       </div>
 
       <!-- Error callout -->
-      <div v-if="errorMessage" class="rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 p-3 text-xs text-rose-800 dark:text-rose-300">
+      <div v-if="errorMessage" class="rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 p-3 text-sm text-rose-800 dark:text-rose-300">
         {{ errorMessage }}
       </div>
 
       <div
         v-else-if="node.kind === 'widget' && meta.lineage_status === 'incomplete'"
-        class="rounded-lg bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 p-3 text-xs text-yellow-800 dark:text-yellow-300"
+        class="rounded-lg bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 p-3 text-sm text-yellow-800 dark:text-yellow-300"
       >
         Lineage incomplete — SQL not parseable. An admin will review.
       </div>
@@ -157,7 +157,7 @@ const statusClass = computed(() =>
           <NuxtLink
             v-if="link"
             :to="link.to"
-            class="block w-full text-center text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            class="block w-full text-center text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
           >
             {{ link.label }}
           </NuxtLink>
@@ -165,7 +165,7 @@ const statusClass = computed(() =>
 
         <button
           v-if="showRerun"
-          class="block w-full text-center text-[13px] font-medium px-3 py-1.5 rounded-lg border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-0)] hover:bg-[var(--paper-1)] transition-colors"
+          class="block w-full text-center text-sm font-medium px-3 py-1.5 rounded-lg border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-0)] hover:bg-[var(--paper-1)] transition-colors"
           @click="emit('rerun', node)"
         >
           Re-run

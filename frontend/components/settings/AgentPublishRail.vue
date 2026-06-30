@@ -1,7 +1,7 @@
 <template>
   <div class="w-48 flex-shrink-0 border-r border-[var(--line)] flex flex-col px-3 py-5">
 
-    <p class="text-[9px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-3">
+    <p class="text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-3">
       Sections
     </p>
 
@@ -27,12 +27,12 @@
         </div>
         <div>
           <p
-            class="text-xs font-semibold"
+            class="text-sm font-semibold"
             :class="activeSection === section.id ? 'text-[var(--ember)]' : 'text-[var(--ink-1)]'"
           >
             {{ section.label }}
           </p>
-          <p class="text-[10px] text-[var(--ink-3)] leading-tight mt-0.5">
+          <p class="text-sm text-[var(--ink-3)] leading-tight mt-0.5">
             {{ section.subtitle }}
           </p>
         </div>
@@ -41,12 +41,12 @@
 
     <!-- Publish footer -->
     <div class="mt-4 pt-4 border-t border-dashed border-[var(--line-2)]">
-      <p class="text-[10px] text-[var(--ink-3)] leading-snug mb-3">
+      <p class="text-sm text-[var(--ink-3)] leading-snug mb-3">
         Edits save as a <strong class="text-[var(--ink-2)] font-semibold">{{ versionLabel }} draft</strong>.
         Publish to make Bingo follow them in new threads.
       </p>
       <button
-        class="w-full py-1.5 text-[11px] font-bold rounded-[var(--r-sm)] bg-[var(--ember)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+        class="w-full py-1.5 text-sm font-bold rounded-[var(--r-sm)] bg-[var(--ember)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
         :disabled="publishing"
         @click="$emit('publish')"
       >
@@ -54,14 +54,14 @@
       </button>
       <button
         v-if="canReset"
-        class="w-full mt-2 py-1.5 text-[11px] font-medium rounded-[var(--r-sm)] border border-[var(--line-2)] bg-[var(--paper-0)] text-[var(--ink-2)] hover:text-[var(--ink-0)] hover:bg-[var(--paper-2)] transition-colors disabled:opacity-50"
+        class="w-full mt-2 py-1.5 text-sm font-medium rounded-[var(--r-sm)] border border-[var(--line-2)] bg-[var(--paper-0)] text-[var(--ink-2)] hover:text-[var(--ink-0)] hover:bg-[var(--paper-2)] transition-colors disabled:opacity-50"
         :disabled="resetting"
         @click="$emit('reset')"
       >
         {{ resetting ? 'Reverting…' : '↺ Reset draft' }}
       </button>
       <button
-        class="w-full mt-2 py-1.5 text-[11px] font-medium rounded-[var(--r-sm)] border border-[var(--line-2)] bg-[var(--paper-0)] text-[var(--ink-3)] hover:text-[var(--ink-0)] hover:bg-[var(--paper-2)] transition-colors disabled:opacity-50"
+        class="w-full mt-2 py-1.5 text-sm font-medium rounded-[var(--r-sm)] border border-[var(--line-2)] bg-[var(--paper-0)] text-[var(--ink-3)] hover:text-[var(--ink-0)] hover:bg-[var(--paper-2)] transition-colors disabled:opacity-50"
         :disabled="resetting"
         @click="$emit('factory-reset')"
       >

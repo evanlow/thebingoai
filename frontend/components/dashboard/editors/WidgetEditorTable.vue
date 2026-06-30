@@ -4,7 +4,7 @@
     <!-- Columns -->
     <div class="space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Columns</h3>
+        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Columns</h3>
         <button
           v-if="editMode"
           class="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
@@ -57,7 +57,7 @@
 
     <!-- Options -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Options</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Options</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Enable pagination</span>
         <button
@@ -93,7 +93,7 @@
 
     <!-- Default Sort -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Default Sort</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Default Sort</h3>
       <div class="flex gap-2">
         <select
           v-model="localDefaultSortKey"
@@ -125,7 +125,7 @@
     </div>
 
     <!-- Data note -->
-    <p class="text-[11px] text-gray-400 dark:text-neutral-500 bg-gray-100 dark:bg-neutral-700 rounded-lg px-3 py-2">
+    <p class="text-sm text-gray-400 dark:text-neutral-500 bg-gray-100 dark:bg-neutral-700 rounded-lg px-3 py-2">
       Row data is managed via SQL data sources or AI generation.
     </p>
   </div>

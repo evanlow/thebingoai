@@ -9,95 +9,95 @@
         </div>
         <div>
           <h2 class="font-serif italic text-xl font-bold text-[var(--ember)]">User context</h2>
-          <p class="text-[11px] text-[var(--ink-2)] mt-0.5 leading-snug max-w-md">
+          <p class="text-sm text-[var(--ink-2)] mt-0.5 leading-snug max-w-md">
             Who Bingo is talking to. Loaded into every conversation so the agent doesn't ask for the same thing twice. Distinct from Memory — these are explicit profile facts you're authoring, not things Bingo inferred.
           </p>
         </div>
       </div>
-      <span class="text-[10px] font-semibold text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] px-2.5 py-1 rounded-full whitespace-nowrap">
+      <span class="text-sm font-semibold text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] px-2.5 py-1 rounded-full whitespace-nowrap">
         {{ fieldsCount }} fields · {{ tokensCount }} tokens
       </span>
     </div>
 
     <!-- Profile fields -->
-    <p class="text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-3">Profile</p>
+    <p class="text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-3">Profile</p>
     <div class="grid grid-cols-3 gap-5 mb-4">
       <div v-for="field in profileFields" :key="field.key">
-        <label class="block text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">
+        <label class="block text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-1.5">
           {{ field.label }}
         </label>
         <input v-model="localProfile[field.key]" @input="onContextChange"
-               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-[13px] text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
+               class="w-full border-0 border-b border-[var(--line)] pb-1.5 text-sm text-[var(--ink-0)] bg-transparent outline-none focus:border-[var(--ember)] transition-colors" />
       </div>
     </div>
 
     <!-- Narrative -->
     <div class="flex items-center gap-2 mt-6 mb-2">
-      <span class="flex-1 text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)]">
+      <span class="flex-1 text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)]">
         About {{ localProfile.address_as || 'You' }} · Narrative
       </span>
       <button @click="stubToast('Edit narrative coming soon')"
-              class="text-[10px] text-[var(--ember)] hover:opacity-80 transition-opacity">
+              class="text-sm text-[var(--ember)] hover:opacity-80 transition-opacity">
         ✦ Edit narrative
       </button>
       <button @click="stubToast('Suggest sharper coming soon')"
-              class="text-[10px] text-[var(--ember)] hover:opacity-80 transition-opacity">
+              class="text-sm text-[var(--ember)] hover:opacity-80 transition-opacity">
         ✦ Suggest sharper
       </button>
     </div>
     <textarea v-model="localNarrative" @input="onContextChange" rows="4"
-              class="w-full border border-[var(--line)] rounded-[var(--r-sm)] px-3 py-2.5 text-xs text-[var(--ink-1)] bg-[var(--paper-0)] outline-none focus:border-[var(--ember)] resize-none transition-colors mb-2" />
+              class="w-full border border-[var(--line)] rounded-[var(--r-sm)] px-3 py-2.5 text-sm text-[var(--ink-1)] bg-[var(--paper-0)] outline-none focus:border-[var(--ember)] resize-none transition-colors mb-2" />
     <!-- Stub toast -->
     <div v-if="stubMessage"
-         class="text-[10px] text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded-[var(--r-sm)] px-3 py-1.5 mb-4 inline-block">
+         class="text-sm text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded-[var(--r-sm)] px-3 py-1.5 mb-4 inline-block">
       {{ stubMessage }}
     </div>
     <div v-else class="mb-6" />
 
     <!-- Vocabulary -->
     <div class="flex items-center justify-between mb-2 mt-1">
-      <p class="text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)]">
+      <p class="text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)]">
         Vocabulary · How {{ localProfile.address_as || 'You' }} Define Things
       </p>
-      <button @click="addVocabTerm" class="text-[10px] font-semibold text-[var(--ember)] hover:opacity-80">
+      <button @click="addVocabTerm" class="text-sm font-semibold text-[var(--ember)] hover:opacity-80">
         + Add term
       </button>
     </div>
     <div class="border border-[var(--line)] rounded-[var(--r-sm)] overflow-hidden mb-6 divide-y divide-[var(--paper-3)]">
       <!-- Column headers -->
       <div class="grid grid-cols-[140px_1fr_28px] items-center bg-[var(--paper-1)] px-3 py-1.5">
-        <span class="text-[9px] font-bold uppercase tracking-[.08em] text-[var(--ink-3)]">Term</span>
-        <span class="text-[9px] font-bold uppercase tracking-[.08em] text-[var(--ink-3)]">Definition</span>
+        <span class="text-sm font-bold uppercase tracking-[.08em] text-[var(--ink-3)]">Term</span>
+        <span class="text-sm font-bold uppercase tracking-[.08em] text-[var(--ink-3)]">Definition</span>
         <span></span>
       </div>
       <!-- Rows -->
       <div v-for="(item, idx) in localVocab" :key="idx"
            class="grid grid-cols-[140px_1fr_28px] items-center px-3 py-2 hover:bg-[var(--paper-1)] transition-colors">
         <input v-model="item.term" @input="onContextChange" placeholder="term"
-               class="text-[12px] font-mono font-semibold text-[var(--ember)] bg-transparent border-none outline-none truncate" />
+               class="text-sm font-mono font-semibold text-[var(--ember)] bg-transparent border-none outline-none truncate" />
         <input v-model="item.definition" @input="onContextChange" placeholder="definition…"
-               class="text-[12px] text-[var(--ink-1)] bg-transparent border-none outline-none" />
+               class="text-sm text-[var(--ink-1)] bg-transparent border-none outline-none" />
         <button @click="removeVocabTerm(idx)"
-                class="text-[11px] text-[var(--line-2)] hover:text-[var(--ink-2)] justify-self-center">✕</button>
+                class="text-sm text-[var(--line-2)] hover:text-[var(--ink-2)] justify-self-center">✕</button>
       </div>
-      <div v-if="localVocab.length === 0" class="px-3 py-3 text-[11px] text-[var(--ink-3)] italic">
+      <div v-if="localVocab.length === 0" class="px-3 py-3 text-sm text-[var(--ink-3)] italic">
         No terms yet. Click "+ Add term" to define vocabulary.
       </div>
     </div>
 
     <!-- Don't say it -->
-    <p class="text-[9.5px] font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-2">
+    <p class="text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-2">
       Don't say it
     </p>
     <div class="flex flex-wrap gap-2">
       <div v-for="(item, idx) in localSensitivities" :key="idx"
-           class="flex items-center gap-1.5 text-[10px] bg-[var(--paper-0)] border border-[var(--line)] text-[var(--ink-1)] px-2.5 py-1 rounded-full">
+           class="flex items-center gap-1.5 text-sm bg-[var(--paper-0)] border border-[var(--line)] text-[var(--ink-1)] px-2.5 py-1 rounded-full">
         <span class="w-1.5 h-1.5 rounded-full bg-[oklch(0.60_0.18_25)] flex-shrink-0" />
         <span>{{ item }}</span>
         <button @click="removeSensitivity(idx)" class="text-[var(--line-2)] hover:text-[var(--ink-2)] ml-0.5">✕</button>
       </div>
       <button @click="openSensitivityModal"
-              class="text-[10px] text-[var(--ink-2)] border border-dashed border-[var(--line-2)] px-3 py-1 rounded-full hover:text-[var(--ember)] hover:border-[var(--ember)] transition-colors">
+              class="text-sm text-[var(--ink-2)] border border-dashed border-[var(--line-2)] px-3 py-1 rounded-full hover:text-[var(--ember)] hover:border-[var(--ember)] transition-colors">
         + add boundary
       </button>
     </div>
@@ -109,7 +109,7 @@
          @keydown.esc="closeSensitivityModal">
       <div class="bg-[var(--paper-0)] border border-[var(--line)] rounded-[var(--r-lg)] p-6 w-full max-w-md shadow-xl">
         <h3 class="font-serif italic text-lg font-bold text-[var(--ember)] mb-1">Add a boundary</h3>
-        <p class="text-[11px] text-[var(--ink-2)] mb-4">
+        <p class="text-sm text-[var(--ink-2)] mb-4">
           Something Bingo should avoid. Example: "Don't use the word leverage".
         </p>
         <input ref="sensitivityInputRef"
@@ -117,15 +117,15 @@
                @keydown.enter="confirmSensitivity"
                @keydown.esc="closeSensitivityModal"
                placeholder="e.g. Avoid jargon"
-               class="w-full border border-[var(--line)] rounded-[var(--r-sm)] px-3 py-2 text-xs text-[var(--ink-0)] bg-[var(--paper-0)] outline-none focus:border-[var(--ember)] transition-colors mb-4" />
+               class="w-full border border-[var(--line)] rounded-[var(--r-sm)] px-3 py-2 text-sm text-[var(--ink-0)] bg-[var(--paper-0)] outline-none focus:border-[var(--ember)] transition-colors mb-4" />
         <div class="flex justify-end gap-2">
           <button @click="closeSensitivityModal"
-                  class="text-[11px] font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
+                  class="text-sm font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
             Cancel
           </button>
           <button @click="confirmSensitivity"
                   :disabled="!newSensitivityText.trim()"
-                  class="text-[11px] font-semibold text-white bg-[var(--ember)] px-3 py-1.5 rounded-[var(--r-sm)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
+                  class="text-sm font-semibold text-white bg-[var(--ember)] px-3 py-1.5 rounded-[var(--r-sm)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
             Add boundary
           </button>
         </div>

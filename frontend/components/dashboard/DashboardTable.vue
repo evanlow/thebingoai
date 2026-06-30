@@ -145,7 +145,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 
 .dash-table-head .dash-col {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.08em;
   color: var(--ink-3);
@@ -172,7 +172,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 
 /* ── Column cells ── */
 .dash-col {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-0);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -187,7 +187,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
   justify-content: flex-end;
   padding-right: 0;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink-1);
 }
 
@@ -232,7 +232,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
   overflow: hidden;
   text-overflow: ellipsis;
   font-style: italic;
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
 /* ── Schedule ── */
@@ -249,7 +249,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 
 .dash-schedule-label {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--ink-1);
   white-space: nowrap;
 }
@@ -265,13 +265,13 @@ function scheduleLabel(item: DashboardListItem): string | null {
   border-radius: 50%;
   background: var(--ember-wash, color-mix(in srgb, var(--ember) 15%, transparent));
   color: var(--ember);
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--font-sans);
 }
 
 .dash-owner-handle {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
@@ -285,7 +285,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
   border-radius: 999px;
   background: var(--ember-wash, color-mix(in srgb, var(--ember) 12%, transparent));
   color: var(--ember);
-  font-size: 11.5px;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -294,7 +294,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 
 /* Own-workspace name — plain text, no pill (pill is reserved for shared rows) */
 .dash-ws-name {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
@@ -304,7 +304,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 /* ── Muted text ── */
 .dash-muted {
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
 .dash-widgets-num {
@@ -315,7 +315,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 .dash-empty {
   padding: 32px 20px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-3);
 }
 </style>

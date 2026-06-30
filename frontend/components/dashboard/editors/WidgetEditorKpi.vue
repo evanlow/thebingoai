@@ -3,7 +3,7 @@
 
     <!-- Display section -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Display</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Display</h3>
 
       <div class="space-y-1.5">
         <label class="text-xs text-gray-600 dark:text-neutral-400">Label</label>
@@ -27,14 +27,14 @@
               :key="r"
               type="button"
               :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="primaryRole === r
                 ? 'bg-indigo-600 text-white'
                 : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
               @click="editMode && setPrimaryRole(r)"
             >{{ r === 'dimension' ? 'Dimension' : 'Metric' }}</button>
           </div>
-          <p class="text-[10px] text-gray-400 dark:text-neutral-500 mt-1">
+          <p class="text-sm text-gray-400 dark:text-neutral-500 mt-1">
             {{ primaryRole === 'dimension'
               ? 'Shows the raw value from a single row (no aggregation).'
               : 'Aggregates the selected column across all rows.' }}
@@ -134,7 +134,7 @@
 
     <!-- Comparison section (replaces Trend) -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison</h3>
 
       <!-- Type selector -->
       <div class="space-y-1.5">
@@ -146,7 +146,7 @@
             type="button"
             :disabled="!editMode || opt.disabled"
             :title="opt.disabled ? opt.reason : undefined"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:cursor-not-allowed"
             :class="[
               localComparisonType === opt.value && !opt.disabled
                 ? 'bg-indigo-600 text-white'
@@ -157,7 +157,7 @@
             @click="editMode && !opt.disabled && setComparisonType(opt.value)"
           >{{ opt.label }}</button>
         </div>
-        <p v-if="availableComparisonTypes.some(o => o.disabled)" class="text-[10px] text-gray-400 dark:text-neutral-500">
+        <p v-if="availableComparisonTypes.some(o => o.disabled)" class="text-sm text-gray-400 dark:text-neutral-500">
           Greyed options need a different query shape. Hover for details.
         </p>
       </div>
@@ -166,7 +166,7 @@
       <template v-if="localComparisonType === 'period'">
         <!-- Auto-calculated info -->
         <div v-if="isAutoTrend" class="rounded-lg bg-gray-100 dark:bg-neutral-700 px-3 py-2">
-          <p class="text-[11px] text-gray-500 dark:text-neutral-400">
+          <p class="text-sm text-gray-500 dark:text-neutral-400">
             Comparison is auto-calculated from your query. Select a period and date column to control it.
           </p>
         </div>
@@ -275,7 +275,7 @@
         <div class="flex items-center justify-between py-1">
           <div>
             <span class="text-sm text-gray-700 dark:text-neutral-200">Show as progress</span>
-            <p class="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">Renders a progress bar/circle instead of % change</p>
+            <p class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5">Renders a progress bar/circle instead of % change</p>
           </div>
           <button
             type="button"

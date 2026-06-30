@@ -3,7 +3,7 @@
     <div v-if="config.title" class="mb-3 flex items-start justify-between">
       <div>
         <h3 class="text-sm font-medium text-gray-800">{{ config.title }}</h3>
-        <p v-if="config.description" class="mt-0.5 text-xs text-gray-400">{{ config.description }}</p>
+        <p v-if="config.description" class="mt-0.5 text-sm text-gray-400">{{ config.description }}</p>
       </div>
     </div>
     <div class="relative min-h-0 flex-1">

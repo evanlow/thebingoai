@@ -3,7 +3,7 @@
 
     <!-- 1. Title -->
     <div class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show title</span>
         <button type="button" role="switch" :aria-checked="!!localOpts.showTitle" :disabled="!editMode"
@@ -28,7 +28,7 @@
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in [{ value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }]" :key="opt.value"
                 type="button" :disabled="!editMode"
-                class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="(localOpts.titlePosition ?? 'top') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
                 @click="editMode && setOpt('titlePosition', opt.value)">{{ opt.label }}</button>
             </div>
@@ -38,7 +38,7 @@
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in [{ value: 'left', label: 'L' }, { value: 'center', label: 'C' }, { value: 'right', label: 'R' }]" :key="opt.value"
                 type="button" :disabled="!editMode"
-                class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="(localOpts.titleAlignment ?? 'center') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
                 @click="editMode && setOpt('titleAlignment', opt.value)">{{ opt.label }}</button>
             </div>
@@ -63,7 +63,7 @@
               :key="opt.value"
               type="button"
               :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="(localOpts.titleFontSize ?? 'sm') === opt.value
                 ? 'bg-indigo-600 text-white'
                 : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -80,13 +80,13 @@
 
     <!-- Funnel options -->
     <div v-if="isFunnel" class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Funnel</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Funnel</h3>
       <div class="space-y-1.5">
         <label class="text-xs text-gray-700 dark:text-neutral-200">Funnel shape</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'smoothed', label: 'Smoothed' }, { value: 'stepped', label: 'Stepped' }]" :key="opt.value"
             type="button" :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.funnelShape ?? 'smoothed') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setOpt('funnelShape', opt.value)">{{ opt.label }}</button>
         </div>
@@ -96,7 +96,7 @@
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'number', label: 'Number' }, { value: 'percentage', label: '%' }, { value: 'numberPercentage', label: 'Num + %' }]" :key="opt.value"
             type="button" :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.funnelLabelMode ?? 'numberPercentage') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setOpt('funnelLabelMode', opt.value)">{{ opt.label }}</button>
         </div>
@@ -106,7 +106,7 @@
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'max', label: '% of max' }, { value: 'previous', label: '% of previous' }]" :key="opt.value"
             type="button" :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.funnelPercentType ?? 'max') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setOpt('funnelPercentType', opt.value)">{{ opt.label }}</button>
         </div>
@@ -116,7 +116,7 @@
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'single', label: 'Single color' }, { value: 'byValue', label: 'By value' }]" :key="opt.value"
             type="button" :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.funnelColorMode ?? 'byValue') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setOpt('funnelColorMode', opt.value)">{{ opt.label }}</button>
         </div>
@@ -125,7 +125,7 @@
 
     <!-- Timeline options -->
     <div v-if="isTimeline" class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Timeline</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Timeline</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Group by row label</span>
         <button type="button" role="switch" :aria-checked="!!localOpts.timelineGroupByRowLabel" :disabled="!editMode"
@@ -141,7 +141,7 @@
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'row', label: 'Row label' }, { value: 'bar', label: 'Bar label' }]" :key="opt.value"
             type="button" :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.timelineColorBy ?? 'row') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setOpt('timelineColorBy', opt.value)">{{ opt.label }}</button>
         </div>
@@ -160,13 +160,13 @@
 
     <!-- 2. Series -->
     <div v-if="isStandardChart" class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Series</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Series</h3>
       <p v-if="!localDatasets.length" class="text-xs text-gray-400 dark:text-neutral-500">No datasets yet. Connect a data source first.</p>
       <div v-for="(ds, i) in localDatasets" :key="i" class="rounded-lg border border-gray-100 dark:border-neutral-800 p-3 space-y-2.5">
         <!-- Series header -->
         <div class="flex items-center justify-between gap-2">
           <span class="text-xs font-medium text-gray-700 dark:text-neutral-200 truncate">{{ ds.label || `Series ${i + 1}` }}</span>
-          <button type="button" class="text-[11px] text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300"
+          <button type="button" class="text-sm text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300"
             @click="toggleSeriesExpanded(i)">{{ expandedSeries.has(i) ? 'Collapse' : 'Expand' }}</button>
         </div>
 
@@ -176,7 +176,7 @@
             <label class="text-xs text-gray-700 dark:text-neutral-200">Series type</label>
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in seriesTypeOptions" :key="opt.value" type="button" :disabled="!editMode"
-                class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="(ds.seriesType ?? defaultSeriesType) === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
                 @click="editMode && setDatasetProp(i, 'seriesType', opt.value)">{{ opt.label }}</button>
             </div>
@@ -195,7 +195,7 @@
               <label class="text-xs text-gray-700 dark:text-neutral-200">Line style</label>
               <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
                 <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
-                  class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
                   :class="(ds.lineStyle ?? 'solid') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
                   @click="editMode && setDatasetProp(i, 'lineStyle', opt.value)">{{ opt.label }}</button>
               </div>
@@ -278,7 +278,7 @@
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in [{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }]" :key="opt.value"
                 type="button" :disabled="!editMode"
-                class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="(ds.yAxisID ?? 'left') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
                 @click="editMode && setDatasetProp(i, 'yAxisID', opt.value)">{{ opt.label }}</button>
             </div>
@@ -312,7 +312,7 @@
                 <label class="text-xs text-gray-700 dark:text-neutral-200">Style</label>
                 <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
                   <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
-                    class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                    class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
                     :class="(ds.trendline.style ?? 'dashed') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
                     @click="editMode && setTrendlineProp(i, 'style', opt.value)">{{ opt.label }}</button>
                 </div>
@@ -325,7 +325,7 @@
 
     <!-- 3. General -->
     <div v-if="isStandardChart" class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">General</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">General</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show legend</span>
         <button type="button" role="switch" :aria-checked="localOpts.showLegend !== false" :disabled="!editMode"
@@ -362,7 +362,7 @@
       <div class="flex items-center justify-between py-1">
         <div>
           <span class="text-sm text-gray-700 dark:text-neutral-200">Round values</span>
-          <p class="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">Abbreviate to K / M / B on axes, tooltips, and labels</p>
+          <p class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5">Abbreviate to K / M / B on axes, tooltips, and labels</p>
         </div>
         <button type="button" role="switch" :aria-checked="!!localOpts.roundValues" :disabled="!editMode"
           class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -382,10 +382,10 @@
 
     <!-- 4. Missing data (date mode only) -->
     <div v-if="chartConfig.options?.xAxisMode === 'date'" class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Missing Data</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Missing Data</h3>
       <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button v-for="opt in missingDataOptions" :key="opt.value" type="button" :disabled="!editMode"
-          class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
           :class="(localOpts.missingData ?? 'lineToZero') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
           @click="editMode && setOpt('missingData', opt.value)">{{ opt.label }}</button>
       </div>
@@ -394,12 +394,12 @@
     <!-- 5. Reference Lines -->
     <div v-if="isStandardChart" class="space-y-2">
       <div class="flex items-center justify-between">
-        <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Reference Lines</h3>
+        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Reference Lines</h3>
         <button v-if="editMode" type="button"
-          class="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
+          class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
           @click="addReferenceLine()">+ Add</button>
       </div>
-      <div v-if="!localOpts.referenceLines?.length" class="text-[11px] text-gray-400 dark:text-neutral-500">No reference lines.</div>
+      <div v-if="!localOpts.referenceLines?.length" class="text-sm text-gray-400 dark:text-neutral-500">No reference lines.</div>
       <div v-for="(rl, ri) in (localOpts.referenceLines ?? [])" :key="rl.id ?? ri"
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
         <div class="flex items-center gap-2">
@@ -416,7 +416,7 @@
         </div>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
-            class="flex-1 py-1 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(rl.style ?? 'dashed') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setRefLineProp(ri, 'style', opt.value)">{{ opt.label }}</button>
         </div>
@@ -426,12 +426,12 @@
     <!-- 6. Reference Bands -->
     <div v-if="isStandardChart" class="space-y-2">
       <div class="flex items-center justify-between">
-        <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Reference Bands</h3>
+        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Reference Bands</h3>
         <button v-if="editMode" type="button"
-          class="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
+          class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
           @click="addReferenceBand()">+ Add</button>
       </div>
-      <div v-if="!localOpts.referenceBands?.length" class="text-[11px] text-gray-400 dark:text-neutral-500">No reference bands.</div>
+      <div v-if="!localOpts.referenceBands?.length" class="text-sm text-gray-400 dark:text-neutral-500">No reference bands.</div>
       <div v-for="(rb, rbi) in (localOpts.referenceBands ?? [])" :key="rb.id ?? rbi"
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
         <div class="flex items-center gap-2">
@@ -454,7 +454,7 @@
 
     <!-- 7. Axes -->
     <div v-if="isStandardChart" class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Axes</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Axes</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Reverse X-axis</span>
         <button type="button" role="switch" :aria-checked="!!localOpts.reverseXAxis" :disabled="!editMode"
@@ -557,7 +557,7 @@
 
     <!-- 8. Grid -->
     <div v-if="isStandardChart" class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Grid</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Grid</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show X-axis grid lines</span>
         <button type="button" role="switch" :aria-checked="localOpts.showXGridLines !== false" :disabled="!editMode"
@@ -586,7 +586,7 @@
         <label class="text-xs text-gray-700 dark:text-neutral-200">Grid line style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.gridLineStyle ?? 'solid') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setOpt('gridLineStyle', opt.value)">{{ opt.label }}</button>
         </div>
@@ -595,7 +595,7 @@
 
     <!-- 9. Legend -->
     <div v-if="isStandardChart" class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Legend</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Legend</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show legend</span>
         <button type="button" role="switch" :aria-checked="localOpts.showLegend !== false" :disabled="!editMode"
@@ -611,7 +611,7 @@
           <label class="text-xs text-gray-700 dark:text-neutral-200">Position</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button v-for="opt in legendPositionOptions" :key="opt.value" type="button" :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="(localOpts.legendPosition ?? 'top') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
               @click="editMode && setOpt('legendPosition', opt.value)">{{ opt.label }}</button>
           </div>
@@ -621,7 +621,7 @@
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button v-for="opt in [{ value: 'start', label: 'Start' }, { value: 'center', label: 'Center' }, { value: 'end', label: 'End' }]" :key="opt.value"
               type="button" :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="(localOpts.legendAlignment ?? 'center') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
               @click="editMode && setOpt('legendAlignment', opt.value)">{{ opt.label }}</button>
           </div>
@@ -645,7 +645,7 @@
               :key="opt.value"
               type="button"
               :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="(localOpts.legendFontSize ?? 'sm') === opt.value
                 ? 'bg-indigo-600 text-white'
                 : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -662,7 +662,7 @@
 
     <!-- Font (base — applies to legend, axis labels & title unless overridden per-element) -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Font</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Font</h3>
       <div class="flex items-center justify-between gap-2">
         <span class="text-xs text-gray-700 dark:text-neutral-200">Family</span>
         <select v-model="localOpts.fontFamily" :disabled="!editMode"
@@ -682,7 +682,7 @@
             :key="opt.value"
             type="button"
             :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.fontSize ?? 'sm') === opt.value
               ? 'bg-indigo-600 text-white'
               : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -698,7 +698,7 @@
 
     <!-- 10. Background & border -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Background & Border</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Background & Border</h3>
       <div class="flex items-center justify-between gap-2">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Background</span>
         <ColorPickerPopover v-model="localOpts.backgroundColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
@@ -715,7 +715,7 @@
         <label class="text-xs text-gray-700 dark:text-neutral-200">Border style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in borderStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localOpts.borderStyle ?? 'none') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && setOpt('borderStyle', opt.value)">{{ opt.label }}</button>
         </div>

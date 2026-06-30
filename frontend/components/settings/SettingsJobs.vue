@@ -16,7 +16,7 @@
         <button
           type="button"
           @click="activeTab = 'jobs'"
-          class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+          class="px-4 py-2 text-base font-medium border-b-2 -mb-px transition-colors"
           :class="activeTab === 'jobs' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
         >
           Jobs
@@ -24,7 +24,7 @@
         <button
           type="button"
           @click="activeTab = 'pipelines'"
-          class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+          class="px-4 py-2 text-base font-medium border-b-2 -mb-px transition-colors"
           :class="activeTab === 'pipelines' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
         >
           Dashboard Pipelines
@@ -80,7 +80,7 @@
             <div class="flex items-center gap-2">
               <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ job.name || 'Unnamed job' }}</p>
               <span
-                class="shrink-0 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                class="shrink-0 text-sm font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
                 :class="job.kind === 'briefing'
                   ? 'bg-violet-100 text-violet-700'
                   : 'bg-gray-100 text-gray-600'"
@@ -91,7 +91,7 @@
                 type="button"
                 :title="expandedJobId === job.id ? 'Close schedule editor' : 'Edit schedule'"
                 @click="toggleJobExpand(job.id)"
-                class="shrink-0 text-xs px-2 py-0.5 rounded-full font-mono transition-colors"
+                class="shrink-0 text-sm px-2 py-0.5 rounded-full font-mono transition-colors"
                 :class="expandedJobId === job.id
                   ? 'bg-blue-100 text-blue-700'
                   : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'"
@@ -99,7 +99,7 @@
                 {{ job.cron_expression }}
               </button>
             </div>
-            <p class="text-xs text-gray-400 mt-0.5">
+            <p class="text-sm text-gray-400 mt-0.5">
               <span v-if="job.last_run_at">Last run: {{ formatRelative(job.last_run_at) }} · </span>
               <span v-if="job.next_run_at && job.is_active">Next: {{ formatRelative(job.next_run_at) }}</span>
               <span v-else-if="!job.is_active" class="text-gray-300">Inactive</span>
@@ -108,7 +108,7 @@
 
           <!-- Actions -->
           <div class="flex items-center gap-1 shrink-0">
-            <span v-if="jobRunCount(job) !== null" class="text-xs text-gray-400 px-1.5">
+            <span v-if="jobRunCount(job) !== null" class="text-sm text-gray-400 px-1.5">
               Runs · {{ jobRunCount(job) }}
             </span>
             <button
@@ -270,7 +270,7 @@
             @click="toggleRunExpand(run.id)"
           >
             <span
-              class="text-xs font-medium px-2 py-0.5 rounded-full"
+              class="text-sm font-medium px-2 py-0.5 rounded-full"
               :class="{
                 'bg-green-100 text-green-700': run.status === 'completed',
                 'bg-red-100 text-red-700': run.status === 'failed',
@@ -280,18 +280,18 @@
               {{ run.status }}
             </span>
             <span class="text-sm text-gray-700 flex-1">{{ formatDate(run.started_at) }}</span>
-            <span v-if="run.duration_ms" class="text-xs text-gray-400">{{ run.duration_ms }}ms</span>
+            <span v-if="run.duration_ms" class="text-sm text-gray-400">{{ run.duration_ms }}ms</span>
             <component :is="ChevronDown" class="h-4 w-4 text-gray-400 transition-transform" :class="{ 'rotate-180': expandedRuns.has(run.id) }" />
           </div>
 
           <!-- Run details (expanded) -->
           <div v-if="expandedRuns.has(run.id)" class="border-t border-gray-100 px-4 py-3 space-y-3 bg-gray-50">
             <div v-if="run.response">
-              <p class="text-xs font-medium text-gray-500 mb-1">Response</p>
+              <p class="text-sm font-medium text-gray-500 mb-1">Response</p>
               <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ run.response }}</p>
             </div>
             <div v-if="run.error">
-              <p class="text-xs font-medium text-red-500 mb-1">Error</p>
+              <p class="text-sm font-medium text-red-500 mb-1">Error</p>
               <p class="text-sm text-red-600 whitespace-pre-wrap font-mono">{{ run.error }}</p>
             </div>
           </div>
@@ -383,16 +383,16 @@
                   type="button"
                   :title="expandedDashboardId === dashboard.id ? 'Close schedule editor' : 'Edit schedule'"
                   @click="toggleDashboardExpand(dashboard.id)"
-                  class="shrink-0 text-xs px-2 py-0.5 rounded-full font-mono transition-colors"
+                  class="shrink-0 text-sm px-2 py-0.5 rounded-full font-mono transition-colors"
                   :class="expandedDashboardId === dashboard.id
                     ? 'bg-violet-100 text-violet-700'
                     : 'bg-violet-50 text-violet-600 hover:bg-violet-100'"
                 >
                   {{ dashboard.cron_expression }}
                 </button>
-                <span class="shrink-0 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Dashboard</span>
+                <span class="shrink-0 text-sm bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Dashboard</span>
               </div>
-              <p class="text-xs text-gray-400 mt-0.5">
+              <p class="text-sm text-gray-400 mt-0.5">
                 <span v-if="dashboard.last_run_at">Last: {{ formatRelative(dashboard.last_run_at) }} · </span>
                 <span v-if="dashboard.next_run_at && dashboard.schedule_active">Next: {{ formatRelative(dashboard.next_run_at) }}</span>
                 <span v-else-if="!dashboard.schedule_active" class="text-gray-300">Inactive</span>
@@ -481,7 +481,7 @@
             @click="toggleRunExpand(run.id)"
           >
             <span
-              class="text-xs font-medium px-2 py-0.5 rounded-full"
+              class="text-sm font-medium px-2 py-0.5 rounded-full"
               :class="{
                 'bg-green-100 text-green-700': run.status === 'completed' && !run.widgets_failed,
                 'bg-yellow-100 text-yellow-700': run.status === 'completed' && run.widgets_failed,
@@ -492,25 +492,25 @@
               {{ run.status }}
             </span>
             <span class="text-sm text-gray-700 flex-1">{{ formatDate(run.started_at) }}</span>
-            <span v-if="run.widgets_total" class="text-xs text-gray-500">
+            <span v-if="run.widgets_total" class="text-sm text-gray-500">
               {{ run.widgets_succeeded }}/{{ run.widgets_total }} widgets
             </span>
-            <span v-if="run.duration_ms" class="text-xs text-gray-400">{{ run.duration_ms }}ms</span>
+            <span v-if="run.duration_ms" class="text-sm text-gray-400">{{ run.duration_ms }}ms</span>
             <component :is="ChevronDown" class="h-4 w-4 text-gray-400 transition-transform" :class="{ 'rotate-180': expandedRuns.has(run.id) }" />
           </div>
           <div v-if="expandedRuns.has(run.id)" class="border-t border-gray-100 px-4 py-3 space-y-3 bg-gray-50">
             <div v-if="run.error">
-              <p class="text-xs font-medium text-red-500 mb-1">Error</p>
+              <p class="text-sm font-medium text-red-500 mb-1">Error</p>
               <p class="text-sm text-red-600 font-mono">{{ run.error }}</p>
             </div>
             <div v-if="run.widget_errors && Object.keys(run.widget_errors).length">
-              <p class="text-xs font-medium text-gray-500 mb-1">Widget errors</p>
-              <div v-for="(errMsg, widgetId) in run.widget_errors" :key="widgetId" class="text-xs text-red-600 font-mono">
+              <p class="text-sm font-medium text-gray-500 mb-1">Widget errors</p>
+              <div v-for="(errMsg, widgetId) in run.widget_errors" :key="widgetId" class="text-sm text-red-600 font-mono">
                 <span class="text-gray-500">{{ widgetId }}:</span> {{ errMsg }}
               </div>
             </div>
             <div v-if="!run.error && (!run.widget_errors || !Object.keys(run.widget_errors).length)">
-              <p class="text-xs text-gray-400">All widgets refreshed successfully.</p>
+              <p class="text-sm text-gray-400">All widgets refreshed successfully.</p>
             </div>
           </div>
         </div>

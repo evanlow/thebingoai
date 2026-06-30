@@ -27,7 +27,7 @@
 
         <!-- Schema context + Send button row -->
         <div class="flex items-center justify-between mb-8">
-          <div v-if="recentConnection" class="flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500">
+          <div v-if="recentConnection" class="flex items-center gap-2 text-sm text-neutral-400 dark:text-neutral-500">
             <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <ellipse cx="12" cy="5" rx="9" ry="3"/>
               <path d="M3 5v14c0 1.657 4.03 3 9 3s9-1.343 9-3V5"/>
@@ -70,7 +70,7 @@
               @click="question = starter.question"
             >
               <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 leading-tight">{{ starter.title }}</p>
-              <p class="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed">{{ starter.description }}</p>
+              <p class="text-sm text-neutral-400 dark:text-neutral-500 leading-relaxed">{{ starter.description }}</p>
             </button>
           </div>
         </div>

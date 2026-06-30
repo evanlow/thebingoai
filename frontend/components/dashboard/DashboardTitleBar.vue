@@ -184,7 +184,7 @@ function formatRelativeTime(isoString: string): string {
   align-items: center;
   gap: 4px;
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink-3);
   background: none;
@@ -227,7 +227,7 @@ function formatRelativeTime(isoString: string): string {
 
 .dash-meta {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--ink-3);
   margin-top: 4px;
 }
@@ -246,7 +246,7 @@ function formatRelativeTime(isoString: string): string {
   padding: 5px 12px;
   border-radius: 8px;
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   border: 1px solid var(--line);
   background: var(--paper-0);

@@ -1,12 +1,12 @@
 <template>
   <!-- SQL query result: compact table -->
   <div v-if="isQueryResult">
-    <div class="text-xs text-gray-500 mb-1">
+    <div class="text-sm text-gray-500 mb-1">
       {{ result.row_count }} row{{ result.row_count !== 1 ? 's' : '' }}
       <span v-if="result.execution_time_ms"> · {{ result.execution_time_ms.toFixed(0) }}ms</span>
     </div>
     <div v-if="result.columns?.length" class="overflow-x-auto rounded border border-gray-100">
-      <table class="min-w-full text-xs">
+      <table class="min-w-full text-sm">
         <thead>
           <tr class="bg-gray-50">
             <th
@@ -30,7 +30,7 @@
           </tr>
         </tbody>
       </table>
-      <p v-if="result.rows?.length > 5" class="px-2 py-1 text-xs text-gray-400">
+      <p v-if="result.rows?.length > 5" class="px-2 py-1 text-sm text-gray-400">
         Showing 5 of {{ result.rows.length }} rows
       </p>
     </div>
@@ -38,17 +38,17 @@
 
   <!-- Sub-agent result (data_agent / rag_agent): show outcome message only — SQL stays server-side -->
   <div v-else-if="isAgentResult">
-    <p v-if="result.message" class="text-xs text-gray-700 line-clamp-3">{{ result.message }}</p>
+    <p v-if="result.message" class="text-sm text-gray-700 line-clamp-3">{{ result.message }}</p>
   </div>
 
   <!-- Table list result -->
   <div v-else-if="Array.isArray(result)">
-    <p class="text-xs text-gray-600">{{ result.slice(0, 10).join(', ') }}{{ result.length > 10 ? ` +${result.length - 10} more` : '' }}</p>
+    <p class="text-sm text-gray-600">{{ result.slice(0, 10).join(', ') }}{{ result.length > 10 ? ` +${result.length - 10} more` : '' }}</p>
   </div>
 
   <!-- Generic fallback -->
   <div v-else>
-    <p class="text-xs text-gray-600 break-all font-mono line-clamp-4">{{ JSON.stringify(result) }}</p>
+    <p class="text-sm text-gray-600 break-all font-mono line-clamp-4">{{ JSON.stringify(result) }}</p>
   </div>
 </template>
 

@@ -35,10 +35,10 @@
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="flex flex-wrap gap-4">
-      <UiSkeleton class="h-56 w-56 max-md:w-full rounded-lg" />
-      <UiSkeleton class="h-56 w-56 max-md:w-full rounded-lg" />
-      <UiSkeleton class="h-56 w-56 max-md:w-full rounded-lg" />
+    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <UiSkeleton class="h-56 w-full rounded-lg" />
+      <UiSkeleton class="h-56 w-full rounded-lg" />
+      <UiSkeleton class="h-56 w-full rounded-lg" />
     </div>
 
     <!-- Empty State -->
@@ -61,17 +61,17 @@
       <!-- WAREHOUSES · DATABASES -->
       <div>
         <div class="flex items-center gap-3 mb-3">
-          <p class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest shrink-0">Warehouses · Databases</p>
+          <p class="text-sm font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest shrink-0">Warehouses · Databases</p>
           <div class="flex-1 border-t border-dashed border-gray-200 dark:border-neutral-700"></div>
-          <span class="text-xs text-gray-400 dark:text-neutral-500 shrink-0">
+          <span class="text-sm text-gray-400 dark:text-neutral-500 shrink-0">
             {{ warehouseConnections.length }} {{ warehouseConnections.length === 1 ? 'connection' : 'connections' }}
           </span>
         </div>
-        <div class="flex flex-wrap gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <UiCard
             v-for="connection in warehouseConnections"
             :key="connection.id"
-            class="overflow-hidden h-56 w-56 max-md:w-full cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
+            class="overflow-hidden h-56 w-full cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
             @click="openEditDialog(connection)"
           >
             <div :class="[CARD_BAND[connection.db_type] ?? 'bg-gray-100 dark:bg-neutral-400/60', 'h-[3px] w-full flex-shrink-0']" />
@@ -81,7 +81,7 @@
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType(connection.db_type)?.display_name || connection.db_type }}</p>
                   <div v-if="getConnectorType(connection.db_type)?.version" class="flex items-center gap-1 mt-0.5">
-                    <span class="text-[11px] text-gray-400 dark:text-neutral-300">v{{ getConnectorType(connection.db_type)?.version }}</span>
+                    <span class="text-sm text-gray-400 dark:text-neutral-300">v{{ getConnectorType(connection.db_type)?.version }}</span>
                     <button
                       @click.stop="openChangelog(connection.db_type)"
                       class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-500 inline-flex items-center justify-center text-gray-400 dark:text-neutral-300 hover:text-gray-600 dark:hover:text-neutral-100 hover:border-gray-400 dark:hover:border-neutral-300"
@@ -97,15 +97,15 @@
               </div>
               <div v-if="connection.db_type === 'bigquery' && connection.host" class="flex items-center gap-1 mt-1">
                 <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.host }}</span>
+                <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.host }}</span>
               </div>
               <div v-else-if="connection.database" class="flex items-center gap-1 mt-1">
                 <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.database }}</span>
+                <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.database }}</span>
               </div>
               <div v-else-if="connection.source_filename" class="flex items-center gap-1 mt-1">
                 <FileText class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.source_filename }}</span>
+                <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.source_filename }}</span>
               </div>
               <ConnectionCardMeta :connection="connection" />
             </div>
@@ -114,11 +114,11 @@
           <!-- Add Connection card -->
           <button
             @click="openCreateDialog"
-            class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-neutral-500 rounded-lg h-56 w-56 max-md:w-full hover:border-gray-400 dark:hover:border-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+            class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-neutral-500 rounded-lg h-56 w-full hover:border-gray-400 dark:hover:border-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
           >
             <Plus class="h-6 w-6 text-gray-400 dark:text-neutral-300" />
             <span class="text-sm text-gray-500 dark:text-neutral-300">Add connection</span>
-            <span class="text-xs text-gray-400 dark:text-neutral-400">
+            <span class="text-sm text-gray-400 dark:text-neutral-400">
               {{ connectorTypes.slice(0, 3).map(t => t.display_name).join(' · ') }}
               <template v-if="connectorTypes.length > 3"> · {{ connectorTypes.length - 3 }} more</template>
             </span>
@@ -129,16 +129,16 @@
       <!-- FILES & UPLOADS -->
       <div v-if="fileUngroupedConnections.length > 0 || filteredDatasetGroups.length > 0">
         <div class="flex items-center gap-3 mb-3">
-          <p class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest shrink-0">Files & Uploads</p>
+          <p class="text-sm font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest shrink-0">Files & Uploads</p>
           <div class="flex-1 border-t border-dashed border-gray-200 dark:border-neutral-700"></div>
-          <span class="text-xs text-gray-400 dark:text-neutral-500 shrink-0">Grouped by schema</span>
+          <span class="text-sm text-gray-400 dark:text-neutral-500 shrink-0">Grouped by schema</span>
         </div>
-        <div class="flex flex-wrap gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <!-- Ungrouped file connections (sqlite, facebook_ads, standalone datasets) -->
           <UiCard
             v-for="connection in fileUngroupedConnections"
             :key="connection.id"
-            class="overflow-hidden h-56 w-56 max-md:w-full cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
+            class="overflow-hidden h-56 w-full cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
             @click="openEditDialog(connection)"
           >
             <div :class="[CARD_BAND[connection.db_type] ?? 'bg-gray-100 dark:bg-neutral-400/60', 'h-[3px] w-full flex-shrink-0']" />
@@ -148,7 +148,7 @@
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType(connection.db_type)?.display_name || connection.db_type }}</p>
                   <div v-if="getConnectorType(connection.db_type)?.version" class="flex items-center gap-1 mt-0.5">
-                    <span class="text-[11px] text-gray-400 dark:text-neutral-300">v{{ getConnectorType(connection.db_type)?.version }}</span>
+                    <span class="text-sm text-gray-400 dark:text-neutral-300">v{{ getConnectorType(connection.db_type)?.version }}</span>
                     <button
                       @click.stop="openChangelog(connection.db_type)"
                       class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-500 inline-flex items-center justify-center text-gray-400 dark:text-neutral-300 hover:text-gray-600 dark:hover:text-neutral-100 hover:border-gray-400 dark:hover:border-neutral-300"
@@ -164,11 +164,11 @@
               </div>
               <div v-if="connection.db_type === 'facebook_ads'" class="flex items-center gap-1 mt-1">
                 <User class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">Account: {{ connection.name }}</span>
+                <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">Account: {{ connection.name }}</span>
               </div>
               <div v-else-if="connection.source_filename" class="flex items-center gap-1 mt-1">
                 <FileText class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
-                <span class="text-[11px] text-gray-400 dark:text-neutral-300 truncate">{{ connection.source_filename }}</span>
+                <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.source_filename }}</span>
               </div>
               <ConnectionCardMeta :connection="connection" />
             </div>
@@ -178,7 +178,7 @@
           <UiCard
             v-for="group in filteredDatasetGroups"
             :key="group.fingerprint"
-            class="overflow-hidden w-56 max-md:w-full hover:shadow-lg transition-shadow flex flex-col"
+            class="overflow-hidden w-full hover:shadow-lg transition-shadow flex flex-col"
             :class="!expandedGroups[group.fingerprint] ? 'h-56' : ''"
           >
             <div :class="[CARD_BAND['dataset'], 'h-[3px] w-full flex-shrink-0']" />
@@ -192,7 +192,7 @@
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ getConnectorType('dataset')?.display_name || 'Dataset' }}</p>
                   <div class="flex items-center gap-1 mt-0.5">
-                    <span class="text-[11px] text-gray-400 dark:text-neutral-300">v{{ getConnectorType('dataset')?.version }}</span>
+                    <span class="text-sm text-gray-400 dark:text-neutral-300">v{{ getConnectorType('dataset')?.version }}</span>
                     <button
                       @click.stop="openChangelog('dataset')"
                       class="h-3.5 w-3.5 rounded-full border border-gray-300 dark:border-neutral-500 inline-flex items-center justify-center text-gray-400 dark:text-neutral-300 hover:text-gray-600 dark:hover:text-neutral-100 hover:border-gray-400 dark:hover:border-neutral-300"
@@ -203,7 +203,7 @@
                 </div>
                 <component :is="expandedGroups[group.fingerprint] ? ChevronDown : ChevronRight" class="h-4 w-4 text-gray-400 dark:text-neutral-300 shrink-0 mt-1" />
               </button>
-              <p class="text-[13px] text-gray-500 dark:text-neutral-300 mt-2.5">{{ group.connections.length }} datasets</p>
+              <p class="text-sm text-gray-500 dark:text-neutral-300 mt-2.5">{{ group.connections.length }} datasets</p>
               <div v-if="expandedGroups[group.fingerprint]" class="mt-3 space-y-2 border-t border-gray-100 dark:border-neutral-600 pt-3">
                 <div
                   v-for="conn in group.connections"
@@ -212,8 +212,8 @@
                   @click="openEditDialog(conn)"
                 >
                   <div class="min-w-0 flex-1">
-                    <p class="text-xs font-medium text-gray-700 dark:text-neutral-200 truncate">{{ conn.name }}</p>
-                    <p v-if="conn.source_filename" class="text-xs text-gray-400 dark:text-neutral-300 truncate">{{ conn.source_filename }}</p>
+                    <p class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate">{{ conn.name }}</p>
+                    <p v-if="conn.source_filename" class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ conn.source_filename }}</p>
                   </div>
                   <button @click.stop="openDeleteDialog(conn)" class="text-gray-400 hover:text-red-500 shrink-0">
                     <Trash2 class="h-3.5 w-3.5" />
@@ -221,7 +221,7 @@
                 </div>
               </div>
               <div v-else class="mt-auto flex flex-col gap-0.5">
-                <p class="text-xs text-gray-400 dark:text-neutral-300">{{ group.connections.map(c => c.source_filename || c.name).join(', ') }}</p>
+                <p class="text-sm text-gray-400 dark:text-neutral-300">{{ group.connections.map(c => c.source_filename || c.name).join(', ') }}</p>
               </div>
             </div>
           </UiCard>
@@ -240,7 +240,7 @@
     >
       <template #header>
         <div class="flex items-center justify-between w-full gap-4">
-          <span class="text-xs font-semibold text-gray-400 uppercase tracking-widest shrink-0">Connection · Step 1/3</span>
+          <span class="text-sm font-semibold text-gray-400 uppercase tracking-widest shrink-0">Connection · Step 1/3</span>
           <div class="relative flex-1 max-w-sm">
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             <input
@@ -277,13 +277,13 @@
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-gray-900 dark:text-neutral-100">{{ type.display_name }}</span>
-                <span v-if="type.version" class="text-xs text-gray-400 dark:text-neutral-500">v{{ type.version }}</span>
+                <span v-if="type.version" class="text-sm text-gray-400 dark:text-neutral-500">v{{ type.version }}</span>
               </div>
-              <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">{{ type.description }}</p>
+              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">{{ type.description }}</p>
             </div>
             <span
               v-if="selectedTypeId === type.id"
-              class="absolute top-3 right-3 text-[10px] bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded font-medium"
+              class="absolute top-3 right-3 text-sm bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded font-medium"
             >SELECTED</span>
           </button>
         </div>
@@ -291,7 +291,7 @@
 
       <template #footer>
         <div class="w-full flex items-center justify-between">
-          <span class="text-xs text-gray-400 dark:text-neutral-500">Pressing Continue uses the selected type. You can still cancel or switch types from the next step.</span>
+          <span class="text-sm text-gray-400 dark:text-neutral-500">Pressing Continue uses the selected type. You can still cancel or switch types from the next step.</span>
           <div class="flex items-center gap-3">
             <UiButton variant="outline" size="sm" @click="handleTypePickerClose(false)">Cancel</UiButton>
             <UiButton
@@ -330,7 +330,7 @@
                 {{ editingConnection ? `Edit · ${editingConnection.name}` : getFormTitle() }}
               </span>
             </div>
-            <p v-if="editingConnection" class="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 ml-0">
+            <p v-if="editingConnection" class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5 ml-0">
               #{{ editingConnection.id }} · last edited {{ formatRelativeDate(editingConnection.updated_at) }}
             </p>
           </div>
@@ -411,7 +411,7 @@
       <div class="flex flex-col md:flex-row h-full min-h-0">
         <!-- 40% form -->
         <div class="w-full md:w-2/5 md:pr-6 pb-4 md:pb-0 overflow-y-auto px-6 py-6">
-          <p class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-4">Connection</p>
+          <p class="text-sm font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-4">Connection</p>
 
           <!-- Plugin-provided create form (when registered for this db_type) -->
           <template v-if="!editingConnection && pluginCreateForm">
@@ -462,28 +462,28 @@
                   <div v-if="!sqliteFile">
                     <Database class="h-8 w-8 text-gray-400 mx-auto mb-2" />
                     <p class="text-sm text-gray-600 dark:text-neutral-400">Drop a SQLite database file here</p>
-                    <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">or click to browse</p>
-                    <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">.sqlite or .db — max 50 MB</p>
+                    <p class="text-sm text-gray-400 dark:text-neutral-500 mt-1">or click to browse</p>
+                    <p class="text-sm text-gray-400 dark:text-neutral-500 mt-1">.sqlite or .db — max 50 MB</p>
                   </div>
                   <div v-else class="flex items-center gap-3 justify-center">
                     <Database class="h-5 w-5 text-blue-500 shrink-0" />
                     <div class="text-left min-w-0">
                       <p class="text-sm font-medium text-gray-900 dark:text-neutral-100 truncate">{{ sqliteFile.name }}</p>
-                      <p class="text-xs text-gray-500 dark:text-neutral-400">{{ formatFileSize(sqliteFile.size) }}</p>
+                      <p class="text-sm text-gray-500 dark:text-neutral-400">{{ formatFileSize(sqliteFile.size) }}</p>
                     </div>
                     <button type="button" @click.stop="clearSqliteFile" class="ml-auto shrink-0 text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300">
                       <component :is="X" class="h-4 w-4" />
                     </button>
                   </div>
                 </div>
-                <p v-if="sqliteFormErrors.file" class="text-xs text-red-500 mt-1">{{ sqliteFormErrors.file }}</p>
+                <p v-if="sqliteFormErrors.file" class="text-sm text-red-500 mt-1">{{ sqliteFormErrors.file }}</p>
               </div>
 
               <!-- Table preview after upload -->
               <div v-if="sqliteUploadResult">
                 <label class="text-sm font-normal text-gray-900 dark:text-neutral-100 mb-1.5 block">Tables ({{ sqliteUploadResult.table_count }})</label>
                 <div class="border border-gray-200 dark:border-neutral-700 rounded-lg overflow-hidden">
-                  <table class="w-full text-xs">
+                  <table class="w-full text-sm">
                     <thead class="bg-gray-50 dark:bg-neutral-800">
                       <tr>
                         <th class="px-3 py-2 text-left font-medium text-gray-600 dark:text-neutral-300">Table</th>
@@ -512,18 +512,18 @@
           <template v-else-if="isSqliteConnection && editingConnection">
             <div class="space-y-4">
               <div>
-                <label class="text-xs font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Database Name</label>
+                <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Database Name</label>
                 <p class="text-sm text-gray-900 dark:text-white mt-0.5">{{ editingConnection.name }}</p>
               </div>
               <div v-if="editingConnection.source_filename">
-                <label class="text-xs font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Source File</label>
+                <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Source File</label>
                 <p class="text-sm text-gray-900 dark:text-neutral-200 mt-0.5">{{ editingConnection.source_filename }}</p>
               </div>
             </div>
 
             <div class="mt-8 pt-4 pb-8 border-t border-red-100 dark:border-red-900/30">
               <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
-              <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
+              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
               <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
                 <Trash2 class="h-3.5 w-3.5" /> Delete
               </UiButton>
@@ -610,9 +610,9 @@
                     v-model="form.ssl_ca_cert"
                     placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
                     rows="6"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-100 dark:placeholder-neutral-500"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-100 dark:placeholder-neutral-500"
                   />
-                  <p class="text-xs text-gray-500 dark:text-neutral-500 mt-1">
+                  <p class="text-sm text-gray-500 dark:text-neutral-500 mt-1">
                     <template v-if="editingConnection && editingConnection.has_ssl_ca_cert">
                       A CA certificate is already stored. Leave blank to keep current, or paste a new one to replace it.
                     </template>
@@ -627,7 +627,7 @@
 
           <div v-if="editingConnection" class="mt-8 pt-4 pb-8 border-t border-red-100 dark:border-red-900/30">
             <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">Delete this connection</p>
-            <p class="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
+            <p class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">Breaks saved skills and scheduled jobs. Cannot be undone.</p>
             <UiButton variant="danger" size="sm" class="mt-3" @click="openDeleteDialog(editingConnection!)">
               <Trash2 class="h-3.5 w-3.5" /> Delete
             </UiButton>
@@ -649,10 +649,10 @@
           </template>
           <template v-else-if="editingConnection">
             <div class="flex items-center justify-between mb-3 shrink-0">
-              <span class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
+              <span class="text-sm font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
                 Schema<template v-if="schema"> · {{ schema.table_names?.length ?? 0 }} tables · {{ Object.keys(schema.schemas ?? {}).length }} schemas</template>
               </span>
-              <span v-if="schema" class="text-xs text-gray-400 dark:text-neutral-500">
+              <span v-if="schema" class="text-sm text-gray-400 dark:text-neutral-500">
                 Last refresh: {{ formatRelativeDate(schema.generated_at) }}
               </span>
             </div>
@@ -683,7 +683,7 @@
       <template #footer>
         <div
           v-if="testSuccess"
-          class="border-t border-gray-100 dark:border-neutral-700 px-6 py-2 text-xs text-gray-500 dark:text-neutral-400 flex items-center gap-2"
+          class="border-t border-gray-100 dark:border-neutral-700 px-6 py-2 text-sm text-gray-500 dark:text-neutral-400 flex items-center gap-2"
         >
           <span class="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
           <span class="text-green-600 dark:text-green-400 font-medium">Handshake OK</span>
@@ -764,7 +764,7 @@
             />
             <div>
               <p class="text-sm font-medium text-gray-900">{{ account.name }}</p>
-              <p class="text-xs text-gray-500">ID: {{ account.account_id }} · {{ account.currency }} · {{ account.timezone_name }}</p>
+              <p class="text-sm text-gray-500">ID: {{ account.account_id }} · {{ account.currency }} · {{ account.timezone_name }}</p>
             </div>
           </label>
         </div>

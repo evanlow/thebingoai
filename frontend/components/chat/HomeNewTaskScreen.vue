@@ -14,7 +14,7 @@
 
       <p class="home-hero-sub">
         Ask anything about
-        <span v-if="primaryConnection" class="font-mono text-[13px]">{{ primaryConnection }}</span>
+        <span v-if="primaryConnection" class="font-mono text-sm">{{ primaryConnection }}</span>
         <span v-else>your connected data</span>
         — I'll pick the right tables, write the SQL, and draft a dashboard if the answer deserves one.
       </p>
@@ -215,7 +215,7 @@ const useSkill = (skill: SkillItem) => {
   align-self: center;
 }
 .home-section-count {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--ink-2);
   flex-shrink: 0;
 }
@@ -255,7 +255,7 @@ const useSkill = (skill: SkillItem) => {
 }
 
 .home-skill-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.3;
   color: var(--ink-0);
@@ -268,7 +268,7 @@ const useSkill = (skill: SkillItem) => {
   align-items: center;
   gap: 6px;
   margin-top: 8px;
-  font-size: 10.5px;
+  font-size: 14px;
   color: var(--ink-2);
 }
 .home-skill-dot { color: var(--line-2); }
@@ -279,7 +279,7 @@ const useSkill = (skill: SkillItem) => {
   padding: 28px;
   text-align: center;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   display: flex;
   flex-direction: column;
@@ -287,7 +287,7 @@ const useSkill = (skill: SkillItem) => {
 }
 .home-skills-empty-link {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--ember);
   text-decoration: none;
 }
@@ -306,13 +306,13 @@ const useSkill = (skill: SkillItem) => {
   align-items: center;
   gap: 14px;
   padding: 10px 14px;
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
 .home-sched-time {
   width: 96px;
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
@@ -326,7 +326,7 @@ const useSkill = (skill: SkillItem) => {
 }
 
 .home-sched-next {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--ink-2);
   flex-shrink: 0;
 }

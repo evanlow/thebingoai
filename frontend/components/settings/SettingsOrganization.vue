@@ -36,7 +36,7 @@
           </div>
           <div>
             <p class="font-medium text-gray-900">{{ org.name }}</p>
-            <p class="text-xs text-gray-400">{{ teams.length }} team{{ teams.length !== 1 ? 's' : '' }}</p>
+            <p class="text-sm text-gray-400">{{ teams.length }} team{{ teams.length !== 1 ? 's' : '' }}</p>
           </div>
         </div>
       </UiCard>
@@ -62,7 +62,7 @@
               <Users class="h-4 w-4 text-gray-400 shrink-0" />
               <p class="text-sm font-medium text-gray-900 truncate">{{ team.name }}</p>
             </div>
-            <p class="mt-auto text-xs text-gray-400">ID: {{ team.id.slice(0, 8) }}…</p>
+            <p class="mt-auto text-sm text-gray-400">ID: {{ team.id.slice(0, 8) }}…</p>
           </div>
         </UiCard>
 
@@ -72,7 +72,7 @@
           class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg w-48 h-32 text-gray-400"
         >
           <Users class="h-5 w-5" />
-          <span class="text-xs">No teams yet</span>
+          <span class="text-sm">No teams yet</span>
         </div>
       </div>
     </template>

@@ -3,7 +3,7 @@
 
     <!-- Title -->
     <div class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</h3>
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show title</span>
         <button
@@ -44,7 +44,7 @@
               :key="opt.value"
               type="button"
               :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="(localTitlePosition ?? 'top') === opt.value
                 ? 'bg-indigo-600 text-white'
                 : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -57,7 +57,7 @@
 
     <!-- Primary metric -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Primary Metric</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Primary Metric</h3>
 
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Compact numbers</span>
@@ -111,7 +111,7 @@
 
     <!-- Comparison fields -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison Fields</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison Fields</h3>
 
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-700 dark:text-neutral-200">Positive change color</span>
@@ -201,7 +201,7 @@
 
     <!-- Progress visual -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Progress Visual</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Progress Visual</h3>
       <div class="space-y-1.5">
         <label class="text-xs text-gray-700 dark:text-neutral-200">Style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
@@ -210,7 +210,7 @@
             :key="opt.value"
             type="button"
             :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localProgressVisual ?? 'bar') === opt.value
               ? 'bg-indigo-600 text-white'
               : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -222,14 +222,14 @@
 
     <!-- Missing data -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Missing Data</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Missing Data</h3>
       <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button
           v-for="opt in missingDataOptions"
           :key="opt.value"
           type="button"
           :disabled="!editMode"
-          class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
           :class="(localMissingData ?? 'dash') === opt.value
             ? 'bg-indigo-600 text-white'
             : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -240,7 +240,7 @@
 
     <!-- Labels -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Labels</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Labels</h3>
 
       <div class="flex items-center justify-between gap-2">
         <span class="text-xs text-gray-700 dark:text-neutral-200">Font</span>
@@ -265,7 +265,7 @@
             :key="opt.value"
             type="button"
             :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localFontSize ?? 'md') === opt.value
               ? 'bg-indigo-600 text-white'
               : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -309,7 +309,7 @@
             :key="opt.value"
             type="button"
             :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localAlignment ?? 'left') === opt.value
               ? 'bg-indigo-600 text-white'
               : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -321,7 +321,7 @@
 
     <!-- Background & Border -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Background &amp; Border</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Background &amp; Border</h3>
 
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-700 dark:text-neutral-200">Background</span>
@@ -344,7 +344,7 @@
             class="flex-1 disabled:opacity-40"
             @input="emitUpdate()"
           />
-          <span class="text-[11px] text-gray-500 dark:text-neutral-400 tabular-nums w-8 text-right">{{ localOpacity }}%</span>
+          <span class="text-sm text-gray-500 dark:text-neutral-400 tabular-nums w-8 text-right">{{ localOpacity }}%</span>
         </div>
       </div>
 
@@ -365,7 +365,7 @@
             :key="opt.value"
             type="button"
             :disabled="!editMode"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localBorderStyle ?? 'solid') === opt.value
               ? 'bg-indigo-600 text-white'
               : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -386,7 +386,7 @@
             class="flex-1 disabled:opacity-40"
             @input="emitUpdate()"
           />
-          <span class="text-[11px] text-gray-500 dark:text-neutral-400 tabular-nums w-6 text-right">{{ localBorderWidth }}px</span>
+          <span class="text-sm text-gray-500 dark:text-neutral-400 tabular-nums w-6 text-right">{{ localBorderWidth }}px</span>
         </div>
       </div>
 
@@ -402,7 +402,7 @@
             class="flex-1 disabled:opacity-40"
             @input="emitUpdate()"
           />
-          <span class="text-[11px] text-gray-500 dark:text-neutral-400 tabular-nums w-6 text-right">{{ localBorderRadius }}px</span>
+          <span class="text-sm text-gray-500 dark:text-neutral-400 tabular-nums w-6 text-right">{{ localBorderRadius }}px</span>
         </div>
       </div>
     </div>

@@ -67,7 +67,7 @@ function onClose() {
         </div>
         <div
           v-if="incompleteCount > 0"
-          class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium"
+          class="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-full font-medium"
           style="background: var(--ember-wash); color: var(--warn)"
         >
           <span class="h-1.5 w-1.5 rounded-full" style="background: var(--warn)" />

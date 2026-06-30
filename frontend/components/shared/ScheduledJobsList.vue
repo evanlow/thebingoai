@@ -42,7 +42,7 @@
             <UiBadge v-if="item.enabled === false" variant="warning" size="sm">Disabled</UiBadge>
           </div>
 
-          <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-neutral-400">
+          <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-neutral-400">
             <span v-if="item.cron" class="flex items-center gap-1">
               <Clock class="h-3 w-3" />
               {{ item.cron }}
@@ -53,7 +53,7 @@
             </span>
           </div>
 
-          <div v-if="item.last_run_at" class="mt-1 text-xs text-gray-400 dark:text-neutral-500">
+          <div v-if="item.last_run_at" class="mt-1 text-sm text-gray-400 dark:text-neutral-500">
             Last run {{ formatRelative(item.last_run_at) }}
             <template v-if="item.next_run_at">
               · Next {{ formatRelative(item.next_run_at) }}

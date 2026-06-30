@@ -16,11 +16,11 @@
           {{ local.label || local.column || 'Untitled' }}
         </span>
         <!-- Format badge -->
-        <span v-if="local.format && local.format !== 'number'" class="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide flex-shrink-0">
+        <span v-if="local.format && local.format !== 'number'" class="text-sm text-gray-400 dark:text-neutral-500 uppercase tracking-wide flex-shrink-0">
           {{ local.format }}
         </span>
         <!-- Aggregation badge -->
-        <span v-if="local.aggregation" class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
+        <span v-if="local.aggregation" class="text-sm px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
           {{ aggLabel(local.aggregation) }}
         </span>
       </div>
@@ -49,7 +49,7 @@
 
       <!-- Column picker -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Column</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Column</label>
         <div class="flex gap-2">
           <select
             :value="local.column"
@@ -75,7 +75,7 @@
 
       <!-- Label -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Label</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Label</label>
         <input
           :value="local.label ?? ''"
           type="text"
@@ -88,7 +88,7 @@
 
       <!-- Aggregation -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Aggregation</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Aggregation</label>
         <select
           :value="local.aggregation || 'sum'"
           :disabled="!editMode"

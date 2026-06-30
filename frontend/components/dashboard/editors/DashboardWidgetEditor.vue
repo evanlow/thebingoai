@@ -11,10 +11,10 @@
       </button>
       <div class="min-w-0">
         <h2 class="text-sm font-semibold text-gray-900 dark:text-neutral-100">Edit Widget</h2>
-        <p class="text-[11px] text-gray-400 dark:text-neutral-500">{{ widgetTypeLabel }}</p>
+        <p class="text-sm text-gray-400 dark:text-neutral-500">{{ widgetTypeLabel }}</p>
       </div>
       <div class="ml-auto flex items-center gap-2">
-        <span v-if="!editMode" class="text-[11px] text-gray-400 dark:text-neutral-500">View only</span>
+        <span v-if="!editMode" class="text-sm text-gray-400 dark:text-neutral-500">View only</span>
       </div>
     </div>
 
@@ -144,7 +144,7 @@
         class="h-full overflow-y-auto px-5 py-3 space-y-3"
       >
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">SQL Data Source</h3>
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">SQL Data Source</h3>
           <button
             class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             :disabled="testLoading || !props.widget.dataSource"
@@ -157,7 +157,7 @@
 
         <!-- Source picker (Phase 6: Org tables vs Live source connections) -->
         <div class="space-y-1">
-          <div class="flex gap-2 text-[11px]">
+          <div class="flex gap-2 text-sm">
             <button
               type="button"
               :disabled="!editMode"
@@ -195,14 +195,14 @@
                 {{ t.name }}{{ t.writer ? ` — ${t.writer}` : '' }}
               </option>
             </select>
-            <p v-if="orgTables.length === 0" class="text-[11px] text-gray-500 dark:text-neutral-400">
+            <p v-if="orgTables.length === 0" class="text-sm text-gray-500 dark:text-neutral-400">
               No DataPlane tables yet. Switch to <em>Live source connections</em> to query a database directly.
             </p>
           </div>
 
           <!-- Tab 2: Live source connections (legacy default) -->
           <div v-else class="mt-2 space-y-1">
-            <label class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Connection</label>
+            <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Connection</label>
             <select
               v-model="selectedConnectionId"
               :disabled="!editMode"
@@ -256,7 +256,7 @@
             <span class="flex-1">{{ previewError }}</span>
             <button
               v-if="editMode && widget.dataSource"
-              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 disabled:opacity-40"
+              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-sm font-medium bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 disabled:opacity-40"
               :disabled="suggestLoading"
               @click="suggestFix()"
             >
@@ -274,7 +274,7 @@
 
         <!-- Preview table -->
         <div v-else-if="previewRows.length > 0" class="space-y-1">
-          <div class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Preview ({{ previewRows.length }} rows)</div>
+          <div class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Preview ({{ previewRows.length }} rows)</div>
           <div class="overflow-x-auto rounded-lg border border-gray-100 dark:border-neutral-800">
             <table class="w-full text-xs">
               <thead class="bg-gray-50 dark:bg-neutral-900">

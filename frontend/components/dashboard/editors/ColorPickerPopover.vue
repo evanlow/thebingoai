@@ -26,14 +26,14 @@
       <div class="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-neutral-700">
         <button
           type="button"
-          class="flex items-center gap-1 text-[11px] text-gray-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
+          class="flex items-center gap-1 text-sm text-gray-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
           @click="select(undefined)"
         >
           <RotateCcw class="h-3 w-3" /> Reset
         </button>
         <button
           type="button"
-          class="flex items-center gap-1 text-[11px] text-gray-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
+          class="flex items-center gap-1 text-sm text-gray-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
           @click="select('transparent')"
         >
           <Ban class="h-3 w-3" /> Transparent
@@ -57,7 +57,7 @@
 
       <!-- Custom color -->
       <div class="mt-3 pt-2 border-t border-gray-100 dark:border-neutral-700 flex items-center justify-between gap-2">
-        <span class="text-[11px] text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Custom</span>
+        <span class="text-sm text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Custom</span>
         <input
           type="color"
           :value="modelValue && modelValue !== 'transparent' ? modelValue : '#6366f1'"

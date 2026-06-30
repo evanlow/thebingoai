@@ -97,7 +97,7 @@
             <!-- Row number cell -->
             <td
               v-if="config.showRowNumbers"
-              class="px-3 py-2.5 text-[11px] text-gray-300 tabular-nums w-8 dark:text-neutral-600"
+              class="px-3 py-2.5 text-sm text-gray-300 tabular-nums w-8 dark:text-neutral-600"
             >{{ rowOffset + i + 1 }}</td>
 
             <td
@@ -141,7 +141,7 @@
         <!-- Summary row -->
         <tfoot v-if="showSummaryFooter">
           <tr class="border-t-2 border-gray-200 bg-gray-50 dark:border-neutral-600 dark:bg-neutral-800">
-            <td v-if="config.showRowNumbers" class="px-3 py-2.5 text-[11px] text-gray-300">Σ</td>
+            <td v-if="config.showRowNumbers" class="px-3 py-2.5 text-sm text-gray-300">Σ</td>
             <td
               v-for="(col, i) in config.columns"
               :key="i"
@@ -359,9 +359,9 @@ const fontClass = computed(() => {
     case 'mono': classes.push('font-mono'); break
   }
   switch (props.config.fontSize ?? 'sm') {
-    case 'xs': classes.push('text-[11px]'); break
+    case 'xs': classes.push('text-sm'); break
     case 'sm': classes.push('text-xs'); break
-    case 'md': classes.push('text-[13px]'); break
+    case 'md': classes.push('text-sm'); break
     case 'lg': classes.push('text-sm'); break
   }
   return classes.join(' ')

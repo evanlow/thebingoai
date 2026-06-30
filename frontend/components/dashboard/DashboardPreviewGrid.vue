@@ -95,7 +95,7 @@
       </div>
     </template>
     <div v-else class="flex h-full items-center justify-center">
-      <span class="text-[10px] text-gray-300">No widgets</span>
+      <span class="text-sm text-gray-300">No widgets</span>
     </div>
   </div>
 </template>
