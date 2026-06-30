@@ -92,11 +92,15 @@
       />
       <DashboardWidgetTable
         v-else-if="widget.widget.type === 'table'"
+        :widget-id="widget.id"
         :config="widget.widget.config"
+        :edit-mode="editMode"
       />
       <DashboardWidgetPivotTable
         v-else-if="widget.widget.type === 'pivot_table'"
+        :widget-id="widget.id"
         :config="widget.widget.config"
+        :edit-mode="editMode"
       />
       <DashboardWidgetText
         v-else-if="widget.widget.type === 'text'"

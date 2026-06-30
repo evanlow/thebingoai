@@ -11,6 +11,10 @@ export const useChatStreaming = () => {
   const sendMessage = async (message: string, fileIds: string[] = [], options?: { source?: Message['source'] }) => {
     chatStore.isStreaming = true
 
+    // This thread's history is about to change — drop its cached copy so a later
+    // revisit refetches the new turn instead of serving a stale cache.
+    if (chatStore.currentThreadId) chatStore.invalidateMessageCache(chatStore.currentThreadId)
+
     // Add user message optimistically — include ALL CSV/Excel files,
     // using file name as fallback id for files still uploading without one.
     const { attachedFiles } = useChatFileUpload()

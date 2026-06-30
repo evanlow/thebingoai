@@ -26,6 +26,7 @@ import annotationPlugin from 'chartjs-plugin-annotation'
 import 'chartjs-adapter-date-fns'
 import type { Ref } from 'vue'
 import type { ChartConfig, ChartType, DatasetConfig, ChartLineStyle, ChartFontFamily, ChartFontSize } from '~/types/chart'
+import { formatNumericValue } from '~/utils/numberFormat'
 
 // Register all required Chart.js components once
 Chart.register(
@@ -199,8 +200,8 @@ function applyDefaultColors(
       : ds.showPoints === false ? 0
       : (ds.pointRadius ?? 0)
 
-    // Per-dataset datalabels — default ON when unset.
-    const datalabels = { display: ds.showDataLabels ?? true }
+    // Per-dataset datalabels — default ON, except line series default OFF.
+    const datalabels = { display: ds.showDataLabels ?? !(isLineOrArea || ds.seriesType === 'line') }
 
     const processed: Record<string, any> = {
       ...ds,
@@ -324,12 +325,6 @@ function isStackedActive(val: any): boolean {
   return val === true || val === 'standard' || val === 'percentage'
 }
 
-function formatTickValue(value: unknown, opts: { decimalPlaces?: number }): string | number {
-  // Only invoked when rounding is active (see tickCallback gate).
-  if (typeof value !== 'number') return value as any
-  return value.toFixed(opts.decimalPlaces ?? 2)
-}
-
 // ── Main options builder ──────────────────────────────────────────────────────
 
 function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): ChartJsOptions {
@@ -358,22 +353,32 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
   // Reserve datalabel padding when any series shows labels (per-series default ON).
   const anyDataLabels = config.data.datasets.some(ds => ds.showDataLabels ?? true)
 
-  // Tooltip callback when rounding or percentage stacking is active
-  const needsTooltipCallback = roundValues || isPercentage
-  const tooltipCallbacks = needsTooltipCallback ? {
+  // Shared value formatter: always group thousands; K/M/B compact only when
+  // rounding is on (never for percentage stacking, which keeps decimals + '%').
+  const formatValue = (raw: unknown): string | number => {
+    if (typeof raw !== 'number') return raw as any
+    return formatNumericValue(raw, {
+      format: 'number',
+      decimalPlaces: opts.decimalPlaces ?? 2,
+      compact: roundValues && !isPercentage,
+    })
+  }
+
+  // Tooltip callback always runs so values carry thousands separators.
+  const tooltipCallbacks = {
     label: (ctx: any) => {
       const label = ctx.dataset?.label ?? ''
       if (isScatter) {
-        const xf = formatTickValue(ctx.parsed?.x, opts)
-        const yf = formatTickValue(ctx.parsed?.y, opts)
+        const xf = formatValue(ctx.parsed?.x)
+        const yf = formatValue(ctx.parsed?.y)
         return `${label}: (${xf}, ${yf})`
       }
       const rawVal = isHorizontal ? ctx.parsed?.x : ctx.parsed?.y
-      const formatted = formatTickValue(rawVal, opts)
+      const formatted = formatValue(rawVal)
       const suffix = isPercentage ? '%' : ''
       return `${label}: ${formatted}${suffix}`
     },
-  } : undefined
+  }
 
   const options: ChartJsOptions = {
     responsive: opts.responsive ?? true,
@@ -433,7 +438,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
                   return `${((value / total) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
                 }
                 // value
-                return roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+                return formatValue(value)
               },
             }
           })()
@@ -445,7 +450,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
             align: isHorizontal ? 'right' : 'top',
             formatter: (value: unknown) => {
               if (typeof value !== 'number') return value
-              const formatted = roundValues ? value.toFixed(opts.decimalPlaces ?? 2) : String(value)
+              const formatted = formatValue(value)
               return isPercentage ? `${formatted}%` : formatted
             },
           },
@@ -462,10 +467,8 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     const rightCfg = opts.yAxisRight ?? {}
     const xCfg = opts.xAxis ?? {}
 
-    // Tick callback for rounding
-    const tickCallback = roundValues
-      ? (value: unknown) => formatTickValue(value, opts)
-      : undefined
+    // Tick callback always formats (thousands separators; K/M/B when rounding).
+    const tickCallback = (value: unknown) => formatValue(value)
 
     // Base font (from the Style → Font section) applied to axis labels.
     const baseTickFont = { family: getFontFamilyStr(opts.fontFamily), size: getFontSizePx(opts.fontSize) }

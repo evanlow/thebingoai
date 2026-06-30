@@ -13,34 +13,107 @@ export const DATASET_STYLE_KEYS = [
 ] as const
 
 /**
- * Merge a refresh response config into a widget, preserving editor-only fields
- * that the backend transform doesn't know about: table column fields
- * (aggregation, align, displayType, comparisonCalc, runningCalc, etc.) merged by
- * column key, and chart per-dataset style fields merged by dataset index.
- * Mutates and returns `config`.
+ * Merge a refresh response config into a widget, **data-only**: the user's saved
+ * config is the source of truth for structure (column order/visibility, dataset
+ * order/style, titles, KPI formatting); the refresh only supplies the values the
+ * SQL produced (rows, dataset data arrays, labels, KPI value). Returns a partial
+ * config whose keys are then `Object.assign`-ed onto the live widget config — so
+ * any key the refresh doesn't supply is left untouched.
+ *
+ * Schema changes still flow through: a column/dataset the refresh introduces (no
+ * saved match) is appended; one the refresh no longer returns is dropped.
  */
 export function mergeRefreshedConfig(
   widget: DashboardWidget,
-  config: Record<string, any>,
+  refreshed: Record<string, any>,
 ): Record<string, any> {
-  if (widget.widget.type === 'table' && Array.isArray(config?.columns)) {
-    const existingByKey = new Map<string, any>(
-      ((widget.widget.config as any)?.columns ?? []).map((c: any) => [c.key, c]),
-    )
-    config.columns = config.columns.map((rc: any) => {
-      const existing = existingByKey.get(rc.key)
-      return existing ? { ...rc, ...existing, key: rc.key, label: rc.label ?? existing.label } : rc
-    })
+  const type = widget.widget.type
+  const existing = (widget.widget.config ?? {}) as Record<string, any>
+
+  if (type === 'chart') return mergeChart(existing, refreshed)
+  if (type === 'table') return mergeTable(existing, refreshed)
+  if (type === 'kpi') return mergeKpi(refreshed)
+
+  // pivot_table / text / filter: the refresh transform emits only data keys
+  // (rows, granular columns) — structural edits live in keys it never emits, so
+  // Object.assign already preserves them. Keep the pass-through.
+  return refreshed
+}
+
+function mergeChart(
+  existing: Record<string, any>,
+  refreshed: Record<string, any>,
+): Record<string, any> {
+  const rData = refreshed?.data
+  if (!rData) return {}
+  // Non-Chart.js data shape (no datasets array) — nothing structural to protect.
+  if (!Array.isArray(rData.datasets)) return { data: rData }
+
+  const existingDatasets: any[] = existing?.data?.datasets ?? []
+  // ponytail: keyed by dataset label; duplicate labels collapse (rare).
+  const refreshedByLabel = new Map<string, any>(
+    rData.datasets.map((d: any) => [d.label, d]),
+  )
+
+  // Structure/order/style from saved config; values from refresh. Drop datasets
+  // the refresh no longer returns; append datasets it newly introduced.
+  const merged: any[] = []
+  const seen = new Set<string>()
+  for (const prev of existingDatasets) {
+    const rc = refreshedByLabel.get(prev.label)
+    if (!rc) continue
+    seen.add(prev.label)
+    merged.push({ ...prev, data: rc.data })
   }
-  if (widget.widget.type === 'chart' && Array.isArray(config?.data?.datasets)) {
-    const existing = (widget.widget.config as any)?.data?.datasets ?? []
-    config.data.datasets = config.data.datasets.map((rc: any, i: number) => {
-      const prev = existing[i]
-      if (!prev) return rc
-      const merged: any = { ...rc }
-      for (const k of DATASET_STYLE_KEYS) if (k in prev) merged[k] = prev[k]
-      return merged
-    })
+  for (const rc of rData.datasets) {
+    if (!seen.has(rc.label)) merged.push(rc)
   }
-  return config
+
+  return {
+    data: {
+      ...(existing?.data ?? {}),
+      labels: rData.labels ?? existing?.data?.labels,
+      datasets: merged,
+    },
+  }
+}
+
+function mergeTable(
+  existing: Record<string, any>,
+  refreshed: Record<string, any>,
+): Record<string, any> {
+  const out: Record<string, any> = {}
+  if (Array.isArray(refreshed?.rows)) out.rows = refreshed.rows
+
+  const existingColumns = existing?.columns
+  if (Array.isArray(refreshed?.columns)) {
+    if (!Array.isArray(existingColumns) || existingColumns.length === 0) {
+      out.columns = refreshed.columns // first load — adopt the generated columns
+    } else {
+      const refreshedByKey = new Map<string, any>(
+        refreshed.columns.map((c: any) => [c.key, c]),
+      )
+      const existingKeys = new Set(existingColumns.map((c: any) => c.key))
+      const merged: any[] = []
+      // Saved column order/visibility/editor fields win; drop columns no longer
+      // in the result, keep the rest in the user's order.
+      for (const c of existingColumns) {
+        if (!refreshedByKey.has(c.key)) continue
+        merged.push({ ...refreshedByKey.get(c.key), ...c, key: c.key })
+      }
+      // Append columns the refresh newly introduced (real SQL/schema change).
+      for (const rc of refreshed.columns) {
+        if (!existingKeys.has(rc.key)) merged.push(rc)
+      }
+      out.columns = merged
+    }
+  }
+  return out
+}
+
+function mergeKpi(refreshed: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  if (refreshed && 'value' in refreshed) out.value = refreshed.value
+  if (refreshed && refreshed.trend !== undefined) out.trend = refreshed.trend
+  return out
 }

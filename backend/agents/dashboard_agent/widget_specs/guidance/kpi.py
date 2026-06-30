@@ -5,7 +5,6 @@ KPI_GUIDANCE = """### autoTrend vs Legacy Trend
 **autoTrend: true (recommended):** SQL returns multiple time-ordered rows. The system automatically:
 - Computes the headline value using the `aggregation` method (default: 'first')
 - Derives trend direction and % change
-- Populates the sparkline from all rows (value column as Y, row order as X)
 
 **Trend calculation is controlled by `periodLabel`:**
 - `"vs last period"` (or omitted) — compares the last 2 rows in query order (simplest)
@@ -13,15 +12,13 @@ KPI_GUIDANCE = """### autoTrend vs Legacy Trend
 
 **Legacy (use only when you need full control):** Manually specify separate columns:
 - `trendValueColumn` — a pre-computed trend number in the SQL output
-- `sparklineXColumn` / `sparklineYColumn` — explicit sparkline axes
-- `sparklineSortColumn` / `sparklineSortDirection` — row ordering for sparkline
 
 ### SQL Patterns (use baseJoin from data context)
 
 IMPORTANT: Every KPI must include the baseJoin from the dashboard data context so that
 dashboard filters can reach all dimensions. Do NOT write single-table queries.
 
-**Single aggregate KPI with baseJoin (no trend/sparkline):**
+**Single aggregate KPI with baseJoin (no trend):**
 ```sql
 SELECT COUNT(*) AS total_count
 FROM orders o
@@ -57,20 +54,16 @@ Mapping: `{"type": "kpi", "valueColumn": "revenue", "aggregation": "sum", "autoT
 ```sql
 SELECT
   current_value,
-  pct_change,
-  month,
-  monthly_value
+  pct_change
 FROM summary_view
-ORDER BY month
 ```
-Mapping: `{"type": "kpi", "valueColumn": "current_value", "trendValueColumn": "pct_change", "sparklineXColumn": "month", "sparklineYColumn": "monthly_value"}`
+Mapping: `{"type": "kpi", "valueColumn": "current_value", "trendValueColumn": "pct_change"}`
 
 ### Best Practices
 
 - **Always include trend context** — a bare number without trend lacks meaning
 - **Prefer autoTrend over legacy** — simpler SQL, fewer mapping fields, less error-prone
 - **Prefer date-based periods** — pair `periodLabel` with `trendDateColumn` for accurate comparisons; SQL should return individual rows (not pre-grouped) so the system can bucket them correctly
-- For sparklines, SQL MUST return multiple rows ordered by time (not a single aggregate)
 - Use `aggregation: "last"` for the most recent value in a time-series
 - Use `aggregation: "sum"` for totals across all rows
 - Position KPIs in the executive summary row directly below the filter bar: y=2, w=3 or w=4, h=2

@@ -23,8 +23,7 @@ _WINDOW_ALIASES: list[set[str]] = [
 
 _PAREN_SUFFIX = re.compile(r"\s*\(([^)]+)\)\s*$")
 
-MAX_KPIS = 4
-MAX_TOTAL_WIDGETS = 14
+MAX_TOTAL_WIDGETS = 15
 
 
 def _canonical_window(label: str) -> Optional[str]:
@@ -51,10 +50,6 @@ def verify_dashboard_widgets(widgets: list[dict]) -> list[str]:
     violations: list[str] = []
 
     kpis = [w for w in widgets if (w.get("widget") or {}).get("type") == "kpi"]
-    if len(kpis) > MAX_KPIS:
-        violations.append(
-            f"KPI count = {len(kpis)} — must be 3 or 4. Remove the extras."
-        )
     if len(widgets) > MAX_TOTAL_WIDGETS:
         violations.append(
             f"Total widget count = {len(widgets)} — must be ≤ {MAX_TOTAL_WIDGETS}."

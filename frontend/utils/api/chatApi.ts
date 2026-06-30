@@ -37,6 +37,9 @@ export function createChatApi(fetchWithRefresh: Function, authStore: any, router
     async getMessageSteps(threadId: string, messageId: string) {
       return fetchWithRefresh(`/api/chat/conversations/${threadId}/messages/${messageId}/steps`, {})
     },
+    async getConversationSteps(threadId: string) {
+      return fetchWithRefresh(`/api/chat/conversations/${threadId}/steps`, {})
+    },
     async getConversationSummary(threadId: string) {
       return fetchWithRefresh(`/api/chat/conversations/${threadId}/summary`, {})
     },

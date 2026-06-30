@@ -8,7 +8,7 @@ width — so horizontal gaps are impossible by construction.
 
 Row rules:
 - filter / text / table: always a full-width row (w=12).
-- kpi: consecutive KPI cards are chunked up to 4 per row, equal widths.
+- kpi: consecutive KPI cards are chunked up to 5 per row, equal widths.
 - chart / pivot_table: greedily packed side-by-side while their preferred
   widths fit in 12 columns; each closed row is stretched proportionally to
   exactly 12 and all members get the row's max height.
@@ -54,7 +54,7 @@ _FULL_ROW_TYPES = {"filter", "text", "table"}
 # Types packed side-by-side into shared rows.
 _PACKABLE_TYPES = {"chart", "pivot_table"}
 
-_MAX_KPIS_PER_ROW = 4
+_MAX_KPIS_PER_ROW = 5
 
 
 def _widget_type(widget: dict) -> str:

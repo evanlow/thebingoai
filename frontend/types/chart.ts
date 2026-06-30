@@ -1,5 +1,5 @@
 // Chart type union
-export type ChartType = 'line' | 'bar' | 'pie' | 'doughnut' | 'area' | 'scatter'
+export type ChartType = 'line' | 'bar' | 'pie' | 'doughnut' | 'area' | 'scatter' | 'funnel' | 'timeline'
 
 // Entrance animation types (Anime.js)
 export type EntranceAnimation = 'fadeIn' | 'slideUp' | 'grow' | 'none'
@@ -147,6 +147,17 @@ export interface ChartOptions {
   fontFamily?: ChartFontFamily
   fontSize?: ChartFontSize
   fontColor?: string
+
+  // Funnel (chart type 'funnel')
+  funnelShape?: 'smoothed' | 'stepped'
+  funnelLabelMode?: 'number' | 'percentage' | 'numberPercentage'
+  funnelPercentType?: 'max' | 'previous'      // basis when label mode shows a percentage
+  funnelColorMode?: 'single' | 'byValue'      // single shade vs one palette color per bar
+
+  // Timeline (chart type 'timeline')
+  timelineGroupByRowLabel?: boolean           // collapse same-row-label bars onto one lane
+  timelineColorBy?: 'row' | 'bar'             // color basis for bars
+  timelineAltRows?: boolean                   // alternating row background
 
   // Background & border (widget wrapper)
   backgroundColor?: string

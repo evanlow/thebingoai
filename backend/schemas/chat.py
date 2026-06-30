@@ -117,6 +117,15 @@ class MessageStepsResponse(BaseModel):
     steps: List[AgentStepResponse]
 
 
+class ConversationStepsResponse(BaseModel):
+    """All agent steps for a whole conversation, keyed by message id (as string).
+
+    Lets the frontend load every message's steps in one request instead of one
+    call per assistant message.
+    """
+    message_steps: Dict[str, List[AgentStepResponse]]
+
+
 class UpdateTitleRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
 

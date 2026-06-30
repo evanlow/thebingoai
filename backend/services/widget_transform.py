@@ -180,6 +180,47 @@ def _aggregate_values(values: List[Any], aggregation: str) -> Optional[float]:
         return values[0]
 
 
+def _transform_timeline(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    """Transform QueryResult into timeline widget config data.
+
+    Mapping keys:
+      - labelColumn: row-label dimension (required)
+      - startColumn: start-time date column (required)
+      - endColumn: end-time date column (required)
+      - barLabelColumn: optional per-bar label dimension
+      - tooltipColumn: optional extra tooltip dimension
+
+    Returns ``{"data": {"rows": [{rowLabel, barLabel, start, end, tooltip}, ...]}}``
+    with dates emitted as ISO strings. The frontend timeline renderer reads the
+    raw start/end values and positions bars on a shared time axis.
+    """
+    row_col = mapping.get("labelColumn")
+    start_col = mapping.get("startColumn")
+    end_col = mapping.get("endColumn")
+    bar_col = mapping.get("barLabelColumn")
+    tip_col = mapping.get("tooltipColumn")
+
+    if not (row_col and start_col and end_col) or not result.rows:
+        return {"data": {"rows": []}}
+
+    row_idx = _find_column(row_col, result.columns, "labelColumn")
+    start_idx = _find_column(start_col, result.columns, "startColumn")
+    end_idx = _find_column(end_col, result.columns, "endColumn")
+    bar_idx = _find_column(bar_col, result.columns, "barLabelColumn") if bar_col else None
+    tip_idx = _find_column(tip_col, result.columns, "tooltipColumn") if tip_col else None
+
+    rows_out: List[Dict[str, Any]] = []
+    for row in result.rows:
+        rows_out.append({
+            "rowLabel": _to_json_safe(row[row_idx]),
+            "barLabel": _to_json_safe(row[bar_idx]) if bar_idx is not None else None,
+            "start": _to_json_safe(row[start_idx]),
+            "end": _to_json_safe(row[end_idx]),
+            "tooltip": _to_json_safe(row[tip_idx]) if tip_idx is not None else None,
+        })
+    return {"data": {"rows": rows_out}}
+
+
 def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any]:
     """Transform QueryResult into chart widget config data.
 
@@ -199,6 +240,10 @@ def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
     y_metric_col = mapping.get("yMetricColumn")
     chart_type = mapping.get("chartType", "")
     opts: Dict[str, Any] = mapping.get("options") or {}
+
+    # Timeline charts need a per-row {start, end} shape, not labels/datasets.
+    if chart_type == "timeline":
+        return _transform_timeline(result, mapping)
 
     _PASSTHROUGH_KEYS = {
         "backgroundColor", "borderColor", "borderWidth", "fill", "tension", "pointRadius",
@@ -426,19 +471,15 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
     Mapping keys:
       - valueColumn: column for the main value
       - aggregation: how to aggregate multi-row results (sum, avg, count, min, max, first, last)
-      - autoTrend: auto-calculate trend and sparkline from multi-row results
+      - autoTrend: auto-calculate trend from multi-row results
       - periodLabel: trend calculation preference (e.g. "vs last month")
       - trendDateColumn: date column for period-based trend comparison
       - trendValueColumn: optional column for pre-computed trend numeric value
-      - sparklineXColumn: optional column for sparkline x-axis labels
-      - sparklineYColumn: optional column for sparkline y-axis values
 
     Returns dict suitable for widget.config.
     """
     value_col = mapping.get("valueColumn")
     trend_col = mapping.get("trendValueColumn")
-    sparkline_x_col = mapping.get("sparklineXColumn")
-    sparkline_y_col = mapping.get("sparklineYColumn")
 
     # Incomplete mapping — return stub so editor dropdowns can still populate.
     if not value_col:
@@ -447,8 +488,6 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
     # Validate columns case-insensitively (precompute indices)
     value_idx = _find_column(value_col, result.columns, "valueColumn")
     trend_idx = _find_column(trend_col, result.columns, "trendValueColumn") if trend_col else None
-    sparkline_x_idx = _find_column(sparkline_x_col, result.columns, "sparklineXColumn") if sparkline_x_col else None
-    sparkline_y_idx = _find_column(sparkline_y_col, result.columns, "sparklineYColumn") if sparkline_y_col else None
 
     if not result.rows:
         logger.warning("KPI query returned 0 rows, returning null value")
@@ -480,14 +519,13 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
 
     config: Dict[str, Any] = {"value": value}
 
-    # Auto-trend: derive trend + sparkline from multi-row time-series results
+    # Auto-trend: derive trend from multi-row time-series results
     if mapping.get("autoTrend"):
         all_values = [
             v for v in (_to_json_safe(row[value_idx]) for row in result.rows)
             if isinstance(v, (int, float))
         ]
         if all_values:
-            config["sparkline"] = all_values
             config["value"] = all_values[-1]
 
         period_label = mapping.get("periodLabel", "")
@@ -552,22 +590,6 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
         else:
             direction = "neutral"
         config["trend"] = {"direction": direction, "value": trend_val}
-
-    if sparkline_y_idx is not None:
-        sort_col = mapping.get("sparklineSortColumn")
-        sort_dir = mapping.get("sparklineSortDirection", "asc")
-        rows = result.rows
-        if sort_col:
-            sort_idx_val = None
-            for _i, _c in enumerate(result.columns):
-                if _c.lower() == sort_col.lower():
-                    sort_idx_val = _i
-                    break
-            if sort_idx_val is not None:
-                rows = sorted(rows, key=lambda r: (r[sort_idx_val] is None, r[sort_idx_val]), reverse=(sort_dir == "desc"))
-        config["sparkline"] = [_to_json_safe(row[sparkline_y_idx]) for row in rows]
-        if sparkline_x_idx is not None:
-            config["sparklineLabels"] = [str(_to_json_safe(row[sparkline_x_idx])) for row in rows]
 
     return config
 

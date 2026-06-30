@@ -15,7 +15,9 @@ export function hasRenderableData(widget: DashboardWidget): boolean {
       return value !== undefined && value !== null && value !== ''
     }
     case 'chart': {
-      const data = (config as { data?: { datasets?: unknown[] } }).data
+      const data = (config as { type?: string; data?: { datasets?: unknown[]; rows?: unknown[] } }).data
+      // Timeline charts carry their data as rows, not datasets.
+      if ((config as { type?: string }).type === 'timeline') return (data?.rows?.length ?? 0) > 0
       return (data?.datasets?.length ?? 0) > 0
     }
     case 'table':

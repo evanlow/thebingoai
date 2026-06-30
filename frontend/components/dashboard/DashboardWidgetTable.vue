@@ -16,9 +16,17 @@
     <div v-if="!isEmptyState" class="flex-1 overflow-auto" :class="config.horizontalScrolling ? 'overflow-x-auto' : ''">
       <table
         class="w-full"
-        :class="fontClass"
+        :class="[fontClass, (editMode || hasColWidths) ? 'table-fixed' : '']"
         :style="config.fontColor ? { color: config.fontColor } : undefined"
       >
+        <colgroup>
+          <col v-if="config.showRowNumbers" class="w-8" />
+          <col
+            v-for="(col, i) in config.columns"
+            :key="i"
+            :style="colWidth(i) != null ? { width: colWidth(i) + 'px' } : undefined"
+          />
+        </colgroup>
 
         <!-- Header -->
         <thead
@@ -36,11 +44,10 @@
             <th
               v-for="(col, i) in config.columns"
               :key="i"
-              class="px-4 py-2.5 text-xs font-medium text-gray-400 uppercase tracking-wide dark:text-neutral-400"
+              class="relative px-4 py-2.5 text-xs font-medium text-gray-400 uppercase tracking-wide dark:text-neutral-400 whitespace-normal break-words"
               :class="[
                 col.sortable ? 'cursor-pointer hover:text-gray-600 dark:hover:text-neutral-200 select-none' : '',
                 colAlignClass(col),
-                config.wrapText ? '' : 'whitespace-nowrap',
               ]"
               @click="col.sortable && toggleSort(i)"
             >
@@ -53,6 +60,13 @@
                   {{ sortDir === 'asc' ? '↑' : '↓' }}
                 </span>
               </div>
+              <!-- Resize grip (edit mode) -->
+              <div
+                v-if="editMode"
+                class="absolute top-0 right-0 z-10 h-full w-1.5 cursor-col-resize hover:bg-indigo-300/60"
+                @mousedown.stop.prevent="startColResize($event, i)"
+                @click.stop
+              />
             </th>
           </tr>
 
@@ -89,10 +103,9 @@
             <td
               v-for="(col, ci) in config.columns"
               :key="ci"
-              class="px-4 py-2.5 dark:text-neutral-300"
+              class="px-4 py-2.5 dark:text-neutral-300 whitespace-normal break-words"
               :class="[
                 colAlignClass(col),
-                config.wrapText ? '' : 'whitespace-nowrap',
                 isNumericFormat(col) ? 'tabular-nums' : '',
               ]"
               :style="col.displayType === 'heatmap' ? heatmapCellStyle(row[ci], ci) : undefined"
@@ -173,12 +186,48 @@ import { ref, computed, watch, onMounted } from 'vue'
 import type { TableWidgetConfig, TableColumn } from '~/types/dashboard'
 import { parseUtcDate } from '~/utils/format'
 import { formatNumericValue, NUMERIC_FORMATS, isNumericFormat as isNumericFormatStr } from '~/utils/numberFormat'
+import { useDashboardStore } from '~/stores/dashboard'
 
 const THEME_COLOR = '#6366f1'
 
 const props = defineProps<{
+  widgetId: string
   config: TableWidgetConfig
+  editMode?: boolean
 }>()
+
+const store = useDashboardStore()
+
+// ── Column resize (edit mode) ────────────────────────────────────────────────
+// liveWidths holds the in-progress drag width per column index for instant
+// feedback; on mouseup we persist into config.columns[i].width.
+const MIN_COL_W = 48
+const liveWidths = ref<Record<number, number>>({})
+
+const hasColWidths = computed(() => props.config.columns.some(c => c.width != null))
+
+function colWidth(i: number): number | undefined {
+  return liveWidths.value[i] ?? props.config.columns[i]?.width
+}
+
+function startColResize(e: MouseEvent, i: number) {
+  const startX = e.clientX
+  const startW = props.config.columns[i]?.width ?? (e.target as HTMLElement).closest('th')?.offsetWidth ?? 120
+  const onMove = (ev: MouseEvent) => {
+    liveWidths.value = { ...liveWidths.value, [i]: Math.max(MIN_COL_W, startW + ev.clientX - startX) }
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    const w = liveWidths.value[i]
+    liveWidths.value = {}
+    if (w == null) return
+    const columns = props.config.columns.map((c, ci) => (ci === i ? { ...c, width: Math.round(w) } : c))
+    store.updateWidgetConfig(props.widgetId, { type: 'table', config: { ...props.config, columns } })
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 // sortKey is now a column position index, not a col.key string
 const sortKey = ref<number | null>(null)
@@ -292,7 +341,7 @@ const showSummaryFooter = computed(() => {
 const containerStyle = computed(() => {
   const style: Record<string, string> = {}
   if (props.config.borderWidth && props.config.borderWidth > 0) {
-    const color = props.config.borderColor ?? '#e5e7eb'
+    const color = props.config.borderColor ?? 'var(--line)'
     const styleVal = props.config.borderStyle ?? 'solid'
     style.border = `${props.config.borderWidth}px ${styleVal} ${color}`
   }

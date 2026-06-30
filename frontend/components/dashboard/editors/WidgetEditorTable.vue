@@ -4,10 +4,10 @@
     <!-- Columns -->
     <div class="space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Columns</h3>
+        <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Columns</h3>
         <button
           v-if="editMode"
-          class="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+          class="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
           @click="addColumn()"
         >
           <span class="text-base leading-none">+</span> Add Column
@@ -49,7 +49,7 @@
           @dragover.prevent="onTailDragover"
           @drop.prevent="onDrop"
         />
-        <p v-if="localColumns.length === 0" class="text-xs text-gray-400 text-center py-4">
+        <p v-if="localColumns.length === 0" class="text-xs text-gray-400 dark:text-neutral-500 text-center py-4">
           No columns defined. Add a column to get started.
         </p>
       </div>
@@ -57,16 +57,16 @@
 
     <!-- Options -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Options</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Options</h3>
       <div class="flex items-center justify-between py-1">
-        <span class="text-sm text-gray-700">Enable pagination</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Enable pagination</span>
         <button
           type="button"
           role="switch"
           :aria-checked="localPagination"
           :disabled="!editMode"
           class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-          :class="localPagination ? 'bg-indigo-600' : 'bg-gray-200'"
+          :class="localPagination ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
           @click="editMode && (localPagination = !localPagination, emitUpdate())"
         >
           <span
@@ -76,11 +76,11 @@
         </button>
       </div>
       <div v-if="localPagination" class="flex items-center justify-between py-1">
-        <span class="text-sm text-gray-700">Rows per page</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Rows per page</span>
         <select
           v-model.number="localRowsPerPage"
           :disabled="!editMode"
-          class="rounded border border-gray-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+          class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="emitUpdate()"
         >
           <option :value="10">10</option>
@@ -93,12 +93,12 @@
 
     <!-- Default Sort -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Default Sort</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Default Sort</h3>
       <div class="flex gap-2">
         <select
           v-model="localDefaultSortKey"
           :disabled="!editMode"
-          class="flex-1 rounded border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+          class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="emitUpdate()"
         >
           <option value="">None</option>
@@ -106,16 +106,16 @@
             {{ col.label || col.key }}
           </option>
         </select>
-        <div v-if="localDefaultSortKey" class="flex rounded border border-gray-200 overflow-hidden">
+        <div v-if="localDefaultSortKey" class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="dir in (['asc', 'desc'] as const)"
             :key="dir"
             type="button"
             :disabled="!editMode"
-            class="px-2.5 py-1 text-xs font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-2.5 py-1 text-xs font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="(localDefaultSortDir ?? 'asc') === dir
               ? 'bg-indigo-600 text-white'
-              : 'bg-white text-gray-500 hover:bg-gray-50'"
+              : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
             @click="editMode && (localDefaultSortDir = dir, emitUpdate())"
           >
             {{ dir === 'asc' ? '↑ Asc' : '↓ Desc' }}
@@ -125,7 +125,7 @@
     </div>
 
     <!-- Data note -->
-    <p class="text-[11px] text-gray-400 bg-gray-100 rounded-lg px-3 py-2">
+    <p class="text-[11px] text-gray-400 dark:text-neutral-500 bg-gray-100 dark:bg-neutral-700 rounded-lg px-3 py-2">
       Row data is managed via SQL data sources or AI generation.
     </p>
   </div>

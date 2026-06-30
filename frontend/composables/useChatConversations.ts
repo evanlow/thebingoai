@@ -124,9 +124,31 @@ export const useChatConversations = () => {
   const loadMessages = async (threadId: string) => {
     // Set thread + URL immediately so the view-switch transition fires on click,
     // not after the API round-trip (which would cause a delayed or missing animation)
+    const switching = chatStore.currentThreadId !== threadId
     chatStore.setCurrentThread(threadId)
     if (route.path === '/chat' && route.query.id !== threadId) {
       router.replace({ path: '/chat', query: { id: threadId } })
+    }
+    // Cache hit: a task viewed once this session reopens instantly — no refetch.
+    // Cache is invalidated when a new message is sent to a thread, so a cached
+    // entry is always a completed (immutable) thread. checkStreamingViaWs still
+    // runs in case the backend started streaming it since.
+    const cached = chatStore.messageCache[threadId]
+    if (switching && cached) {
+      chatStore.setMessages(cached)
+      chatStore.messagesLoading = false
+      loadConversationSummary(threadId)
+      checkStreamingViaWs(threadId)
+      return
+    }
+    // Switching away from a (possibly streaming) thread: drop its messages now so
+    // its background stream can't keep rendering into this view during the async
+    // load below — updateMessageById no-ops once that message id is gone, and the
+    // global chatStore.messages is what every thread page renders. Same-thread
+    // reloads (e.g. checkStreamingViaWs on stream complete) keep their messages.
+    if (switching) {
+      chatStore.setMessages([])
+      chatStore.messagesLoading = true  // show a spinner, not the empty state, during the load
     }
     try {
       const conversation = await api.chat.getMessages(threadId) as any
@@ -151,6 +173,7 @@ export const useChatConversations = () => {
       }))
       messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
       chatStore.setMessages(messages)
+      chatStore.messagesLoading = false
 
       // Resolve presigned URLs for image attachments
       const imageRequests: Array<{ msgId: string; idx: number; fileId: string; storageKey?: string }> = []
@@ -178,36 +201,45 @@ export const useChatConversations = () => {
         )
       }
 
-      // Load agent steps for assistant messages from chat source
-      for (const msg of messages) {
-        if (msg.role === 'assistant' && msg.source === 'chat' && msg.id && !msg.id.includes('-')) {
-          try {
-            const stepsResponse = await api.chat.getMessageSteps(threadId, msg.id) as any
-            if (stepsResponse?.steps?.length > 0) {
-              const agentSteps: AgentStep[] = stepsResponse.steps.map((s: any) => ({
-                agent_type: s.agent_type,
-                step_type: s.step_type,
-                tool_name: s.tool_name,
-                content: s.content || {},
-                duration_ms: s.duration_ms,
-                created_at: s.created_at
-              }))
-              const msgInStore = chatStore.messages.find(m => m.id === msg.id)
-              if (msgInStore) {
-                msgInStore.agent_steps = agentSteps
+      // Load agent steps for ALL assistant messages in ONE request (was a serial
+      // per-message loop — the main task-load bottleneck). Same mapping per message.
+      try {
+        const stepsResp = await api.chat.getConversationSteps(threadId) as { message_steps?: Record<string, any[]> }
+        const stepsMap = stepsResp?.message_steps ?? {}
+        for (const msg of messages) {
+          if (msg.role !== 'assistant' || msg.source !== 'chat' || !msg.id || msg.id.includes('-')) continue
+          const raw = stepsMap[msg.id]
+          if (!raw?.length) continue
+          const agentSteps: AgentStep[] = raw.map((s: any) => ({
+            agent_type: s.agent_type,
+            step_type: s.step_type,
+            tool_name: s.tool_name,
+            content: s.content || {},
+            duration_ms: s.duration_ms,
+            created_at: s.created_at
+          }))
+          const msgInStore = chatStore.messages.find(m => m.id === msg.id)
+          if (msgInStore) {
+            msgInStore.agent_steps = agentSteps
 
-                // Reconstruct sql + results from persisted execute_query steps
-                const qd = _extractQueryData(agentSteps)
-                if (qd) {
-                  msgInStore.sql = qd.sql
-                  msgInStore.results = qd.results
-                }
-              }
+            // Reconstruct sql + results from persisted execute_query steps
+            const qd = _extractQueryData(agentSteps)
+            if (qd) {
+              msgInStore.sql = qd.sql
+              msgInStore.results = qd.results
             }
-          } catch {
-            // Steps may not exist for older messages — ignore silently
           }
         }
+      } catch {
+        // Steps may not exist for older messages — ignore silently
+      }
+
+      // Cache the fully-loaded (messages + steps) thread so revisiting it this
+      // session is instant. Only cache the thread we're still viewing (guards
+      // against a fast thread switch mid-load) and when it isn't actively
+      // streaming. Invalidated on send (see useChatStreaming.sendMessage).
+      if (chatStore.currentThreadId === threadId && !chatStore.isStreaming) {
+        chatStore.cacheMessages(threadId, chatStore.messages)
       }
 
       // Load conversation summary
@@ -216,6 +248,7 @@ export const useChatConversations = () => {
       // Check if backend is still streaming for this thread via WebSocket
       checkStreamingViaWs(threadId)
     } catch (error) {
+      chatStore.messagesLoading = false
       console.error('Failed to load messages:', error)
     }
   }

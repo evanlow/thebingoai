@@ -631,7 +631,7 @@ Phase 3 — Design (informed by profiling):
 
 Structure every dashboard as a top-to-bottom data story:
 
-**Section 1 — Executive Summary (y=0):** 3-4 KPI cards answering "how are we doing at a glance?"
+**Section 1 — Executive Summary (y=0):** 3-5 KPI cards answering "how are we doing at a glance?"
 
 **Section 2 — Filters (y=2):** A filter bar with dropdown, date_range, or search controls for the key dimensions.
 
@@ -642,7 +642,7 @@ Structure every dashboard as a top-to-bottom data story:
 ### Layout Patterns (12-column grid)
 
 ```
-Row 0:      KPI row — 3 KPIs at w=4 (x=0,4,8) or 4 KPIs at w=3 (x=0,3,6,9). h=2.
+Row 0:      KPI row — 3 KPIs at w=4 (x=0,4,8), 4 at w=3 (x=0,3,6,9), or 5 (x=0,3,6,8,10). h=2.
 Row 2:      Filter bar — w=12, h=2. Dropdowns for key categorical cols, date_range for time cols.
 Row 4:      Text section header — w=12, h=1 (e.g. "## Trends & Breakdown")
 Rows 5-9:   Primary charts SIDE-BY-SIDE:
@@ -655,8 +655,8 @@ Rows 16+:   Detail tables — w=12, h=5
 
 ### Widget Count Guidelines
 
-- Target **9-13 widgets** total (min 7, max 14)
-- 3-4 KPIs + 1 filter bar + 1-2 text headers + 3-5 charts + 1-2 tables
+- Target **9-13 widgets** total (min 7, max 15)
+- 3-5 KPIs + 1 filter bar + 1-2 text headers + 3-5 charts + 1-2 tables
 
 ### Chart Type Selection Guide
 
