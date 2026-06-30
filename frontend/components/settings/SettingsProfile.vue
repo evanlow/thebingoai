@@ -28,11 +28,11 @@
             <span
               v-for="chip in roleChips"
               :key="chip"
-              class="text-sm font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"
+              class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"
             >
               {{ chip }}
             </span>
-            <span v-if="memberSince" class="text-sm text-gray-400 dark:text-neutral-500">
+            <span v-if="memberSince" class="text-xs text-gray-400 dark:text-neutral-500">
               member since {{ memberSince }}
             </span>
           </div>
@@ -45,13 +45,13 @@
       <p class="eyebrow">Identity</p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Display name</label>
+          <label class="block text-xs font-medium text-gray-500 dark:text-neutral-400 mb-1">Display name</label>
           <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2 text-sm text-gray-700 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-800">
             {{ displayName || '—' }}
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Email</label>
+          <label class="block text-xs font-medium text-gray-500 dark:text-neutral-400 mb-1">Email</label>
           <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2 text-sm text-gray-700 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-800">
             {{ authStore.user?.email || '—' }}
           </div>
@@ -108,6 +108,30 @@
           </button>
         </div>
       </UiCard>
+
+      <!-- Text size -->
+      <UiCard class="p-5">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-sm font-medium text-gray-900 dark:text-white">Text size</p>
+            <p class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">Adjust the size of text across Bingo.</p>
+          </div>
+          <div class="flex gap-1 shrink-0 rounded-lg border border-gray-200 dark:border-neutral-700 p-0.5">
+            <button
+              v-for="opt in FONT_SIZE_OPTIONS"
+              :key="opt.value"
+              type="button"
+              @click="fontSize.preference.value = opt.value"
+              class="px-3 py-1 rounded-md text-sm font-medium transition-colors"
+              :class="fontSize.preference.value === opt.value
+                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                : 'text-gray-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700'"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
+      </UiCard>
     </div>
 
     <!-- Danger zone -->
@@ -125,6 +149,13 @@ const authStore = useAuthStore()
 const router = useRouter()
 const colorMode = useColorMode()
 const appTheme = useAppTheme()
+const fontSize = useAppFontSize()
+
+const FONT_SIZE_OPTIONS = [
+  { value: 'sm' as const, label: 'Small' },
+  { value: 'md' as const, label: 'Medium' },
+  { value: 'lg' as const, label: 'Large' },
+]
 
 const isDark = computed({
   get: () => colorMode.value === 'dark',
