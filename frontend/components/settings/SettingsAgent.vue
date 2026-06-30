@@ -29,22 +29,22 @@
 
         <!-- Intro card -->
         <div class="bg-[var(--ember-wash)] border border-[color-mix(in_oklch,var(--ember)_20%,var(--line))] rounded-[var(--r-lg)] px-7 py-6 mb-6">
-          <p class="text-sm font-bold tracking-[.1em] uppercase text-[var(--ink-3)] mb-2">The Agent</p>
+          <p class="text-xs font-bold tracking-[.1em] uppercase text-[var(--ink-3)] mb-2">The Agent</p>
           <h2 class="text-2xl font-bold text-[var(--ink-0)] mb-3 leading-snug">
             <em class="font-serif italic text-[var(--ember)]]">{{ agentName }}</em> is a document.
           </h2>
-          <p class="text-base text-[var(--ink-2)] leading-relaxed mb-4 max-w-2xl">
+          <p class="text-sm text-[var(--ink-2)] leading-relaxed mb-4 max-w-2xl">
             Identity is who it is. Soul is how it thinks. User context is everything it knows about the person on the other end. Edit any section — the rest stays consistent.
           </p>
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-sm font-semibold px-2.5 py-1 rounded-full border bg-[color-mix(in_oklch,var(--ember)_12%,var(--paper-0))] border-[color-mix(in_oklch,var(--ember)_30%,var(--line))] text-[var(--ember)]">
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full border bg-[color-mix(in_oklch,var(--ember)_12%,var(--paper-0))] border-[color-mix(in_oklch,var(--ember)_30%,var(--line))] text-[var(--ember)]">
               ✦ {{ agentProfile.versionLabel.value }} · {{ agentProfile.isDraft.value ? 'draft' : 'published' }}
             </span>
-            <span class="text-sm px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
+            <span class="text-xs px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
               {{ agentProfile.lastPublishedLabel.value }}
             </span>
             <span v-if="agentProfile.changedCount.value > 0"
-                  class="text-sm px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
+                  class="text-xs px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
               {{ agentProfile.changedCount.value }} section{{ agentProfile.changedCount.value > 1 ? 's' : '' }} changed
             </span>
           </div>

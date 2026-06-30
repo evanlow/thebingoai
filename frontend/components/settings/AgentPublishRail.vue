@@ -1,7 +1,7 @@
 <template>
   <div class="w-48 flex-shrink-0 border-r border-[var(--line)] flex flex-col px-3 py-5">
 
-    <p class="text-sm font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-3">
+    <p class="text-xs font-bold tracking-[.08em] uppercase text-[var(--ink-3)] mb-3">
       Sections
     </p>
 
@@ -32,7 +32,7 @@
           >
             {{ section.label }}
           </p>
-          <p class="text-sm text-[var(--ink-3)] leading-tight mt-0.5">
+          <p class="text-xs text-[var(--ink-3)] leading-tight mt-0.5">
             {{ section.subtitle }}
           </p>
         </div>
@@ -41,7 +41,7 @@
 
     <!-- Publish footer -->
     <div class="mt-4 pt-4 border-t border-dashed border-[var(--line-2)]">
-      <p class="text-sm text-[var(--ink-3)] leading-snug mb-3">
+      <p class="text-xs text-[var(--ink-3)] leading-snug mb-3">
         Edits save as a <strong class="text-[var(--ink-2)] font-semibold">{{ versionLabel }} draft</strong>.
         Publish to make Bingo follow them in new threads.
       </p>
@@ -61,11 +61,11 @@
         {{ resetting ? 'Reverting…' : '↺ Reset draft' }}
       </button>
       <button
-        class="w-full mt-2 py-1.5 text-sm font-medium rounded-[var(--r-sm)] border border-[var(--line-2)] bg-[var(--paper-0)] text-[var(--ink-3)] hover:text-[var(--ink-0)] hover:bg-[var(--paper-2)] transition-colors disabled:opacity-50"
+        class="w-full mt-2 py-1.5 flex items-center justify-center gap-1.5 text-sm font-medium rounded-[var(--r-sm)] border border-[var(--line-2)] bg-[var(--paper-0)] text-[var(--ink-3)] hover:text-[var(--ink-0)] hover:bg-[var(--paper-2)] transition-colors disabled:opacity-50"
         :disabled="resetting"
         @click="$emit('factory-reset')"
       >
-        ⟲ Revert to Bingo default
+        <span class="text-xl leading-none">⟲</span><span>Revert to default</span>
       </button>
     </div>
   </div>

@@ -220,7 +220,7 @@
             This will permanently delete <span class="font-medium text-gray-900">{{ store.currentDashboard?.title }}</span> and all its widgets. This action cannot be undone.
           </p>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
+            <label class="block text-xs font-medium text-gray-700 mb-1">
               Type <span class="font-semibold">{{ store.currentDashboard?.title }}</span> to confirm
             </label>
             <input
@@ -559,7 +559,7 @@ definePageMeta({
 }
 .dashboard-empty-tip p {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--ink-1);
   line-height: 1.55;
 }
@@ -632,7 +632,7 @@ definePageMeta({
   gap: 6px;
   padding: 7px 13px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 500;
   font-family: var(--font-sans);
   cursor: pointer;
@@ -688,7 +688,7 @@ definePageMeta({
   background: transparent;
   border: none;
   outline: none;
-  font-size: 14px;
+  font-size: 12.5px;
   font-family: var(--font-sans);
   color: var(--ink-0);
 }
@@ -698,7 +698,7 @@ definePageMeta({
 
 .dashboard-search-hint {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 10px;
   color: var(--ink-3);
   flex-shrink: 0;
 }
@@ -716,7 +716,7 @@ definePageMeta({
   padding: 4px 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  font-size: 14px;
+  font-size: 12.5px;
   font-family: var(--font-sans);
   color: var(--ink-1);
   background: var(--paper-0);
@@ -751,7 +751,7 @@ definePageMeta({
 
 .dashboard-sort-label {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 10.5px;
   letter-spacing: 0.08em;
   color: var(--ink-3);
   text-transform: uppercase;
@@ -762,7 +762,7 @@ definePageMeta({
   background: transparent;
   border: none;
   outline: none;
-  font-size: 14px;
+  font-size: 12.5px;
   font-family: var(--font-sans);
   color: var(--ink-1);
   cursor: pointer;
