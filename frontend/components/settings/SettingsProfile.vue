@@ -42,16 +42,16 @@
 
     <!-- Identity (read-only until PATCH /api/auth/me exists) -->
     <div class="space-y-4">
-      <p class="eyebrow">Identity</p>
+      <p class="text-sm font-medium tracking-[0.12em] uppercase text-[var(--ink-2)]">Identity</p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-neutral-400 mb-1">Display name</label>
+          <label class="block text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Display name</label>
           <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2 text-sm text-gray-700 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-800">
             {{ displayName || '—' }}
           </div>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-neutral-400 mb-1">Email</label>
+          <label class="block text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Email</label>
           <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2 text-sm text-gray-700 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-800">
             {{ authStore.user?.email || '—' }}
           </div>
@@ -61,7 +61,7 @@
 
     <!-- Preferences -->
     <div class="space-y-4">
-      <p class="eyebrow">Preferences</p>
+      <p class="text-sm font-medium tracking-[0.12em] uppercase text-[var(--ink-2)]">Preferences</p>
 
       <!-- Appearance: theme swatches -->
       <UiCard class="p-5">
