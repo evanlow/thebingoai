@@ -33,8 +33,8 @@
         </template>
       </div>
       <div class="flex-1">
-        <p class="text-sm font-semibold text-[var(--ink-0)]">{{ localData.display_name || 'Bingo' }}</p>
-        <p class="text-xs text-[var(--ink-3)] mt-0.5">Avatar follows theme (light / dark)</p>
+        <p class="text-base font-semibold text-[var(--ink-0)]">{{ localData.display_name || 'Bingo' }}</p>
+        <p class="text-sm text-[var(--ink-3)] mt-0.5">Avatar follows theme (light / dark)</p>
       </div>
     </div>
 
