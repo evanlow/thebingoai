@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.database.base import Base
 from backend.models.user import User
+from backend.models.organization import Organization
 from backend.models.database_connection import DatabaseConnection
 from backend.models.heartbeat_job import HeartbeatJob
 from backend.models.custom_agent import CustomAgent
@@ -35,6 +36,7 @@ def db():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine, tables=[
         User.__table__,
+        Organization.__table__,
         DatabaseConnection.__table__,
         HeartbeatJob.__table__,
         CustomAgent.__table__,
@@ -132,3 +134,34 @@ def test_tombstone_account_rejects_empty_email(db):
 
     with pytest.raises(ValueError):
         tombstone_account(db, user, "")
+
+
+def test_tombstone_frees_per_user_org_name(db):
+    # per_user_org_signup names the org after the email. Deletion must free that
+    # UNIQUE name too, else re-registering the same email collides.
+    org = Organization(id="org-1", name="carol@gmail.com")
+    db.add(org)
+    db.flush()
+    user = User(id="u3", email="carol@gmail.com", auth_provider="sso",
+                is_active=True, org_id="org-1")
+    db.add(user)
+    db.commit()
+
+    tombstone_account(db, user, "bingo-1718450000@gmail.com")
+
+    assert db.query(Organization).filter_by(id="org-1").one().name == "bingo-1718450000@gmail.com"
+
+
+def test_tombstone_leaves_shared_org_untouched(db):
+    # A shared org NOT named after the email (community DEFAULT_ORG) is left alone.
+    org = Organization(id="org-shared", name="default")
+    db.add(org)
+    db.flush()
+    user = User(id="u4", email="dave@gmail.com", auth_provider="sso",
+                is_active=True, org_id="org-shared")
+    db.add(user)
+    db.commit()
+
+    tombstone_account(db, user, "bingo-1718450001@gmail.com")
+
+    assert db.query(Organization).filter_by(id="org-shared").one().name == "default"
