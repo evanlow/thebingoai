@@ -16,15 +16,15 @@
       </div>
       <template v-if="localOpts.showTitle">
         <div class="space-y-1">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Title text</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Title text</label>
           <input v-model="localTitle" type="text" placeholder="Chart title…" :readonly="!editMode"
-            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
             :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
             @input="emitUpdate()" />
         </div>
         <div class="flex gap-3">
           <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Position</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Position</label>
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in [{ value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }]" :key="opt.value"
                 type="button" :disabled="!editMode"
@@ -34,7 +34,7 @@
             </div>
           </div>
           <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Align</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Align</label>
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in [{ value: 'left', label: 'L' }, { value: 'center', label: 'C' }, { value: 'right', label: 'R' }]" :key="opt.value"
                 type="button" :disabled="!editMode"
@@ -45,9 +45,9 @@
           </div>
         </div>
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Family</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Family</span>
           <select v-model="localOpts.titleFontFamily" :disabled="!editMode"
-            class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitUpdate()">
             <option value="system">System</option>
             <option value="sans">Sans-serif</option>
@@ -56,7 +56,7 @@
           </select>
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Size</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Size</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button
               v-for="opt in fontSizeOptions"
@@ -72,7 +72,7 @@
           </div>
         </div>
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
           <ColorPickerPopover v-model="localOpts.titleFontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
         </div>
       </template>
@@ -82,7 +82,7 @@
     <div v-if="isFunnel" class="space-y-3">
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Funnel</h3>
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Funnel shape</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Funnel shape</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'smoothed', label: 'Smoothed' }, { value: 'stepped', label: 'Stepped' }]" :key="opt.value"
             type="button" :disabled="!editMode"
@@ -92,7 +92,7 @@
         </div>
       </div>
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Show data labels as</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Show data labels as</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'number', label: 'Number' }, { value: 'percentage', label: '%' }, { value: 'numberPercentage', label: 'Num + %' }]" :key="opt.value"
             type="button" :disabled="!editMode"
@@ -102,7 +102,7 @@
         </div>
       </div>
       <div v-if="(localOpts.funnelLabelMode ?? 'numberPercentage') !== 'number'" class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Percentage type</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Percentage type</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'max', label: '% of max' }, { value: 'previous', label: '% of previous' }]" :key="opt.value"
             type="button" :disabled="!editMode"
@@ -112,7 +112,7 @@
         </div>
       </div>
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Color by</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Color by</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'single', label: 'Single color' }, { value: 'byValue', label: 'By value' }]" :key="opt.value"
             type="button" :disabled="!editMode"
@@ -137,7 +137,7 @@
         </button>
       </div>
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Color by</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Color by</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in [{ value: 'row', label: 'Row label' }, { value: 'bar', label: 'Bar label' }]" :key="opt.value"
             type="button" :disabled="!editMode"
@@ -161,11 +161,11 @@
     <!-- 2. Series -->
     <div v-if="isStandardChart" class="space-y-3">
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Series</h3>
-      <p v-if="!localDatasets.length" class="text-xs text-gray-400 dark:text-neutral-500">No datasets yet. Connect a data source first.</p>
+      <p v-if="!localDatasets.length" class="text-sm text-gray-400 dark:text-neutral-500">No datasets yet. Connect a data source first.</p>
       <div v-for="(ds, i) in localDatasets" :key="i" class="rounded-lg border border-gray-100 dark:border-neutral-800 p-3 space-y-2.5">
         <!-- Series header -->
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-medium text-gray-700 dark:text-neutral-200 truncate">{{ ds.label || `Series ${i + 1}` }}</span>
+          <span class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate">{{ ds.label || `Series ${i + 1}` }}</span>
           <button type="button" class="text-sm text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300"
             @click="toggleSeriesExpanded(i)">{{ expandedSeries.has(i) ? 'Collapse' : 'Expand' }}</button>
         </div>
@@ -173,7 +173,7 @@
         <template v-if="expandedSeries.has(i)">
           <!-- Series type (combo) -->
           <div class="space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Series type</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Series type</label>
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in seriesTypeOptions" :key="opt.value" type="button" :disabled="!editMode"
                 class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -184,7 +184,7 @@
 
           <!-- Color -->
           <div class="flex items-center justify-between gap-2">
-            <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+            <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
             <ColorPickerPopover :model-value="ds.borderColor as string | undefined" :disabled="!editMode"
               @update:model-value="setDatasetColor(i, $event)" />
           </div>
@@ -192,7 +192,7 @@
           <!-- Line-only options -->
           <template v-if="(ds.seriesType ?? defaultSeriesType) === 'line'">
             <div class="space-y-1">
-              <label class="text-xs text-gray-700 dark:text-neutral-200">Line style</label>
+              <label class="text-sm text-gray-700 dark:text-neutral-200">Line style</label>
               <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
                 <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
                   class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -201,13 +201,13 @@
               </div>
             </div>
             <div class="flex items-center justify-between gap-2">
-              <span class="text-xs text-gray-700 dark:text-neutral-200">Line weight</span>
+              <span class="text-sm text-gray-700 dark:text-neutral-200">Line weight</span>
               <input v-model.number="localDatasets[i].lineWeight" type="range" min="1" max="6" step="1"
                 :disabled="!editMode" class="w-24 accent-indigo-600" @input="emitUpdate()" />
-              <span class="text-xs text-gray-500 dark:text-neutral-400 w-4">{{ ds.lineWeight ?? 2 }}</span>
+              <span class="text-sm text-gray-500 dark:text-neutral-400 w-4">{{ ds.lineWeight ?? 2 }}</span>
             </div>
             <div class="flex items-center justify-between py-0.5">
-              <span class="text-xs text-gray-700 dark:text-neutral-200">Smooth</span>
+              <span class="text-sm text-gray-700 dark:text-neutral-200">Smooth</span>
               <button type="button" role="switch" :aria-checked="(ds.tension ?? 0.4) > 0" :disabled="!editMode"
                 class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="(ds.tension ?? 0.4) > 0 ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -217,7 +217,7 @@
               </button>
             </div>
             <div class="flex items-center justify-between py-0.5">
-              <span class="text-xs text-gray-700 dark:text-neutral-200">Show points</span>
+              <span class="text-sm text-gray-700 dark:text-neutral-200">Show points</span>
               <button type="button" role="switch" :aria-checked="ds.showPoints === true" :disabled="!editMode"
                 class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="ds.showPoints === true ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -227,7 +227,7 @@
               </button>
             </div>
             <div class="flex items-center justify-between py-0.5">
-              <span class="text-xs text-gray-700 dark:text-neutral-200">Stepped lines</span>
+              <span class="text-sm text-gray-700 dark:text-neutral-200">Stepped lines</span>
               <button type="button" role="switch" :aria-checked="!!ds.stepped" :disabled="!editMode"
                 class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="ds.stepped ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -237,7 +237,7 @@
               </button>
             </div>
             <div class="flex items-center justify-between py-0.5">
-              <span class="text-xs text-gray-700 dark:text-neutral-200">Gradient fill</span>
+              <span class="text-sm text-gray-700 dark:text-neutral-200">Gradient fill</span>
               <button type="button" role="switch" :aria-checked="!!ds.gradient" :disabled="!editMode"
                 class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 :class="ds.gradient ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -250,7 +250,7 @@
 
           <!-- Cumulative -->
           <div class="flex items-center justify-between py-0.5">
-            <span class="text-xs text-gray-700 dark:text-neutral-200">Cumulative</span>
+            <span class="text-sm text-gray-700 dark:text-neutral-200">Cumulative</span>
             <button type="button" role="switch" :aria-checked="!!ds.cumulative" :disabled="!editMode"
               class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="ds.cumulative ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -262,7 +262,7 @@
 
           <!-- Show data labels (hidden for pie — use Slice label in General instead) -->
           <div v-if="!isPie" class="flex items-center justify-between py-0.5">
-            <span class="text-xs text-gray-700 dark:text-neutral-200">Show data labels</span>
+            <span class="text-sm text-gray-700 dark:text-neutral-200">Show data labels</span>
             <button type="button" role="switch" :aria-checked="!!ds.showDataLabels" :disabled="!editMode"
               class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="ds.showDataLabels ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -274,7 +274,7 @@
 
           <!-- Y-axis assignment -->
           <div v-if="localDatasets.length > 1" class="space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Y-axis</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Y-axis</label>
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in [{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }]" :key="opt.value"
                 type="button" :disabled="!editMode"
@@ -286,9 +286,9 @@
 
           <!-- Trendline -->
           <div class="space-y-1.5 pt-1 border-t border-gray-100 dark:border-neutral-800">
-            <label class="text-xs font-medium text-gray-600 dark:text-neutral-400">Trendline</label>
+            <label class="text-sm font-medium text-gray-600 dark:text-neutral-400">Trendline</label>
             <select :value="ds.trendline?.type ?? 'none'" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @change="setTrendlineType(i, ($event.target as HTMLSelectElement).value)">
               <option value="none">None</option>
               <option value="linear">Linear</option>
@@ -298,18 +298,18 @@
             </select>
             <template v-if="ds.trendline?.type && ds.trendline.type !== 'none'">
               <div v-if="ds.trendline.type === 'movingAverage'" class="flex items-center justify-between gap-2">
-                <span class="text-xs text-gray-700 dark:text-neutral-200">Period</span>
+                <span class="text-sm text-gray-700 dark:text-neutral-200">Period</span>
                 <input :value="ds.trendline.period ?? 3" type="number" min="2" max="50" :disabled="!editMode"
-                  class="w-16 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-center text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+                  class="w-16 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-center text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                   @input="setTrendlineProp(i, 'period', +($event.target as HTMLInputElement).value)" />
               </div>
               <div class="flex items-center justify-between gap-2">
-                <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+                <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
                 <ColorPickerPopover :model-value="ds.trendline.color" :disabled="!editMode"
                   @update:model-value="setTrendlineProp(i, 'color', $event)" />
               </div>
               <div class="space-y-1">
-                <label class="text-xs text-gray-700 dark:text-neutral-200">Style</label>
+                <label class="text-sm text-gray-700 dark:text-neutral-200">Style</label>
                 <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
                   <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
                     class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -404,10 +404,10 @@
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
         <div class="flex items-center gap-2">
           <input :value="rl.value" type="number" placeholder="Value" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefLineProp(ri, 'value', +($event.target as HTMLInputElement).value)" />
           <input :value="rl.label ?? ''" type="text" placeholder="Label" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefLineProp(ri, 'label', ($event.target as HTMLInputElement).value)" />
           <ColorPickerPopover :model-value="rl.color" :disabled="!editMode"
             @update:model-value="setRefLineProp(ri, 'color', $event)" />
@@ -436,13 +436,13 @@
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
         <div class="flex items-center gap-2">
           <input :value="rb.from" type="number" placeholder="From" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefBandProp(rbi, 'from', +($event.target as HTMLInputElement).value)" />
           <input :value="rb.to" type="number" placeholder="To" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefBandProp(rbi, 'to', +($event.target as HTMLInputElement).value)" />
           <input :value="rb.label ?? ''" type="text" placeholder="Label" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefBandProp(rbi, 'label', ($event.target as HTMLInputElement).value)" />
           <ColorPickerPopover :model-value="rb.color" :disabled="!editMode"
             @update:model-value="setRefBandProp(rbi, 'color', $event)" />
@@ -478,29 +478,29 @@
 
       <!-- Left Y-axis -->
       <div class="space-y-2 pt-1">
-        <p class="text-xs font-medium text-gray-500 dark:text-neutral-400">Left Y-axis</p>
+        <p class="text-sm font-medium text-gray-500 dark:text-neutral-400">Left Y-axis</p>
         <div class="space-y-1">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Title</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Title</label>
           <input :value="localOpts.yAxisLeft?.title ?? ''" type="text" placeholder="Axis title…" :disabled="!editMode"
-            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setAxisProp('yAxisLeft', 'title', ($event.target as HTMLInputElement).value); setAxisProp('yAxisLeft', 'showTitle', true)" />
         </div>
         <div class="flex gap-2">
           <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Min</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Min</label>
             <input :value="localOpts.yAxisLeft?.min ?? ''" type="number" placeholder="Auto" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @input="setAxisProp('yAxisLeft', 'min', ($event.target as HTMLInputElement).value ? +($event.target as HTMLInputElement).value : undefined)" />
           </div>
           <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Max</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Max</label>
             <input :value="localOpts.yAxisLeft?.max ?? ''" type="number" placeholder="Auto" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @input="setAxisProp('yAxisLeft', 'max', ($event.target as HTMLInputElement).value ? +($event.target as HTMLInputElement).value : undefined)" />
           </div>
         </div>
         <div class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Log scale</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Log scale</span>
           <button type="button" role="switch" :aria-checked="!!(localOpts.yAxisLeft?.logScale)" :disabled="!editMode"
             class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="localOpts.yAxisLeft?.logScale ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -513,29 +513,29 @@
 
       <!-- Right Y-axis (only when multi-series) -->
       <div v-if="hasRightAxis" class="space-y-2 pt-1">
-        <p class="text-xs font-medium text-gray-500 dark:text-neutral-400">Right Y-axis</p>
+        <p class="text-sm font-medium text-gray-500 dark:text-neutral-400">Right Y-axis</p>
         <div class="space-y-1">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Title</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Title</label>
           <input :value="localOpts.yAxisRight?.title ?? ''" type="text" placeholder="Axis title…" :disabled="!editMode"
-            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setAxisProp('yAxisRight', 'title', ($event.target as HTMLInputElement).value); setAxisProp('yAxisRight', 'showTitle', true)" />
         </div>
         <div class="flex gap-2">
           <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Min</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Min</label>
             <input :value="localOpts.yAxisRight?.min ?? ''" type="number" placeholder="Auto" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @input="setAxisProp('yAxisRight', 'min', ($event.target as HTMLInputElement).value ? +($event.target as HTMLInputElement).value : undefined)" />
           </div>
           <div class="flex-1 space-y-1">
-            <label class="text-xs text-gray-700 dark:text-neutral-200">Max</label>
+            <label class="text-sm text-gray-700 dark:text-neutral-200">Max</label>
             <input :value="localOpts.yAxisRight?.max ?? ''" type="number" placeholder="Auto" :disabled="!editMode"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @input="setAxisProp('yAxisRight', 'max', ($event.target as HTMLInputElement).value ? +($event.target as HTMLInputElement).value : undefined)" />
           </div>
         </div>
         <div class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Align both to 0</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Align both to 0</span>
           <button type="button" role="switch" :aria-checked="!!localOpts.alignBothAxesToZero" :disabled="!editMode"
             class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
             :class="localOpts.alignBothAxesToZero ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
@@ -548,9 +548,9 @@
 
       <!-- X-axis title -->
       <div class="space-y-1">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">X-axis title</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">X-axis title</label>
         <input :value="localOpts.xAxis?.title ?? ''" type="text" placeholder="X axis label…" :disabled="!editMode"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @input="setAxisProp('xAxis', 'title', ($event.target as HTMLInputElement).value); setAxisProp('xAxis', 'showTitle', true)" />
       </div>
     </div>
@@ -583,7 +583,7 @@
         <ColorPickerPopover v-model="localOpts.gridLineColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
       </div>
       <div class="space-y-1">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Grid line style</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Grid line style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
             class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -608,7 +608,7 @@
       </div>
       <template v-if="localOpts.showLegend !== false">
         <div class="space-y-1">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Position</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Position</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button v-for="opt in legendPositionOptions" :key="opt.value" type="button" :disabled="!editMode"
               class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -617,7 +617,7 @@
           </div>
         </div>
         <div class="space-y-1">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Alignment</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Alignment</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button v-for="opt in [{ value: 'start', label: 'Start' }, { value: 'center', label: 'Center' }, { value: 'end', label: 'End' }]" :key="opt.value"
               type="button" :disabled="!editMode"
@@ -627,9 +627,9 @@
           </div>
         </div>
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Family</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Family</span>
           <select v-model="localOpts.legendFontFamily" :disabled="!editMode"
-            class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitUpdate()">
             <option value="system">System</option>
             <option value="sans">Sans-serif</option>
@@ -638,7 +638,7 @@
           </select>
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Size</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Size</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button
               v-for="opt in fontSizeOptions"
@@ -654,7 +654,7 @@
           </div>
         </div>
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
           <ColorPickerPopover v-model="localOpts.legendFontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
         </div>
       </template>
@@ -664,9 +664,9 @@
     <div class="space-y-3">
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Font</h3>
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Family</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Family</span>
         <select v-model="localOpts.fontFamily" :disabled="!editMode"
-          class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="emitUpdate()">
           <option value="system">System</option>
           <option value="sans">Sans-serif</option>
@@ -675,7 +675,7 @@
         </select>
       </div>
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Size</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Size</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in fontSizeOptions"
@@ -691,7 +691,7 @@
         </div>
       </div>
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
         <ColorPickerPopover v-model="localOpts.fontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
       </div>
     </div>
@@ -708,11 +708,11 @@
         <div class="flex items-center gap-2">
           <input v-model.number="localOpts.opacity" type="range" min="0" max="100" step="1"
             :disabled="!editMode" class="w-24 accent-indigo-600" @input="emitUpdate()" />
-          <span class="text-xs text-gray-500 dark:text-neutral-400 w-8 text-right">{{ localOpts.opacity ?? 100 }}%</span>
+          <span class="text-sm text-gray-500 dark:text-neutral-400 w-8 text-right">{{ localOpts.opacity ?? 100 }}%</span>
         </div>
       </div>
       <div class="space-y-1">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Border style</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Border style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button v-for="opt in borderStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
             class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -730,7 +730,7 @@
           <div class="flex items-center gap-2">
             <input v-model.number="localOpts.borderWidth" type="range" min="0" max="5" step="1"
               :disabled="!editMode" class="w-24 accent-indigo-600" @input="emitUpdate()" />
-            <span class="text-xs text-gray-500 dark:text-neutral-400 w-4">{{ localOpts.borderWidth ?? 1 }}</span>
+            <span class="text-sm text-gray-500 dark:text-neutral-400 w-4">{{ localOpts.borderWidth ?? 1 }}</span>
           </div>
         </div>
       </template>
@@ -739,7 +739,7 @@
         <div class="flex items-center gap-2">
           <input v-model.number="localOpts.borderRadius" type="range" min="0" max="16" step="1"
             :disabled="!editMode" class="w-24 accent-indigo-600" @input="emitUpdate()" />
-          <span class="text-xs text-gray-500 dark:text-neutral-400 w-4">{{ localOpts.borderRadius ?? 0 }}</span>
+          <span class="text-sm text-gray-500 dark:text-neutral-400 w-4">{{ localOpts.borderRadius ?? 0 }}</span>
         </div>
       </div>
       <div class="flex items-center justify-between py-1">

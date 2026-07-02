@@ -22,13 +22,13 @@
         </button>
       </div>
       <div v-if="localShowTitle" class="space-y-1">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Title text</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Title text</label>
         <input
           v-model="localTitle"
           type="text"
           placeholder="Table title…"
           :readonly="!editMode"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
           :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           @input="emitUpdate()"
         />
@@ -81,7 +81,7 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Missing data display</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Missing data display</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in missingOptions"
@@ -110,7 +110,7 @@
           :key="col.key"
           class="flex items-center justify-between"
         >
-          <span class="text-xs text-gray-700 dark:text-neutral-200">
+          <span class="text-sm text-gray-700 dark:text-neutral-200">
             {{ col.label || col.key }}
             <span class="text-gray-400 dark:text-neutral-500 text-sm ml-1">({{ col.displayType }})</span>
           </span>
@@ -128,7 +128,7 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Table Colors</h3>
       <div class="space-y-2">
         <div v-for="colorOpt in tableColorOptions" :key="colorOpt.key" class="flex items-center justify-between">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">{{ colorOpt.label }}</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">{{ colorOpt.label }}</span>
           <ColorPickerPopover
             :model-value="localTableColors[colorOpt.key] || undefined"
             :disabled="!editMode"
@@ -143,7 +143,7 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Border</h3>
 
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
         <ColorPickerPopover
           :model-value="localBorderColor || undefined"
           :disabled="!editMode"
@@ -152,7 +152,7 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Style</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in borderStyleOptions"
@@ -169,7 +169,7 @@
       </div>
 
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Width</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Width</span>
         <div class="flex items-center gap-2 flex-1 max-w-[140px]">
           <input
             v-model.number="localBorderWidth"
@@ -185,7 +185,7 @@
       </div>
 
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Radius</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Radius</span>
         <div class="flex items-center gap-2 flex-1 max-w-[140px]">
           <input
             v-model.number="localBorderRadius"
@@ -206,11 +206,11 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Font</h3>
 
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Family</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Family</span>
         <select
           v-model="localFontFamily"
           :disabled="!editMode"
-          class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="emitUpdate()"
         >
           <option value="system">System</option>
@@ -221,7 +221,7 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Size</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Size</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in fontSizeOptions"
@@ -238,7 +238,7 @@
       </div>
 
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
         <ColorPickerPopover
           :model-value="localFontColor || undefined"
           :disabled="!editMode"

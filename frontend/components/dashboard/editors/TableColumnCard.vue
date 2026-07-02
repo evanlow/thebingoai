@@ -82,7 +82,7 @@
           type="text"
           :list="availableKeys?.length ? datalistId : undefined"
           placeholder="column_key"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
           :readonly="!editMode"
           :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           @change="emitUpdate()"
@@ -98,7 +98,7 @@
           v-model="local.label"
           type="text"
           placeholder="Display Label"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
           :readonly="!editMode"
           :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           @input="emitUpdate()"
@@ -139,7 +139,7 @@
     <div class="flex items-center gap-2 flex-wrap">
       <!-- Sortable -->
       <div class="flex items-center gap-1.5 mt-4">
-        <span class="text-xs text-gray-600 dark:text-neutral-400">Sort</span>
+        <span class="text-sm text-gray-600 dark:text-neutral-400">Sort</span>
         <button
           type="button"
           role="switch"
@@ -158,7 +158,7 @@
 
       <!-- Filterable -->
       <div class="flex items-center gap-1.5 mt-4">
-        <span class="text-xs text-gray-600 dark:text-neutral-400">Filter</span>
+        <span class="text-sm text-gray-600 dark:text-neutral-400">Filter</span>
         <button
           type="button"
           role="switch"
@@ -194,7 +194,7 @@
         <select
           v-model="local.aggregation"
           :disabled="!editMode"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="emitUpdate()"
         >
           <option v-for="opt in aggregationOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
@@ -223,7 +223,7 @@
 
         <!-- Show value toggle (bar only) -->
         <div v-if="(local.displayType ?? 'number') === 'bar'" class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Show value</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Show value</span>
           <button
             type="button"
             role="switch"
@@ -242,7 +242,7 @@
 
         <!-- Compact numbers -->
         <div class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700 dark:text-neutral-200">Compact numbers</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Compact numbers</span>
           <button
             type="button"
             role="switch"
@@ -265,7 +265,7 @@
           <select
             v-model="local.comparisonCalc"
             :disabled="!editMode"
-            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitUpdate()"
           >
             <option value="none">None</option>
@@ -284,7 +284,7 @@
           <select
             v-model="local.runningCalc"
             :disabled="!editMode"
-            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitUpdate()"
           >
             <option value="none">None</option>

@@ -6,7 +6,7 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Display</h3>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-600 dark:text-neutral-400">Label</label>
+        <label class="text-sm text-gray-600 dark:text-neutral-400">Label</label>
         <input
           v-model="localLabel"
           type="text"
@@ -20,7 +20,7 @@
       <!-- Primary field: Dimension / Metric role + column + (metric only) aggregation -->
       <template v-if="dataSource">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Primary field</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Primary field</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button
               v-for="r in (['dimension', 'metric'] as const)"
@@ -42,7 +42,7 @@
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Field</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Field</label>
           <select
             :value="kpiMapping?.valueColumn || ''"
             :disabled="!editMode"
@@ -55,7 +55,7 @@
         </div>
 
         <div v-if="primaryRole === 'metric'" class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Aggregation</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Aggregation</label>
           <select
             :value="kpiMapping?.aggregation ?? 'sum'"
             :disabled="!editMode"
@@ -72,7 +72,7 @@
         </div>
 
         <div v-else class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Row</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Row</label>
           <select
             :value="kpiMapping?.aggregation === 'last' ? 'last' : 'first'"
             :disabled="!editMode"
@@ -87,7 +87,7 @@
 
       <!-- Value: manual input when no data source -->
       <div v-else class="space-y-1.5">
-        <label class="text-xs text-gray-600 dark:text-neutral-400">Value</label>
+        <label class="text-sm text-gray-600 dark:text-neutral-400">Value</label>
         <input
           v-model="localValue"
           type="text"
@@ -100,7 +100,7 @@
 
       <div class="flex gap-2">
         <div class="flex-1 space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Prefix</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Prefix</label>
           <input
             v-model="localPrefix"
             type="text"
@@ -111,7 +111,7 @@
           />
         </div>
         <div class="flex-1 space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Suffix</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Suffix</label>
           <input
             v-model="localSuffix"
             type="text"
@@ -138,7 +138,7 @@
 
       <!-- Type selector -->
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-600 dark:text-neutral-400">Type</label>
+        <label class="text-sm text-gray-600 dark:text-neutral-400">Type</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in availableComparisonTypes"
@@ -172,7 +172,7 @@
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Period</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Period</label>
           <select
             v-model="localTrendPeriod"
             :disabled="!editMode"
@@ -200,7 +200,7 @@
 
         <!-- Date column picker -->
         <div v-if="needsDateColumn && sourceColumns?.length" class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Date column</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Date column</label>
           <select
             :value="kpiMapping?.trendDateColumn || ''"
             :disabled="!editMode"
@@ -215,7 +215,7 @@
         <!-- Manual direction/value for static (no data source) scorecards -->
         <template v-if="!dataSource">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Direction</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Direction</label>
             <select
               v-model="localTrendDirection"
               :disabled="!editMode"
@@ -227,7 +227,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Change (%)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Change (%)</label>
             <input
               v-model.number="localTrendValue"
               type="number"
@@ -243,7 +243,7 @@
       <!-- Value options -->
       <template v-if="localComparisonType === 'value'">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Target value</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Target value</label>
           <input
             v-model.number="localTargetValue"
             type="number"
@@ -258,7 +258,7 @@
       <!-- Metric options -->
       <template v-if="localComparisonType === 'metric'">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Target metric column</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Target metric column</label>
           <select
             v-model="localTargetMetric"
             :disabled="!editMode"
@@ -294,7 +294,7 @@
         </div>
 
         <div v-if="localShowAsProgress" class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Starting value</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Starting value</label>
           <input
             v-model.number="localStartingValue"
             type="number"

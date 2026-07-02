@@ -73,7 +73,7 @@
           type="text"
           placeholder="Label (optional)"
           :readonly="!editMode"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @input="setField('label', ($event.target as HTMLInputElement).value || undefined)"
         />
       </div>

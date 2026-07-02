@@ -24,20 +24,20 @@
 
       <template v-if="localShowTitle">
         <div class="space-y-1">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Title text</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Title text</label>
           <input
             v-model="localTitle"
             type="text"
             placeholder="Scorecard title…"
             :readonly="!editMode"
-            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
             :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
             @input="emitUpdate()"
           />
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-700 dark:text-neutral-200">Position</label>
+          <label class="text-sm text-gray-700 dark:text-neutral-200">Position</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button
               v-for="opt in [{ value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }]"
@@ -96,14 +96,14 @@
       </div>
 
       <div v-if="localRoundValue" class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Decimal places</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Decimal places</span>
         <input
           v-model.number="localDecimalPlaces"
           type="number"
           min="0"
           max="10"
           :disabled="!editMode"
-          class="w-16 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="w-16 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @input="emitUpdate()"
         />
       </div>
@@ -114,7 +114,7 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison Fields</h3>
 
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Positive change color</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Positive change color</span>
         <ColorPickerPopover
           :model-value="localPositiveColor || undefined"
           :disabled="!editMode"
@@ -123,7 +123,7 @@
       </div>
 
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Negative change color</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Negative change color</span>
         <ColorPickerPopover
           :model-value="localNegativeColor || undefined"
           :disabled="!editMode"
@@ -186,13 +186,13 @@
       </div>
 
       <div v-if="!localHideComparisonLabel" class="space-y-1">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Custom comparison label</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Custom comparison label</label>
         <input
           v-model="localCustomComparisonLabel"
           type="text"
           placeholder="e.g. vs last month"
           :readonly="!editMode"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
           :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           @input="emitUpdate()"
         />
@@ -203,7 +203,7 @@
     <div class="space-y-3">
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Progress Visual</h3>
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Style</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in progressVisualOptions"
@@ -243,11 +243,11 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Labels</h3>
 
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Font</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Font</span>
         <select
           v-model="localFontFamily"
           :disabled="!editMode"
-          class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="emitUpdate()"
         >
           <option value="system">System</option>
@@ -258,7 +258,7 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Size</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Size</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in fontSizeOptions"
@@ -275,7 +275,7 @@
       </div>
 
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Color</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
         <ColorPickerPopover
           :model-value="localFontColor || undefined"
           :disabled="!editMode"
@@ -302,7 +302,7 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Alignment</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Alignment</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in alignOptions"
@@ -324,7 +324,7 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Background &amp; Border</h3>
 
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Background</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Background</span>
         <ColorPickerPopover
           :model-value="localBackgroundColor || undefined"
           :disabled="!editMode"
@@ -333,7 +333,7 @@
       </div>
 
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Opacity</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Opacity</span>
         <div class="flex items-center gap-2 flex-1 max-w-[140px]">
           <input
             v-model.number="localOpacity"
@@ -349,7 +349,7 @@
       </div>
 
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Border color</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Border color</span>
         <ColorPickerPopover
           :model-value="localBorderColor || undefined"
           :disabled="!editMode"
@@ -358,7 +358,7 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-700 dark:text-neutral-200">Border style</label>
+        <label class="text-sm text-gray-700 dark:text-neutral-200">Border style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in borderStyleOptions"
@@ -375,7 +375,7 @@
       </div>
 
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Width</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Width</span>
         <div class="flex items-center gap-2 flex-1 max-w-[140px]">
           <input
             v-model.number="localBorderWidth"
@@ -391,7 +391,7 @@
       </div>
 
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-700 dark:text-neutral-200">Radius</span>
+        <span class="text-sm text-gray-700 dark:text-neutral-200">Radius</span>
         <div class="flex items-center gap-2 flex-1 max-w-[140px]">
           <input
             v-model.number="localBorderRadius"

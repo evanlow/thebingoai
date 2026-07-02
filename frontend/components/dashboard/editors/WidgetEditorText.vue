@@ -6,7 +6,7 @@
         v-model="localContent"
         :readonly="!editMode"
         rows="12"
-        class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 px-3 py-2.5 font-mono text-xs text-gray-800 dark:text-neutral-200 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors"
+        class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 px-3 py-2.5 font-mono text-sm text-gray-800 dark:text-neutral-200 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors"
         :class="editMode ? 'bg-white dark:bg-neutral-900' : 'cursor-default'"
         spellcheck="false"
       />
@@ -18,7 +18,7 @@
         <button
           v-for="opt in alignOptions"
           :key="opt.value"
-          class="flex-1 py-1.5 text-xs font-medium transition-colors"
+          class="flex-1 py-1.5 text-sm font-medium transition-colors"
           :class="localAlignment === opt.value
             ? 'bg-indigo-600 text-white'
             : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"

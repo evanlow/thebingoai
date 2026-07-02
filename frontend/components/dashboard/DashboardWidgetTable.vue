@@ -38,13 +38,13 @@
             <!-- Row number header -->
             <th
               v-if="config.showRowNumbers"
-              class="px-3 py-2.5 text-left text-xs font-medium text-gray-300 uppercase tracking-wide w-8"
+              class="px-3 py-2.5 text-left text-sm font-medium text-gray-300 uppercase tracking-wide w-8"
             >#</th>
 
             <th
               v-for="(col, i) in config.columns"
               :key="i"
-              class="relative px-4 py-2.5 text-xs font-medium text-gray-400 uppercase tracking-wide dark:text-neutral-400 whitespace-normal break-words"
+              class="relative px-4 py-2.5 text-sm font-medium text-gray-400 uppercase tracking-wide dark:text-neutral-400 whitespace-normal break-words"
               :class="[
                 col.sortable ? 'cursor-pointer hover:text-gray-600 dark:hover:text-neutral-200 select-none' : '',
                 colAlignClass(col),
@@ -79,7 +79,7 @@
                 v-model="columnFilters[i]"
                 type="text"
                 placeholder="Filter..."
-                class="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600 font-normal focus:outline-none focus:ring-1 focus:ring-indigo-300 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-300 dark:placeholder-neutral-500"
+                class="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-sm text-gray-600 font-normal focus:outline-none focus:ring-1 focus:ring-indigo-300 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-300 dark:placeholder-neutral-500"
               />
             </th>
           </tr>
@@ -122,7 +122,7 @@
                       }"
                     />
                   </div>
-                  <span v-if="col.showBarValue !== false" class="text-xs min-w-[40px] text-right">
+                  <span v-if="col.showBarValue !== false" class="text-sm min-w-[40px] text-right">
                     {{ formatCell(row[ci], col) }}
                   </span>
                 </div>
@@ -145,7 +145,7 @@
             <td
               v-for="(col, i) in config.columns"
               :key="i"
-              class="px-4 py-2.5 text-xs font-semibold text-gray-700 dark:text-neutral-300"
+              class="px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-neutral-300"
               :class="[colAlignClass(col), isNumericFormat(col) ? 'tabular-nums' : '']"
             >
               {{ summaryValue(col, i) }}
@@ -160,20 +160,20 @@
       v-if="config.pagination && totalPages > 1"
       class="flex items-center justify-between flex-shrink-0 border-t border-gray-100 px-4 py-2 dark:border-neutral-700"
     >
-      <span class="text-xs text-gray-400 dark:text-neutral-500">
+      <span class="text-sm text-gray-400 dark:text-neutral-500">
         {{ rowOffset + 1 }}–{{ Math.min(rowOffset + rowsPerPage, sortedRows.length) }}
         of {{ sortedRows.length }}
       </span>
       <div class="flex items-center gap-1">
         <button
           :disabled="currentPage <= 1"
-          class="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-neutral-400 dark:hover:bg-neutral-700"
+          class="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-neutral-400 dark:hover:bg-neutral-700"
           @click="currentPage--"
         >Prev</button>
-        <span class="text-xs text-gray-400 px-1 dark:text-neutral-500">{{ currentPage }} / {{ totalPages }}</span>
+        <span class="text-sm text-gray-400 px-1 dark:text-neutral-500">{{ currentPage }} / {{ totalPages }}</span>
         <button
           :disabled="currentPage >= totalPages"
-          class="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-neutral-400 dark:hover:bg-neutral-700"
+          class="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed dark:text-neutral-400 dark:hover:bg-neutral-700"
           @click="currentPage++"
         >Next</button>
       </div>
@@ -360,7 +360,7 @@ const fontClass = computed(() => {
   }
   switch (props.config.fontSize ?? 'sm') {
     case 'xs': classes.push('text-sm'); break
-    case 'sm': classes.push('text-xs'); break
+    case 'sm': classes.push('text-sm'); break
     case 'md': classes.push('text-sm'); break
     case 'lg': classes.push('text-sm'); break
   }

@@ -22,7 +22,7 @@
         <button
           v-for="ct in chartTypes"
           :key="ct.value"
-          class="flex flex-col items-center gap-1.5 rounded-lg border p-2.5 text-xs font-medium transition-colors"
+          class="flex flex-col items-center gap-1.5 rounded-lg border p-2.5 text-sm font-medium transition-colors"
           :class="localType === ct.value
             ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
             : 'border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
@@ -43,7 +43,7 @@
       <template v-if="localType === 'scatter'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">X Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">X Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.xMetricColumn || ''"
@@ -65,7 +65,7 @@
             </div>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Y Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Y Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.yMetricColumn || ''"
@@ -93,7 +93,7 @@
       <template v-else-if="localType === 'pie' || localType === 'doughnut'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Dimension</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -105,7 +105,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.datasetColumns[0]?.column || ''"
@@ -142,7 +142,7 @@
       <template v-else-if="localType === 'funnel'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Dimension (stage)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension (stage)</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -154,7 +154,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.datasetColumns[0]?.column || ''"
@@ -182,7 +182,7 @@
       <template v-else-if="localType === 'timeline'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Row label</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Row label</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -194,7 +194,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Bar label (optional)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Bar label (optional)</label>
             <select
               :value="chartMapping.barLabelColumn || ''"
               :disabled="!editMode"
@@ -206,7 +206,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Start time</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Start time</label>
             <select
               :value="chartMapping.startColumn || ''"
               :disabled="!editMode"
@@ -218,7 +218,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">End time</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">End time</label>
             <select
               :value="chartMapping.endColumn || ''"
               :disabled="!editMode"
@@ -230,7 +230,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Tooltip (optional)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Tooltip (optional)</label>
             <select
               :value="chartMapping.tooltipColumn || ''"
               :disabled="!editMode"
@@ -248,7 +248,7 @@
       <template v-else>
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Dimension (X-axis)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension (X-axis)</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -262,7 +262,7 @@
 
           <!-- Datetime drill-down -->
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Time granularity</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Time granularity</label>
             <select
               :value="chartMapping?.dateGranularity || 'none'"
               :disabled="!editMode"
@@ -276,7 +276,7 @@
 
           <div class="space-y-2">
             <div class="flex items-center justify-between">
-              <label class="text-xs text-gray-600 dark:text-neutral-400">Metrics (Y-axis)</label>
+              <label class="text-sm text-gray-600 dark:text-neutral-400">Metrics (Y-axis)</label>
               <button
                 v-if="editMode"
                 type="button"
@@ -293,11 +293,11 @@
               v-if="!chartMapping.datasetColumns || chartMapping.datasetColumns.length === 0"
               class="rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 px-3 py-4 text-center"
             >
-              <p class="text-xs text-gray-400 dark:text-neutral-500 mb-2">No metrics added yet</p>
+              <p class="text-sm text-gray-400 dark:text-neutral-500 mb-2">No metrics added yet</p>
               <button
                 v-if="editMode"
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors"
+                class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
                 @click="addDatasetColumn()"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -385,7 +385,7 @@
 
           <!-- Series breakdown -->
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Break down by (optional)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Break down by (optional)</label>
             <select
               :value="chartMapping?.breakdownColumn || ''"
               :disabled="!editMode"

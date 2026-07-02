@@ -6,7 +6,7 @@
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Filter Controls</h3>
       <button
         v-if="editMode"
-        class="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
+        class="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
         @click="addControl()"
       >
         <span class="text-base leading-none">+</span> Add Control
@@ -27,7 +27,7 @@
             <select
               v-model="control.type"
               :disabled="!editMode"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @change="onTypeChange(control); emitUpdate()"
             >
               <option value="dropdown">Dropdown</option>
@@ -41,7 +41,7 @@
               v-model="control.label"
               type="text"
               placeholder="Filter label"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
               :readonly="!editMode"
               :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
               @input="emitUpdate()"
@@ -57,7 +57,7 @@
               v-model="control.key"
               type="text"
               placeholder="unique_key"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
               :readonly="!editMode"
               :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
               @input="emitUpdate()"
@@ -69,7 +69,7 @@
               v-model="control.column"
               type="text"
               placeholder="column_name"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
               :readonly="!editMode"
               :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
               @input="emitUpdate()"
@@ -102,7 +102,7 @@
               :value="(control.options ?? []).join(', ')"
               type="text"
               placeholder="Option A, Option B, Option C"
-              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
               :readonly="!editMode"
               :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
               @input="onStaticOptionsInput(control, ($event.target as HTMLInputElement).value)"
@@ -116,7 +116,7 @@
               <select
                 :value="control.optionsSource?.connectionId ?? ''"
                 :disabled="!editMode"
-                class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+                class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="onDynamicConnectionChange(control, Number(($event.target as HTMLSelectElement).value))"
               >
                 <option value="" disabled>Select connection…</option>
@@ -131,7 +131,7 @@
                 :value="control.optionsSource?.sql ?? ''"
                 rows="2"
                 placeholder="SELECT DISTINCT col AS option_value FROM table LIMIT 50"
-                class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 font-mono text-xs text-gray-800 dark:text-neutral-200 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 font-mono text-sm text-gray-800 dark:text-neutral-200 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
                 :readonly="!editMode"
                 :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
                 spellcheck="false"
@@ -164,7 +164,7 @@
                 <select
                   :value="control.dateRangeSource?.connectionId ?? ''"
                   :disabled="!editMode"
-                  class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+                  class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                   @change="onDateRangeConnectionChange(control, Number(($event.target as HTMLSelectElement).value))"
                 >
                   <option value="" disabled>Select connection…</option>
@@ -179,7 +179,7 @@
                   :value="control.dateRangeSource?.sql ?? ''"
                   rows="2"
                   placeholder="SELECT MIN(t.date_col) AS min_date, MAX(t.date_col) AS max_date FROM table t"
-                  class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 font-mono text-xs text-gray-800 dark:text-neutral-200 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 font-mono text-sm text-gray-800 dark:text-neutral-200 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
                   :readonly="!editMode"
                   :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
                   spellcheck="false"
@@ -194,7 +194,7 @@
               <select
                 :value="control.dateRangeDefault ?? 'full'"
                 :disabled="!editMode"
-                class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+                class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="onDateRangeDefaultChange(control, ($event.target as HTMLSelectElement).value as FilterControl['dateRangeDefault'])"
               >
                 <option value="full">Full range (min → max)</option>
@@ -219,7 +219,7 @@
         </div>
       </div>
 
-      <p v-if="localControls.length === 0" class="text-xs text-gray-400 dark:text-neutral-500 text-center py-4">
+      <p v-if="localControls.length === 0" class="text-sm text-gray-400 dark:text-neutral-500 text-center py-4">
         No filter controls. Add one to get started.
       </p>
     </div>
