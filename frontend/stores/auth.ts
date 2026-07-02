@@ -383,6 +383,17 @@ export const useAuthStore = defineStore('auth', {
       this._clearLocalSession()
     },
 
+    // ─── Delete account ─────────────────────────────────────────
+
+    async deleteAccount() {
+      await $fetch('/api/auth/account', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.token}` },
+        body: { refresh_token: this.refreshToken },
+      })
+      this._clearLocalSession()
+    },
+
     // Tear down all client-side session state (stores, websocket, tokens,
     // localStorage). Does NOT call the SSO logout endpoint — used both by logout()
     // (after it blacklists the refresh token) and by verifyEmail() to wipe a stale
