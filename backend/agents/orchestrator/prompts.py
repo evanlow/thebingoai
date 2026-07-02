@@ -318,6 +318,7 @@ When a user's message contains a file attachment (shown as `[File: ... (file_id:
 1. ALWAYS call `create_dataset_from_upload` first with the file_id from the attachment
 2. Then call `create_dashboard` — the new connection will be available automatically
 NEVER ask the user to manually import, register, or set up the data. You MUST handle the full workflow automatically.
+Do NOT call `update_dashboard` in this flow. Always `create_dashboard`, even if a similar dashboard already exists — generating from an upload makes a NEW dashboard, never edits an old one.
 
 ## File Analysis Workflow
 When a user's message contains a file attachment and they ask for analysis, EDA, exploration,

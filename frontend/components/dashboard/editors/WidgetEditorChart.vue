@@ -3,29 +3,29 @@
 
     <!-- Label -->
     <div class="space-y-1.5">
-      <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Label</label>
+      <label class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Label</label>
       <input
         v-model="localTitle"
         type="text"
         placeholder="e.g. Monthly Revenue"
-        class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+        class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
         :readonly="!editMode"
-        :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+        :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
         @input="emitDebounced()"
       />
     </div>
 
     <!-- Chart Type -->
     <div class="space-y-2">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Chart Type</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Chart Type</h3>
       <div class="grid grid-cols-3 gap-2">
         <button
           v-for="ct in chartTypes"
           :key="ct.value"
           class="flex flex-col items-center gap-1.5 rounded-lg border p-2.5 text-xs font-medium transition-colors"
           :class="localType === ct.value
-            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-            : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'"
+            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
+            : 'border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
           :disabled="!editMode"
           @click="editMode && setType(ct.value)"
         >
@@ -37,18 +37,18 @@
 
     <!-- Dimensions & Metrics (only when data source is connected) -->
     <div v-if="chartMapping && sourceColumns && sourceColumns.length > 0" class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Dimensions & Metrics</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Dimensions & Metrics</h3>
 
       <!-- SCATTER: X + Y metric pickers -->
       <template v-if="localType === 'scatter'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">X Metric</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">X Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.xMetricColumn || ''"
                 :disabled="!editMode"
-                class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                class="flex-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="emitMappingPatch({ xMetricColumn: ($event.target as HTMLSelectElement).value || undefined })"
               >
                 <option value="" disabled>Select column…</option>
@@ -57,7 +57,7 @@
               <select
                 :value="chartMapping.xAggregation || 'none'"
                 :disabled="!editMode"
-                class="w-28 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="emitMappingPatch({ xAggregation: ($event.target as HTMLSelectElement).value as any })"
               >
                 <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
@@ -65,12 +65,12 @@
             </div>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Y Metric</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Y Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.yMetricColumn || ''"
                 :disabled="!editMode"
-                class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                class="flex-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="emitMappingPatch({ yMetricColumn: ($event.target as HTMLSelectElement).value || undefined })"
               >
                 <option value="" disabled>Select column…</option>
@@ -79,7 +79,7 @@
               <select
                 :value="chartMapping.yAggregation || 'none'"
                 :disabled="!editMode"
-                class="w-28 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="emitMappingPatch({ yAggregation: ($event.target as HTMLSelectElement).value as any })"
               >
                 <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
@@ -93,11 +93,11 @@
       <template v-else-if="localType === 'pie' || localType === 'doughnut'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Dimension</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Dimension</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
@@ -105,12 +105,12 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Metric</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.datasetColumns[0]?.column || ''"
                 :disabled="!editMode"
-                class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                class="flex-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="updateDatasetColumn(0, 'column', ($event.target as HTMLSelectElement).value)"
               >
                 <option value="" disabled>Select column…</option>
@@ -119,7 +119,7 @@
               <select
                 :value="chartMapping.datasetColumns[0]?.aggregation || 'sum'"
                 :disabled="!editMode"
-                class="w-28 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+                class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="updateDatasetColumn(0, 'aggregation', ($event.target as HTMLSelectElement).value)"
               >
                 <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
@@ -130,10 +130,116 @@
               type="text"
               placeholder="Label (optional)"
               :readonly="!editMode"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
-              :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+              :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
               @input="updateDatasetColumn(0, 'label', ($event.target as HTMLInputElement).value)"
             />
+          </div>
+        </div>
+      </template>
+
+      <!-- FUNNEL: 1 dimension (stage) + 1 metric -->
+      <template v-else-if="localType === 'funnel'">
+        <div class="space-y-3">
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Dimension (stage)</label>
+            <select
+              :value="chartMapping.labelColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="" disabled>Select column…</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Metric</label>
+            <div class="flex gap-2">
+              <select
+                :value="chartMapping.datasetColumns[0]?.column || ''"
+                :disabled="!editMode"
+                class="flex-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+                @change="updateDatasetColumn(0, 'column', ($event.target as HTMLSelectElement).value)"
+              >
+                <option value="" disabled>Select column…</option>
+                <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              </select>
+              <select
+                :value="chartMapping.datasetColumns[0]?.aggregation || 'sum'"
+                :disabled="!editMode"
+                class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+                @change="updateDatasetColumn(0, 'aggregation', ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- TIMELINE: row label + start/end dates (+ optional bar label, tooltip) -->
+      <template v-else-if="localType === 'timeline'">
+        <div class="space-y-3">
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Row label</label>
+            <select
+              :value="chartMapping.labelColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="" disabled>Select column…</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Bar label (optional)</label>
+            <select
+              :value="chartMapping.barLabelColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ barLabelColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="">None</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Start time</label>
+            <select
+              :value="chartMapping.startColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ startColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="" disabled>Select column…</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">End time</label>
+            <select
+              :value="chartMapping.endColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ endColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="" disabled>Select column…</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Tooltip (optional)</label>
+            <select
+              :value="chartMapping.tooltipColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ tooltipColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="">None</option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+            </select>
           </div>
         </div>
       </template>
@@ -142,11 +248,11 @@
       <template v-else>
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Dimension (X-axis)</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Dimension (X-axis)</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
@@ -156,25 +262,25 @@
 
           <!-- Datetime drill-down -->
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Time granularity</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Time granularity</label>
             <select
               :value="chartMapping?.dateGranularity || 'none'"
               :disabled="!editMode"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @change="emitMappingPatch({ dateGranularity: ($event.target as HTMLSelectElement).value === 'none' ? undefined : ($event.target as HTMLSelectElement).value })"
             >
               <option v-for="g in dateGranularityOptions" :key="g.value" :value="g.value">{{ g.label }}</option>
             </select>
-            <p class="text-[10px] text-gray-400">Bucket a date/timestamp dimension. Leave "None" for plain categories.</p>
+            <p class="text-[10px] text-gray-400 dark:text-neutral-500">Bucket a date/timestamp dimension. Leave "None" for plain categories.</p>
           </div>
 
           <div class="space-y-2">
             <div class="flex items-center justify-between">
-              <label class="text-xs text-gray-600">Metrics (Y-axis)</label>
+              <label class="text-xs text-gray-600 dark:text-neutral-400">Metrics (Y-axis)</label>
               <button
                 v-if="editMode"
                 type="button"
-                class="flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                class="flex items-center gap-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
                 @click="addDatasetColumn()"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -185,9 +291,9 @@
             <!-- Empty state: guide user to add first metric -->
             <div
               v-if="!chartMapping.datasetColumns || chartMapping.datasetColumns.length === 0"
-              class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-center"
+              class="rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 px-3 py-4 text-center"
             >
-              <p class="text-xs text-gray-400 mb-2">No metrics added yet</p>
+              <p class="text-xs text-gray-400 dark:text-neutral-500 mb-2">No metrics added yet</p>
               <button
                 v-if="editMode"
                 type="button"
@@ -203,25 +309,25 @@
             <div
               v-for="(ds, idx) in chartMapping.datasetColumns"
               :key="idx"
-              class="relative rounded-lg border border-gray-200 bg-gray-50 transition-shadow"
+              class="relative rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 transition-shadow"
               :class="expandedDatasets.has(idx) ? 'p-3 space-y-2' : ''"
             >
               <!-- Collapsed header -->
               <button
                 v-if="!expandedDatasets.has(idx)"
                 type="button"
-                class="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-100 rounded-lg transition-colors"
+                class="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
                 @click="expandDataset(idx)"
               >
                 <div class="flex items-center gap-2 min-w-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                  <span class="text-sm font-medium text-gray-700 truncate">{{ ds.label || ds.column || 'Untitled metric' }}</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 flex-shrink-0">{{ ds.aggregation || 'sum' }}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-gray-400 dark:text-neutral-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                  <span class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate">{{ ds.label || ds.column || 'Untitled metric' }}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">{{ ds.aggregation || 'sum' }}</span>
                 </div>
                 <button
                   v-if="editMode && chartMapping.datasetColumns.length > 1"
                   type="button"
-                  class="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors flex-shrink-0"
+                  class="flex h-5 w-5 items-center justify-center rounded text-gray-300 dark:text-neutral-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors flex-shrink-0"
                   @click.stop="removeDatasetColumn(idx)"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -232,16 +338,16 @@
               <template v-if="expandedDatasets.has(idx)">
                 <button
                   type="button"
-                  class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors z-10"
+                  class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 dark:text-neutral-500 hover:bg-gray-200 dark:hover:bg-neutral-600 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors z-10"
                   @click="collapseDataset(idx)"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
                 </button>
-                <div class="flex-1 space-y-1.5">
+                <div class="flex-1 space-y-1.5 pt-5">
                   <select
                     :value="ds.column || ''"
                     :disabled="!editMode"
-                    class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+                    class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                     @change="updateDatasetColumn(idx, 'column', ($event.target as HTMLSelectElement).value)"
                   >
                     <option value="" disabled>Column…</option>
@@ -250,7 +356,7 @@
                   <select
                     :value="ds.aggregation || 'sum'"
                     :disabled="!editMode"
-                    class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+                    class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                     @change="updateDatasetColumn(idx, 'aggregation', ($event.target as HTMLSelectElement).value)"
                   >
                     <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
@@ -260,14 +366,14 @@
                     type="text"
                     placeholder="Label"
                     :readonly="!editMode"
-                    class="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 transition-colors"
-                    :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+                    class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 transition-colors"
+                    :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
                     @input="updateDatasetColumn(idx, 'label', ($event.target as HTMLInputElement).value)"
                   />
                   <button
                     v-if="editMode && chartMapping.datasetColumns.length > 1"
                     type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                    class="flex h-5 w-5 items-center justify-center rounded text-gray-300 dark:text-neutral-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
                     @click="removeDatasetColumn(idx)"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -279,36 +385,36 @@
 
           <!-- Series breakdown -->
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Break down by (optional)</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Break down by (optional)</label>
             <select
               :value="chartMapping?.breakdownColumn || ''"
               :disabled="!editMode"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @change="emitMappingPatch({ breakdownColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="">None</option>
               <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
             </select>
-            <p v-if="chartMapping?.breakdownColumn" class="text-[10px] text-gray-400">Splits the first metric into one series per value. Use Stacked / 100% (below) for stacked bars.</p>
+            <p v-if="chartMapping?.breakdownColumn" class="text-[10px] text-gray-400 dark:text-neutral-500">Splits the first metric into one series per value. Use Stacked / 100% (below) for stacked bars.</p>
           </div>
         </div>
       </template>
     </div>
 
-    <!-- Sort (hidden for scatter) -->
+    <!-- Sort (hidden for scatter / timeline) -->
     <div
-      v-if="localType !== 'scatter'"
+      v-if="localType !== 'scatter' && localType !== 'timeline'"
       class="space-y-3"
     >
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Sort</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Sort</h3>
       <div class="space-y-2">
         <div class="space-y-1.5">
-          <label class="text-[11px] text-gray-500">Sort by</label>
+          <label class="text-[11px] text-gray-500 dark:text-neutral-400">Sort by</label>
           <select
             v-model="localOptions.sortBy"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :disabled="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+            :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
             @change="emitDebounced()"
           >
             <option value="none">None</option>
@@ -317,12 +423,12 @@
           </select>
         </div>
         <div v-if="localOptions.sortBy && localOptions.sortBy !== 'none'" class="space-y-1.5">
-          <label class="text-[11px] text-gray-500">Direction</label>
+          <label class="text-[11px] text-gray-500 dark:text-neutral-400">Direction</label>
           <select
             v-model="localOptions.sortDirection"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :disabled="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+            :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
             @change="emitDebounced()"
           >
             <option value="asc">Ascending</option>
@@ -337,18 +443,18 @@
       v-if="localType === 'line' || localType === 'area'"
       class="space-y-1.5"
     >
-      <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Number of Points</label>
+      <label class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Number of Points</label>
       <input
         v-model.number="localOptions.numberOfPoints"
         type="number"
         min="1"
         placeholder="All"
-        class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+        class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
         :readonly="!editMode"
-        :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+        :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
         @input="emitDebounced()"
       />
-      <p class="text-[11px] text-gray-400">Limits to the last N data points. Leave blank to show all.</p>
+      <p class="text-[11px] text-gray-400 dark:text-neutral-500">Limits to the last N data points. Leave blank to show all.</p>
     </div>
 
     <!-- Stacked (bar / line / area) — 3-option segmented -->
@@ -356,17 +462,17 @@
       v-if="localType === 'bar' || localType === 'line' || localType === 'area'"
       class="space-y-2"
     >
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Stacked</h3>
-      <div class="flex rounded border border-gray-200 overflow-hidden">
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Stacked</h3>
+      <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button
           v-for="opt in stackedOptions"
           :key="opt.value"
           type="button"
           :disabled="!editMode"
-          class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
           :class="currentStacked === opt.value
             ? 'bg-indigo-600 text-white'
-            : 'bg-white text-gray-500 hover:bg-gray-50'"
+            : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
           @click="editMode && setStacked(opt.value as 'none' | 'standard' | 'percentage')"
         >{{ opt.label }}</button>
       </div>
@@ -377,14 +483,14 @@
       v-if="localType === 'bar'"
       class="flex items-center justify-between py-1"
     >
-      <span class="text-sm text-gray-700">Horizontal bars</span>
+      <span class="text-sm text-gray-700 dark:text-neutral-200">Horizontal bars</span>
       <button
         type="button"
         role="switch"
         :aria-checked="localOptions.indexAxis === 'y'"
         :disabled="!editMode"
         class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-        :class="localOptions.indexAxis === 'y' ? 'bg-indigo-600' : 'bg-gray-200'"
+        :class="localOptions.indexAxis === 'y' ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
         @click="editMode && (localOptions.indexAxis = localOptions.indexAxis === 'y' ? 'x' : 'y', emitDebounced())"
       >
         <span
@@ -399,7 +505,7 @@
 
 <script setup lang="ts">
 import { ref, computed, h } from 'vue'
-import { LineChart, BarChart2, PieChart, TrendingUp } from 'lucide-vue-next'
+import { LineChart, BarChart2, PieChart, TrendingUp, Filter, GanttChart } from 'lucide-vue-next'
 import type { WidgetConfig, ChartWidgetConfig, ChartDataSourceMapping, ChartDatasetColumn, WidgetDataSource } from '~/types/dashboard'
 import type { ChartType, ChartOptions } from '~/types/chart'
 
@@ -564,5 +670,7 @@ const chartTypes = [
   { value: 'doughnut', label: 'Doughnut', icon: DoughnutIcon },
   { value: 'area', label: 'Area', icon: TrendingUp },
   { value: 'scatter', label: 'Scatter', icon: ScatterIcon },
+  { value: 'funnel', label: 'Funnel', icon: Filter },
+  { value: 'timeline', label: 'Timeline', icon: GanttChart },
 ]
 </script>

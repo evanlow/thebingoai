@@ -73,6 +73,11 @@ export const useChatStore = defineStore('chat', {
       catch { return null }
     })() as string | null,
     messages: [] as Message[],
+    messagesLoading: false,
+    // Per-thread cache of fully-loaded messages (incl. agent_steps). Lets a task
+    // viewed once this session reopen instantly without refetching. Invalidated
+    // for a thread when a new message is sent to it (its history changed).
+    messageCache: {} as Record<string, Message[]>,
     inputText: '',
     // Connection ids to force on the NEXT chat message (set by onboarding first-question).
     // Cleared by useChatStreaming after the send so it only applies once.
@@ -183,6 +188,14 @@ export const useChatStore = defineStore('chat', {
 
     setMessages(messages: Message[]) {
       this.messages = messages
+    },
+
+    cacheMessages(threadId: string, messages: Message[]) {
+      this.messageCache[threadId] = messages
+    },
+
+    invalidateMessageCache(threadId: string) {
+      delete this.messageCache[threadId]
     },
 
     addMessage(message: Message) {
@@ -361,6 +374,7 @@ export const useChatStore = defineStore('chat', {
       this.archivedConversations = []
       this.currentThreadId = null
       this.messages = []
+      this.messageCache = {}
       this.inputText = ''
       this.attachedFiles = []
       this.isStreaming = false

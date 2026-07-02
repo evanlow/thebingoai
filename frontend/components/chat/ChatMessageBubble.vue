@@ -343,14 +343,21 @@ const createdDashboardId = computed<number | null>(() => {
   // delegates dashboard creation through the wrapper, which returns the
   // same {success, dashboard_id} shape but under a different tool_name.
   const DASHBOARD_TOOLS = new Set(['create_dashboard', 'update_dashboard', 'dashboard_agent'])
+  let createId: number | null = null
+  let lastId: number | null = null
   for (const step of props.message.agent_steps ?? []) {
     if (!DASHBOARD_TOOLS.has(step.tool_name)) continue
     try {
       const result = typeof step.content?.result === 'string' ? JSON.parse(step.content.result) : step.content?.result
-      if (result?.success === true && result?.dashboard_id) return result.dashboard_id
+      if (result?.success === true && result?.dashboard_id) {
+        lastId = result.dashboard_id
+        if (step.tool_name === 'create_dashboard') createId = result.dashboard_id
+      }
     } catch { continue }
   }
-  return null
+  // Prefer a freshly CREATED dashboard so "View Dashboard" opens the new one, not
+  // an existing dashboard an earlier step may have touched; else the last match.
+  return createId ?? lastId
 })
 
 const viewDashboard = async () => {

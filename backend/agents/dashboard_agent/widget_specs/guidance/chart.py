@@ -13,6 +13,8 @@ CHART_GUIDANCE = """### Chart Type Selection
 | Part-of-whole < 8 | pie or doughnut | `showValues: true` | w=4 or w=6 (NEVER w=12) |
 | Correlation (x vs y) | scatter | `showLegend: true` for grouped scatter | w=6 or w=8 |
 | Multiple metrics, mixed types | line (combo) | `seriesType` per dataset | w=8 or w=12 |
+| Sequential stages / conversion drop-off | funnel | `funnelLabelMode: "numberPercentage"` | w=4 or w=6 |
+| Events/phases with start + end dates | timeline | `timelineColorBy: "row"` | w=8 or w=12 |
 
 ### Layout Rules
 
@@ -195,4 +197,38 @@ Scatter mapping rules for legacy path:
 - `chartType`: **must** be set to `"scatter"` in the mapping
 
 Mapping: `{"type": "chart", "chartType": "scatter", "labelColumn": "category", "datasetColumns": [{"column": "metric_x", "label": "Metric X (X)"}, {"column": "metric_y", "label": "Metric Y (Y)"}]}`
+
+**Funnel (sequential stages / conversion drop-off):**
+Use when one categorical dimension represents ordered stages whose counts shrink
+from first to last (sales pipeline, signup→purchase conversion). Rows MUST be ordered
+largest→smallest — the renderer draws stages in row order, so ORDER BY an explicit
+stage rank, NOT by value.
+```sql
+SELECT stage, opportunities
+FROM sales_pipeline
+ORDER BY stage_order
+```
+Mapping:
+```json
+{"type": "chart", "chartType": "funnel", "labelColumn": "stage",
+ "datasetColumns": [{"column": "opportunities", "label": "Opportunities"}],
+ "options": {"funnelLabelMode": "numberPercentage", "funnelPercentType": "max"}}
+```
+When the stages live in a raw events table, GROUP BY the stage and rank in SQL
+(e.g. a CASE expression) so the ORDER BY produces the funnel sequence.
+
+**Timeline (events/phases with start + end dates):**
+Use when each row has BOTH a start date and an end date (campaigns, projects, tasks).
+Returns raw rows — one per event, NO GROUP BY. Needs `startColumn` + `endColumn`.
+```sql
+SELECT campaign_name, channel, start_date, end_date
+FROM marketing_campaigns
+ORDER BY start_date
+```
+Mapping:
+```json
+{"type": "chart", "chartType": "timeline", "labelColumn": "campaign_name",
+ "startColumn": "start_date", "endColumn": "end_date", "barLabelColumn": "channel",
+ "options": {"timelineColorBy": "row"}}
+```
 """

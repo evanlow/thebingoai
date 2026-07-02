@@ -4,7 +4,7 @@ from backend.database.session import get_db
 from backend.auth.dependencies import get_current_user, forbid_viewer
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
-from backend.schemas.chat import ChatRequest, ChatResponse, ConversationResponse, ConversationListResponse, ConversationListSummaryResponse, MessageStepsResponse, UpdateTitleRequest, ArchiveRequest, ConversationSummaryResponse
+from backend.schemas.chat import ChatRequest, ChatResponse, ConversationResponse, ConversationListResponse, ConversationListSummaryResponse, MessageStepsResponse, ConversationStepsResponse, UpdateTitleRequest, ArchiveRequest, ConversationSummaryResponse
 from backend.services.conversation_service import ConversationService
 from backend.services.token_tracking_service import TokenTrackingService
 from backend.models.token_usage import OperationType
@@ -343,3 +343,38 @@ async def get_message_steps(
     ).order_by(AgentStep.step_number).all()
 
     return MessageStepsResponse(steps=steps)
+
+
+@router.get("/conversations/{thread_id}/steps", response_model=ConversationStepsResponse)
+async def get_conversation_steps(
+    thread_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get agent execution steps for EVERY message in a conversation in one call.
+
+    Replaces N per-message round-trips on task load. Same data/ordering as
+    get_message_steps; keyed by message id (string) so the frontend can attach
+    steps to each message. selectinload fetches all steps in a single IN query.
+    """
+    conversation = ConversationService.get_conversation_by_thread(db, thread_id, current_user.id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    from backend.models.message import Message
+    from sqlalchemy.orm import selectinload
+    messages = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation.id)
+        .options(selectinload(Message.agent_steps))
+        .all()
+    )
+
+    message_steps = {}
+    for m in messages:
+        steps = sorted(m.agent_steps, key=lambda s: s.step_number)
+        if steps:
+            message_steps[str(m.id)] = steps
+
+    return ConversationStepsResponse(message_steps=message_steps)

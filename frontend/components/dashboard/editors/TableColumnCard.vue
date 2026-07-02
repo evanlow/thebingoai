@@ -1,6 +1,6 @@
 <template>
   <div
-    class="relative rounded-lg border border-gray-200 bg-gray-50 transition-shadow"
+    class="relative rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 transition-shadow"
     :class="[
       dragging ? 'shadow-lg ring-2 ring-indigo-300' : '',
       expanded ? 'p-3 pl-7 space-y-2' : '',
@@ -13,7 +13,7 @@
     <button
       v-if="editMode"
       type="button"
-      class="absolute left-1 flex h-5 w-5 items-center justify-center text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
+      class="absolute left-1 flex h-5 w-5 items-center justify-center text-gray-300 dark:text-neutral-600 hover:text-gray-500 dark:hover:text-neutral-400 cursor-grab active:cursor-grabbing"
       :class="expanded ? 'top-2' : 'top-1.5'"
       title="Drag to reorder"
       @mousedown="dragging = true"
@@ -27,33 +27,33 @@
     <button
       v-if="!expanded"
       type="button"
-      class="flex w-full items-center justify-between pl-7 pr-3 py-2 text-left hover:bg-gray-100 rounded-lg transition-colors"
+      class="flex w-full items-center justify-between pl-7 pr-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
       @click="expanded = true"
     >
       <div class="flex items-center gap-2 min-w-0">
-        <ChevronRight class="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-        <span class="text-sm font-medium text-gray-700 truncate">
+        <ChevronRight class="h-3.5 w-3.5 text-gray-400 dark:text-neutral-500 flex-shrink-0" />
+        <span class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate">
           {{ local.label || local.key || 'Untitled column' }}
         </span>
         <span
           class="text-[9px] px-1.5 py-0.5 rounded font-semibold tracking-wide flex-shrink-0"
           :class="effectiveRole === 'metric'
-            ? 'bg-indigo-50 text-indigo-600'
-            : 'bg-emerald-50 text-emerald-600'"
+            ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
+            : 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'"
         >
           {{ effectiveRole === 'metric' ? 'MET' : 'DIM' }}
         </span>
-        <span v-if="local.format" class="text-[10px] text-gray-400 uppercase tracking-wide flex-shrink-0">
+        <span v-if="local.format" class="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide flex-shrink-0">
           {{ local.format }}
         </span>
-        <span v-if="effectiveRole === 'metric' && local.aggregation && local.aggregation !== 'none'" class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 flex-shrink-0">
+        <span v-if="effectiveRole === 'metric' && local.aggregation && local.aggregation !== 'none'" class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
           {{ aggLabel(local.aggregation) }}
         </span>
       </div>
       <button
         v-if="editMode"
         type="button"
-        class="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors flex-shrink-0"
+        class="flex h-5 w-5 items-center justify-center rounded text-gray-300 dark:text-neutral-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors flex-shrink-0"
         title="Remove column"
         @click.stop="emit('remove')"
       >
@@ -66,7 +66,7 @@
     <!-- Collapse button (top-right) -->
     <button
       type="button"
-      class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors z-10"
+      class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 dark:text-neutral-500 hover:bg-gray-200 dark:hover:bg-neutral-600 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors z-10"
       title="Collapse"
       @click="expanded = false"
     >
@@ -76,15 +76,15 @@
     <!-- Key + Label -->
     <div class="flex gap-2">
       <div class="flex-1 space-y-1">
-        <label class="text-[10px] text-gray-400">Key</label>
+        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Key</label>
         <input
           v-model="local.key"
           type="text"
           :list="availableKeys?.length ? datalistId : undefined"
           placeholder="column_key"
-          class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
           :readonly="!editMode"
-          :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+          :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           @change="emitUpdate()"
           @input="emitUpdate()"
         />
@@ -93,14 +93,14 @@
         </datalist>
       </div>
       <div class="flex-1 space-y-1">
-        <label class="text-[10px] text-gray-400">Label</label>
+        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Label</label>
         <input
           v-model="local.label"
           type="text"
           placeholder="Display Label"
-          class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
           :readonly="!editMode"
-          :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+          :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           @input="emitUpdate()"
         />
       </div>
@@ -108,17 +108,17 @@
 
     <!-- Role: Dimension / Metric -->
     <div class="space-y-1">
-      <label class="text-[10px] text-gray-400">Role</label>
-      <div class="flex rounded border border-gray-200 overflow-hidden">
+      <label class="text-[10px] text-gray-400 dark:text-neutral-500">Role</label>
+      <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button
           v-for="r in (['dimension', 'metric'] as const)"
           :key="r"
           type="button"
           :disabled="!editMode"
-          class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
           :class="effectiveRole === r
             ? 'bg-indigo-600 text-white'
-            : 'bg-white text-gray-500 hover:bg-gray-50'"
+            : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
           @click="editMode && setRole(r)"
         >{{ r === 'dimension' ? 'Dimension' : 'Metric' }}</button>
       </div>
@@ -139,14 +139,14 @@
     <div class="flex items-center gap-2 flex-wrap">
       <!-- Sortable -->
       <div class="flex items-center gap-1.5 mt-4">
-        <span class="text-xs text-gray-600">Sort</span>
+        <span class="text-xs text-gray-600 dark:text-neutral-400">Sort</span>
         <button
           type="button"
           role="switch"
           :aria-checked="!!local.sortable"
           :disabled="!editMode"
           class="relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-          :class="local.sortable ? 'bg-indigo-600' : 'bg-gray-200'"
+          :class="local.sortable ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
           @click="editMode && (local.sortable = !local.sortable, emitUpdate())"
         >
           <span
@@ -158,14 +158,14 @@
 
       <!-- Filterable -->
       <div class="flex items-center gap-1.5 mt-4">
-        <span class="text-xs text-gray-600">Filter</span>
+        <span class="text-xs text-gray-600 dark:text-neutral-400">Filter</span>
         <button
           type="button"
           role="switch"
           :aria-checked="!!local.filterable"
           :disabled="!editMode"
           class="relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-          :class="local.filterable ? 'bg-indigo-600' : 'bg-gray-200'"
+          :class="local.filterable ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
           @click="editMode && (local.filterable = !local.filterable, emitUpdate())"
         >
           <span
@@ -178,7 +178,7 @@
       <!-- Delete -->
       <button
         v-if="editMode"
-        class="mt-4 flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors ml-auto"
+        class="mt-4 flex h-5 w-5 items-center justify-center rounded text-gray-300 dark:text-neutral-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors ml-auto"
         title="Remove column"
         @click="emit('remove')"
       >
@@ -190,11 +190,11 @@
     <template v-if="effectiveRole === 'metric'">
       <!-- Aggregation (always visible for metrics; options vary by format) -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400">Aggregation</label>
+        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Aggregation</label>
         <select
           v-model="local.aggregation"
           :disabled="!editMode"
-          class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="emitUpdate()"
         >
           <option v-for="opt in aggregationOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
@@ -205,17 +205,17 @@
       <template v-if="isNumeric">
         <!-- Display type -->
         <div class="space-y-1.5">
-          <label class="text-[10px] text-gray-400">Display Type</label>
-          <div class="flex rounded border border-gray-200 overflow-hidden">
+          <label class="text-[10px] text-gray-400 dark:text-neutral-500">Display Type</label>
+          <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button
               v-for="dt in (['number', 'bar', 'heatmap'] as const)"
               :key="dt"
               type="button"
               :disabled="!editMode"
-              class="flex-1 py-1 text-[10px] font-medium capitalize transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1 text-[10px] font-medium capitalize transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="(local.displayType ?? 'number') === dt
                 ? 'bg-indigo-600 text-white'
-                : 'bg-white text-gray-500 hover:bg-gray-50'"
+                : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
               @click="editMode && setDisplayType(dt)"
             >{{ dt }}</button>
           </div>
@@ -223,14 +223,14 @@
 
         <!-- Show value toggle (bar only) -->
         <div v-if="(local.displayType ?? 'number') === 'bar'" class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700">Show value</span>
+          <span class="text-xs text-gray-700 dark:text-neutral-200">Show value</span>
           <button
             type="button"
             role="switch"
             :aria-checked="local.showBarValue !== false"
             :disabled="!editMode"
             class="relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-            :class="local.showBarValue !== false ? 'bg-indigo-600' : 'bg-gray-200'"
+            :class="local.showBarValue !== false ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
             @click="editMode && (local.showBarValue = !local.showBarValue, emitUpdate())"
           >
             <span
@@ -242,14 +242,14 @@
 
         <!-- Compact numbers -->
         <div class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700">Compact numbers</span>
+          <span class="text-xs text-gray-700 dark:text-neutral-200">Compact numbers</span>
           <button
             type="button"
             role="switch"
             :aria-checked="!!local.compactNumbers"
             :disabled="!editMode"
             class="relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-            :class="local.compactNumbers ? 'bg-indigo-600' : 'bg-gray-200'"
+            :class="local.compactNumbers ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
             @click="editMode && (local.compactNumbers = !local.compactNumbers, emitUpdate())"
           >
             <span
@@ -261,11 +261,11 @@
 
         <!-- Comparison -->
         <div class="space-y-1">
-          <label class="text-[10px] text-gray-400">Comparison</label>
+          <label class="text-[10px] text-gray-400 dark:text-neutral-500">Comparison</label>
           <select
             v-model="local.comparisonCalc"
             :disabled="!editMode"
-            class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitUpdate()"
           >
             <option value="none">None</option>
@@ -280,11 +280,11 @@
 
         <!-- Running Calc -->
         <div class="space-y-1">
-          <label class="text-[10px] text-gray-400">Running Calc</label>
+          <label class="text-[10px] text-gray-400 dark:text-neutral-500">Running Calc</label>
           <select
             v-model="local.runningCalc"
             :disabled="!editMode"
-            class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitUpdate()"
           >
             <option value="none">None</option>

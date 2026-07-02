@@ -3,8 +3,15 @@
     <!-- Main content area -->
     <div class="flex flex-1 flex-col overflow-hidden min-w-0 min-h-0 relative">
 
+      <!-- Loading a specific dashboard (selected id, data not yet loaded) -->
+      <template v-if="store.currentDashboardId != null && !store.currentDashboard && store.loading">
+        <div class="flex flex-1 items-center justify-center">
+          <div class="h-7 w-7 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading dashboard" />
+        </div>
+      </template>
+
       <!-- List view -->
-      <template v-if="!store.currentDashboard">
+      <template v-else-if="!store.currentDashboard">
 
         <div class="flex flex-1 flex-col overflow-y-auto px-3 md:px-6 pt-4 pb-6">
           <div v-if="store.loading" class="flex items-center justify-center py-16 text-sm text-gray-400">
@@ -271,13 +278,29 @@ useDatasetStatus()
 const route = useRoute()
 const { isMobile } = useIsMobile()
 
-onMounted(async () => {
-  await store.fetchDashboards()
+// Adopt the routed dashboard id synchronously so the first paint never shows the
+// previously-viewed dashboard (currentDashboardId persists across SPA navigation).
+const _routeId = Number(route.query.id)
+if (!isNaN(_routeId) && _routeId !== store.currentDashboardId) store.currentDashboardId = _routeId
+
+onMounted(() => {
+  // Open the routed dashboard first; the full list loads in the background (the
+  // drill-down doesn't depend on it) so a slow list fetch can't delay the target.
   const idParam = route.query.id
   if (idParam) {
     const id = Number(idParam)
     if (!isNaN(id)) store.openDashboard(id)
   }
+  store.fetchDashboards()
+})
+
+// In-app navigation (e.g. another task's "View Dashboard") only changes ?id —
+// the page component is not remounted, so onMounted won't fire. React to the
+// query change so the correct dashboard opens instead of keeping the current one.
+watch(() => route.query.id, (idParam) => {
+  if (!idParam) return
+  const id = Number(idParam)
+  if (!isNaN(id) && id !== store.currentDashboardId) store.openDashboard(id)
 })
 
 // Bulk widget loading (per-Org flag): filter changes refresh the whole

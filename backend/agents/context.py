@@ -41,6 +41,11 @@ class AgentContext:
     # (such as a seeded sample connection).
     target_connection_id: Optional[int] = None
 
+    # Set True by create_dataset_from_upload when a fresh dataset is ingested this
+    # turn. update_dashboard refuses while set: an upload+generate turn must CREATE
+    # a new dashboard, never overwrite a pre-existing one the LLM happened to find.
+    dataset_created_this_turn: bool = False
+
     def can_access_connection(self, connection_id: int) -> bool:
         """Check if user can access a connection."""
         return connection_id in self.available_connections

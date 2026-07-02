@@ -38,14 +38,6 @@
             <td class="py-1 pr-3 text-gray-500">Trend value</td>
             <td class="py-1 font-mono text-gray-800">{{ mapping.trendValueColumn }}</td>
           </tr>
-          <tr v-if="mapping.sparklineXColumn">
-            <td class="py-1 pr-3 text-gray-500">Sparkline X</td>
-            <td class="py-1 font-mono text-gray-800">{{ mapping.sparklineXColumn }}</td>
-          </tr>
-          <tr v-if="mapping.sparklineYColumn">
-            <td class="py-1 pr-3 text-gray-500">Sparkline Y</td>
-            <td class="py-1 font-mono text-gray-800">{{ mapping.sparklineYColumn }}</td>
-          </tr>
         </tbody>
       </table>
     </template>

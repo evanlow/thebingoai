@@ -660,7 +660,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 * = required.
 
                 Layout: emit widgets in the order they should read top-to-bottom
-                (filter → 3-4 KPIs → section header → 3-5 charts → 1-2 tables).
+                (filter → 3-5 KPIs → section header → 3-5 charts → 1-2 tables).
                 The backend packs each row to 12 columns. To emphasize ONE hero
                 chart, optionally set its "width" (e.g. 8) and the next chart's
                 "width" (e.g. 4); otherwise omit width. To preserve a widget across
@@ -669,7 +669,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 The backend fills only STRUCTURE (envelope, position, mapping wiring,
                 styling defaults). YOU must still make every design choice — chart
                 type, aggregation, chart options (sortBy/indexAxis/sliceLabel/stacked),
-                the 3-4 KPI exec-summary row — and emit them as params. Minimal
+                the 3-5 KPI exec-summary row — and emit them as params. Minimal
                 params ≠ skip design. Category charts (bar/pie/line/area) MUST
                 aggregate: either `GROUP BY` + `COUNT/SUM/AVG` in the SQL, OR set
                 `aggregation` on each `datasetColumns` entry (e.g. "sum").

@@ -3,38 +3,38 @@
 
     <!-- Display section -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Display</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Display</h3>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-600">Label</label>
+        <label class="text-xs text-gray-600 dark:text-neutral-400">Label</label>
         <input
           v-model="localLabel"
           type="text"
           placeholder="e.g. Total Revenue"
-          class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+          class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
           :readonly="!editMode"
-          :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+          :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
         />
       </div>
 
       <!-- Primary field: Dimension / Metric role + column + (metric only) aggregation -->
       <template v-if="dataSource">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600">Primary field</label>
-          <div class="flex rounded border border-gray-200 overflow-hidden">
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Primary field</label>
+          <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button
               v-for="r in (['dimension', 'metric'] as const)"
               :key="r"
               type="button"
               :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="primaryRole === r
                 ? 'bg-indigo-600 text-white'
-                : 'bg-white text-gray-500 hover:bg-gray-50'"
+                : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
               @click="editMode && setPrimaryRole(r)"
             >{{ r === 'dimension' ? 'Dimension' : 'Metric' }}</button>
           </div>
-          <p class="text-[10px] text-gray-400 mt-1">
+          <p class="text-[10px] text-gray-400 dark:text-neutral-500 mt-1">
             {{ primaryRole === 'dimension'
               ? 'Shows the raw value from a single row (no aggregation).'
               : 'Aggregates the selected column across all rows.' }}
@@ -42,11 +42,11 @@
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600">Field</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Field</label>
           <select
             :value="kpiMapping?.valueColumn || ''"
             :disabled="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="onValueColumnChange($event)"
           >
             <option value="" disabled>Select column...</option>
@@ -55,11 +55,11 @@
         </div>
 
         <div v-if="primaryRole === 'metric'" class="space-y-1.5">
-          <label class="text-xs text-gray-600">Aggregation</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Aggregation</label>
           <select
             :value="kpiMapping?.aggregation ?? 'sum'"
             :disabled="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="onAggregationChange($event)"
           >
             <option value="sum">Sum</option>
@@ -72,11 +72,11 @@
         </div>
 
         <div v-else class="space-y-1.5">
-          <label class="text-xs text-gray-600">Row</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Row</label>
           <select
             :value="kpiMapping?.aggregation === 'last' ? 'last' : 'first'"
             :disabled="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="onAggregationChange($event)"
           >
             <option value="first">First Row</option>
@@ -87,38 +87,38 @@
 
       <!-- Value: manual input when no data source -->
       <div v-else class="space-y-1.5">
-        <label class="text-xs text-gray-600">Value</label>
+        <label class="text-xs text-gray-600 dark:text-neutral-400">Value</label>
         <input
           v-model="localValue"
           type="text"
           placeholder="e.g. 42000"
-          class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+          class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
           :readonly="!editMode"
-          :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+          :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
         />
       </div>
 
       <div class="flex gap-2">
         <div class="flex-1 space-y-1.5">
-          <label class="text-xs text-gray-600">Prefix</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Prefix</label>
           <input
             v-model="localPrefix"
             type="text"
             placeholder="e.g. $"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :readonly="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+            :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           />
         </div>
         <div class="flex-1 space-y-1.5">
-          <label class="text-xs text-gray-600">Suffix</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Suffix</label>
           <input
             v-model="localSuffix"
             type="text"
             placeholder="e.g. %"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :readonly="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+            :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           />
         </div>
       </div>
@@ -134,30 +134,30 @@
 
     <!-- Comparison section (replaces Trend) -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Comparison</h3>
+      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison</h3>
 
       <!-- Type selector -->
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-600">Type</label>
-        <div class="flex rounded border border-gray-200 overflow-hidden">
+        <label class="text-xs text-gray-600 dark:text-neutral-400">Type</label>
+        <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in availableComparisonTypes"
             :key="opt.value"
             type="button"
             :disabled="!editMode || opt.disabled"
             :title="opt.disabled ? opt.reason : undefined"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 last:border-r-0 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:cursor-not-allowed"
             :class="[
               localComparisonType === opt.value && !opt.disabled
                 ? 'bg-indigo-600 text-white'
                 : opt.disabled
-                  ? 'bg-gray-50 text-gray-300'
-                  : 'bg-white text-gray-500 hover:bg-gray-50',
+                  ? 'bg-gray-50 dark:bg-neutral-900 text-gray-300 dark:text-neutral-600'
+                  : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800',
             ]"
             @click="editMode && !opt.disabled && setComparisonType(opt.value)"
           >{{ opt.label }}</button>
         </div>
-        <p v-if="availableComparisonTypes.some(o => o.disabled)" class="text-[10px] text-gray-400">
+        <p v-if="availableComparisonTypes.some(o => o.disabled)" class="text-[10px] text-gray-400 dark:text-neutral-500">
           Greyed options need a different query shape. Hover for details.
         </p>
       </div>
@@ -165,18 +165,18 @@
       <!-- Period options -->
       <template v-if="localComparisonType === 'period'">
         <!-- Auto-calculated info -->
-        <div v-if="isAutoTrend" class="rounded-lg bg-gray-100 px-3 py-2">
-          <p class="text-[11px] text-gray-500">
+        <div v-if="isAutoTrend" class="rounded-lg bg-gray-100 dark:bg-neutral-700 px-3 py-2">
+          <p class="text-[11px] text-gray-500 dark:text-neutral-400">
             Comparison is auto-calculated from your query. Select a period and date column to control it.
           </p>
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600">Period</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Period</label>
           <select
             v-model="localTrendPeriod"
             :disabled="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           >
             <option value="">None</option>
             <option value="vs last period">vs last period</option>
@@ -192,19 +192,19 @@
             v-model="customTrendPeriod"
             type="text"
             placeholder="e.g. vs previous sprint"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :readonly="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+            :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           />
         </div>
 
         <!-- Date column picker -->
         <div v-if="needsDateColumn && sourceColumns?.length" class="space-y-1.5">
-          <label class="text-xs text-gray-600">Date column</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Date column</label>
           <select
             :value="kpiMapping?.trendDateColumn || ''"
             :disabled="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="editMode && emit('update:mapping', { trendDateColumn: ($event.target as HTMLSelectElement).value || undefined })"
           >
             <option value="">Select date column...</option>
@@ -215,11 +215,11 @@
         <!-- Manual direction/value for static (no data source) scorecards -->
         <template v-if="!dataSource">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Direction</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Direction</label>
             <select
               v-model="localTrendDirection"
               :disabled="!editMode"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             >
               <option value="up">Up</option>
               <option value="down">Down</option>
@@ -227,14 +227,14 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600">Change (%)</label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Change (%)</label>
             <input
               v-model.number="localTrendValue"
               type="number"
               placeholder="e.g. 12.5"
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
               :readonly="!editMode"
-              :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+              :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
             />
           </div>
         </template>
@@ -243,14 +243,14 @@
       <!-- Value options -->
       <template v-if="localComparisonType === 'value'">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600">Target value</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Target value</label>
           <input
             v-model.number="localTargetValue"
             type="number"
             placeholder="e.g. 10000"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :readonly="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+            :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           />
         </div>
       </template>
@@ -258,11 +258,11 @@
       <!-- Metric options -->
       <template v-if="localComparisonType === 'metric'">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600">Target metric column</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Target metric column</label>
           <select
             v-model="localTargetMetric"
             :disabled="!editMode"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           >
             <option value="">Select column...</option>
             <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
@@ -274,8 +274,8 @@
       <template v-if="localComparisonType === 'value' || localComparisonType === 'metric'">
         <div class="flex items-center justify-between py-1">
           <div>
-            <span class="text-sm text-gray-700">Show as progress</span>
-            <p class="text-[11px] text-gray-400 mt-0.5">Renders a progress bar/circle instead of % change</p>
+            <span class="text-sm text-gray-700 dark:text-neutral-200">Show as progress</span>
+            <p class="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">Renders a progress bar/circle instead of % change</p>
           </div>
           <button
             type="button"
@@ -283,7 +283,7 @@
             :aria-checked="localShowAsProgress"
             :disabled="!editMode"
             class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-            :class="localShowAsProgress ? 'bg-indigo-600' : 'bg-gray-200'"
+            :class="localShowAsProgress ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
             @click="editMode && (localShowAsProgress = !localShowAsProgress)"
           >
             <span
@@ -294,115 +294,14 @@
         </div>
 
         <div v-if="localShowAsProgress" class="space-y-1.5">
-          <label class="text-xs text-gray-600">Starting value</label>
+          <label class="text-xs text-gray-600 dark:text-neutral-400">Starting value</label>
           <input
             v-model.number="localStartingValue"
             type="number"
             placeholder="e.g. 0"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :readonly="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
-          />
-        </div>
-      </template>
-    </div>
-
-    <!-- Sparkline section -->
-    <div class="space-y-3" :class="localShowAsProgress ? 'opacity-40 pointer-events-none' : ''">
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Sparkline</h3>
-          <p v-if="localShowAsProgress" class="text-[10px] text-gray-400 mt-0.5">Disabled when Show as progress is on</p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="hasSparkline"
-          :disabled="!editMode || localShowAsProgress"
-          class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
-          :class="hasSparkline && !localShowAsProgress ? 'bg-indigo-600' : 'bg-gray-200'"
-          @click="editMode && !localShowAsProgress && toggleSparkline()"
-        >
-          <span
-            class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5"
-            :class="hasSparkline && !localShowAsProgress ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'"
-          />
-        </button>
-      </div>
-
-      <template v-if="hasSparkline && !localShowAsProgress">
-        <!-- Auto-calculated info -->
-        <div v-if="isAutoTrend" class="rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2 space-y-1">
-          <p class="text-[11px] text-indigo-600">
-            Sparkline is auto-populated from all rows using the
-            <code class="bg-indigo-100 px-1 rounded text-[10px]">{{ kpiMapping?.valueColumn }}</code> column.
-          </p>
-          <p class="text-[10px] text-indigo-400">Ensure rows are ordered by time for an accurate chart.</p>
-        </div>
-
-        <!-- Column selectors -->
-        <template v-if="sourceColumns?.length">
-          <div class="space-y-2">
-            <div class="space-y-1">
-              <label class="text-xs text-gray-600">X Axis (labels)</label>
-              <select
-                :value="kpiMapping?.sparklineXColumn || ''"
-                :disabled="!editMode"
-                class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
-                @change="editMode && emit('update:mapping', { sparklineXColumn: ($event.target as HTMLSelectElement).value || undefined })"
-              >
-                <option value="">None</option>
-                <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-              </select>
-            </div>
-            <div class="space-y-1">
-              <label class="text-xs text-gray-600">Y Axis (values)</label>
-              <select
-                :value="kpiMapping?.sparklineYColumn || ''"
-                :disabled="!editMode"
-                class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
-                @change="editMode && emit('update:mapping', { sparklineYColumn: ($event.target as HTMLSelectElement).value || undefined })"
-              >
-                <option value="" disabled>Select column...</option>
-                <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-              </select>
-            </div>
-            <div class="space-y-1">
-              <label class="text-xs text-gray-600">Sort by</label>
-              <div class="flex">
-                <select
-                  :value="kpiMapping?.sparklineSortDirection ?? 'asc'"
-                  :disabled="!editMode"
-                  class="rounded-l-lg rounded-r-none border border-r-0 border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
-                  @change="editMode && emit('update:mapping', { sparklineSortDirection: ($event.target as HTMLSelectElement).value })"
-                >
-                  <option value="asc">ASC</option>
-                  <option value="desc">DESC</option>
-                </select>
-                <select
-                  :value="kpiMapping?.sparklineSortColumn || ''"
-                  :disabled="!editMode"
-                  class="flex-1 min-w-0 rounded-r-lg rounded-l-none border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50"
-                  @change="editMode && emit('update:mapping', { sparklineSortColumn: ($event.target as HTMLSelectElement).value || undefined })"
-                >
-                  <option value="">None (query order)</option>
-                  <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- Manual input (no data source) -->
-        <div v-if="!dataSource" class="space-y-1.5">
-          <label class="text-xs text-gray-600">Data (comma-separated numbers)</label>
-          <input
-            v-model="sparklineInput"
-            type="text"
-            placeholder="e.g. 10,20,15,30,25"
-            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
-            :readonly="!editMode"
-            :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+            :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
           />
         </div>
       </template>
@@ -514,8 +413,6 @@ const localTargetValue = ref<number | undefined>(kpiConfig().comparison?.targetV
 const localTargetMetric = ref(kpiConfig().comparison?.targetMetric ?? '')
 const localShowAsProgress = ref(!!kpiConfig().comparison?.showAsProgress)
 const localStartingValue = ref<number | undefined>(kpiConfig().comparison?.startingValue)
-const hasSparkline = ref(!!(kpiConfig().sparkline?.length))
-const sparklineInput = ref((kpiConfig().sparkline ?? []).join(', '))
 
 const PERIOD_PRESETS = ['', 'vs last period', 'vs yesterday', 'vs last week', 'vs last month', 'vs last quarter', 'vs last year']
 const initPeriod = kpiConfig().comparison?.comparisonLabel ?? kpiConfig().trend?.period ?? kpiMapping.value?.periodLabel ?? ''
@@ -566,8 +463,6 @@ watch([() => props.modelValue, () => props.dataSource], () => {
   localTargetMetric.value = cfg.comparison?.targetMetric ?? ''
   localShowAsProgress.value = !!cfg.comparison?.showAsProgress
   localStartingValue.value = cfg.comparison?.startingValue
-  hasSparkline.value = !!(cfg.sparkline?.length)
-  sparklineInput.value = (cfg.sparkline ?? []).join(', ')
 
   const period = cfg.comparison?.comparisonLabel ?? cfg.trend?.period ?? kpiMapping.value?.periodLabel ?? ''
   const preset = PERIOD_PRESETS.includes(period)
@@ -577,19 +472,8 @@ watch([() => props.modelValue, () => props.dataSource], () => {
 
 function buildConfig(): WidgetConfig {
   const parsedValue = isNaN(Number(localValue.value)) ? localValue.value : Number(localValue.value)
-  const sparklineNums = sparklineInput.value
-    .split(',')
-    .map(s => parseFloat(s.trim()))
-    .filter(n => !isNaN(n))
 
   const existingConfig = kpiConfig()
-  const hasDataSourceSparkline = isAutoTrend.value || !!kpiMapping.value?.sparklineYColumn
-
-  const sparkline = hasSparkline.value && !localShowAsProgress.value
-    ? hasDataSourceSparkline
-      ? existingConfig.sparkline
-      : sparklineNums.length > 0 ? sparklineNums : undefined
-    : undefined
 
   // Build comparison block
   let comparison: KpiWidgetConfig['comparison']
@@ -633,13 +517,12 @@ function buildConfig(): WidgetConfig {
       decimalPlaces: localDecimalPlaces.value,
       trend,
       comparison,
-      sparkline,
     },
   }
 }
 
 watch(
-  [localLabel, localValue, localPrefix, localSuffix, localFormat, localDecimalPlaces, localComparisonType, localTrendDirection, localTrendValue, localTrendPeriod, customTrendPeriod, localTargetValue, localTargetMetric, localShowAsProgress, localStartingValue, hasSparkline, sparklineInput],
+  [localLabel, localValue, localPrefix, localSuffix, localFormat, localDecimalPlaces, localComparisonType, localTrendDirection, localTrendValue, localTrendPeriod, customTrendPeriod, localTargetValue, localTargetMetric, localShowAsProgress, localStartingValue],
   () => {
     selfEmit = true
     emit('update:modelValue', buildConfig())
@@ -652,10 +535,6 @@ watch(effectivePeriod, () => {
     emit('update:mapping', { periodLabel: effectivePeriod.value || undefined })
   }
 })
-
-function toggleSparkline() {
-  hasSparkline.value = !hasSparkline.value
-}
 
 function computeAggregatedValue(
   rows: any[][],

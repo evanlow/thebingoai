@@ -24,11 +24,20 @@ Phase 2 — Design (informed by context):
    - Pivot rule: if the data context has 2+ categorical dimensions and at least one numeric
      metric, you MUST include exactly one pivot_table in Section 4 (metric by A × B).
      Skip only when the data is genuinely one-dimensional.
-5. Select metrics and choose chart types based on the data context:
+5. Select metrics and choose chart types based on the data context. Explore the FULL
+   chart palette (bar, line, area, pie, doughnut, scatter, funnel, timeline) — do not
+   default to only the common few. Match each chart type to a data shape that supports it:
    - Use cardinality from context to pick chart types (< 8 → pie, 8-20 → horizontal bar, > 20 → top-N)
    - Date dimensions in the context include `min` and `max` values (the actual data range). Use these to:
      a) Set time-series chart granularity (daily for short ranges, monthly for multi-year data)
      b) Generate `dateRangeSource` SQL on every `date_range` filter control (REQUIRED — see below)
+   - **Funnel** fits when a categorical dimension represents ordered stages whose counts
+     shrink first→last (sales pipeline, signup→purchase conversion). Emit `chartType: "funnel"`,
+     ordered largest→smallest by an explicit stage rank (ORDER BY a stage_order/rank, not by value).
+   - **Timeline** fits when a table has TWO date columns per row — a start and an end
+     (campaigns, projects, tasks). Emit `chartType: "timeline"` with `startColumn` + `endColumn`.
+   - Pick funnel/timeline only when the data shape genuinely supports them; never force them
+     onto data without ordered stages or start/end date pairs.
 6. Design widget SQL using the baseJoin template from the context:
    - EVERY data widget's SQL MUST include the base JOINs so filters reach all dimensions
    - Use table aliases from the baseJoin (e.g., `o.region`, `p.amount`)
@@ -67,10 +76,10 @@ Structure every dashboard as a top-to-bottom data story:
      "dateRangeDefault": "full"}
     ```
 
-**Section 2 — Executive Summary (emit right after filters):** 3-4 KPI cards answering "how are we doing at a glance?"
+**Section 2 — Executive Summary (emit right after filters):** 3-5 KPI cards answering "how are we doing at a glance?"
 
 **Section 2 KPI Rules (HARD CONSTRAINTS — violations are bugs):**
-- EXACTLY 3-4 KPIs total, emitted consecutively right after the filter bar. The backend packs them into one row.
+- EXACTLY 3-5 KPIs total, emitted consecutively right after the filter bar. The backend packs them into one row.
 - Each underlying metric appears AT MOST ONCE. Never create two KPIs for the same metric scoped to different time windows (e.g. one "Spend (Last 7 Days)" KPI and one "Spend (7D)" KPI). Pick ONE time window for each KPI.
 - Time-window switching is a FILTER BAR concern, not a widget concern. If the user wants to compare windows, set `dateRangeDefault` on the filter bar's `date_range` control and let widgets re-query.
 - Trend-over-period is expressed via the KPI's own `periodLabel` + `trendDateColumn` (see KPI widget spec), NOT by creating a second KPI for the previous period.
@@ -97,8 +106,8 @@ consecutive charts share the row equally (6+6).
 
 ### Widget Count Guidelines
 
-- Target **9-13 widgets** total (min 7, max 14)
-- 3-4 KPIs + 1 filter bar + 2 text section headers + 3-5 charts + 1-2 tables (a pivot_table counts as a table)
+- Target **9-13 widgets** total (min 7, max 15)
+- 3-5 KPIs + 1 filter bar + 2 text section headers + 3-5 charts + 1-2 tables (a pivot_table counts as a table)
 - Text widgets are section headers only (one before charts, one before tables) — tables use `config.title` for their own title
 
 ### Chart Type Selection Guide
@@ -114,6 +123,8 @@ consecutive charts share the row equally (6+6).
 | Timing pattern (best hour/weekday)  | bar              | mapping `dateGranularity: "hour_of_day"` | w=6 or w=8                  |
 | Part-of-whole (< 8 categories)      | pie or doughnut  | `showValues: true`                       | w=4 or w=6 (**NEVER w=12**) |
 | Correlation (x vs y)                | scatter          | `showLegend: true` for grouped scatter   | w=6 or w=8                  |
+| Sequential stages / conversion      | funnel           | `funnelLabelMode: "numberPercentage"`    | w=4 or w=6                  |
+| Events/phases with start+end dates  | timeline         | `timelineColorBy: "row"`                 | w=8 or w=12                 |
 
 Scatter chart rules:
 - `labelColumn`: grouping column (e.g. category/team) — one dataset per unique value
