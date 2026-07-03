@@ -386,12 +386,15 @@ export const useAuthStore = defineStore('auth', {
     // ─── Delete account ─────────────────────────────────────────
 
     async deleteAccount() {
-      await $fetch('/api/auth/account', {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${this.token}` },
-        body: { refresh_token: this.refreshToken },
-      })
-      this._clearLocalSession()
+      try {
+        await $fetch('/api/auth/account', {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${this.token}` },
+          body: { refresh_token: this.refreshToken },
+        })
+      } finally {
+        this._clearLocalSession()
+      }
     },
 
     // Tear down all client-side session state (stores, websocket, tokens,
