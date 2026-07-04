@@ -315,6 +315,21 @@ export const useChatStreaming = () => {
         if (!targetMsg?.results?.length || results.length >= (targetMsg.results?.length || 0)) {
           chatStore.updateMessageById(assistantMsgId, { results })
         }
+
+        // Track every dataset for download (one entry per query, dedup by ref)
+        if (data.result_ref) {
+          const existing = targetMsg?.query_files || []
+          if (!existing.some(f => f.result_ref === data.result_ref)) {
+            chatStore.updateMessageById(assistantMsgId, {
+              query_files: [...existing, {
+                result_ref: data.result_ref,
+                label: payload.label || 'query',
+                row_count: payload.row_count ?? rawRows.length,
+                col_count: columns.length,
+              }],
+            })
+          }
+        }
       })
 
       onEvent('chat.judge_status', (data) => {
