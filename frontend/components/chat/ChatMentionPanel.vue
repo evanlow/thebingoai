@@ -362,7 +362,7 @@ function scrollToActive() {
 }
 .mention-header-at {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: round(12px * var(--fs-mult), 1px);
   font-weight: 600;
   color: var(--ember);
 }
@@ -372,7 +372,7 @@ function scrollToActive() {
   border: none;
   outline: none;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: round(12px * var(--fs-mult), 1px);
   font-weight: 600;
   color: var(--ink-0);
   min-width: 0;
@@ -393,7 +393,7 @@ function scrollToActive() {
 }
 .mention-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: round(10px * var(--fs-mult), 1px);
   color: var(--ink-3);
   flex-shrink: 0;
 }
@@ -407,7 +407,7 @@ function scrollToActive() {
   background: var(--paper-0);
   padding: 2px 6px 2px 5px;
   border-radius: 5px;
-  font-size: 10.5px;
+  font-size: round(10.5px * var(--fs-mult), 1px);
   color: var(--ink-1);
   cursor: pointer;
   font-family: var(--font-sans);
@@ -417,7 +417,7 @@ function scrollToActive() {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: round(12px * var(--fs-mult), 1px);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -442,7 +442,7 @@ function scrollToActive() {
 .mention-filter-chip {
   padding: 3px 9px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: round(11px * var(--fs-mult), 1px);
   font-weight: 500;
   background: transparent;
   color: var(--ink-2);
@@ -471,7 +471,7 @@ function scrollToActive() {
 
 .mention-group-label {
   padding: 8px 14px 4px;
-  font-size: 9.5px;
+  font-size: round(9.5px * var(--fs-mult), 1px);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 600;
@@ -515,7 +515,7 @@ function scrollToActive() {
   min-width: 0;
 }
 .mention-row-label {
-  font-size: 13px;
+  font-size: round(13px * var(--fs-mult), 1px);
   font-weight: 500;
   color: var(--ink-0);
   letter-spacing: -0.005em;
@@ -528,7 +528,7 @@ function scrollToActive() {
   letter-spacing: 0;
 }
 .mention-row-sub {
-  font-size: 10.5px;
+  font-size: round(10.5px * var(--fs-mult), 1px);
   color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
@@ -547,13 +547,13 @@ function scrollToActive() {
   background: var(--paper-2);
   border: 1px solid var(--line);
   border-radius: 3px;
-  font-size: 9.5px;
+  font-size: round(9.5px * var(--fs-mult), 1px);
   color: var(--ink-1);
   font-family: var(--font-mono);
 }
 
 .mention-tag-hint {
-  font-size: 9.5px;
+  font-size: round(9.5px * var(--fs-mult), 1px);
   color: var(--ember);
   padding: 1px 6px;
   background: var(--paper-0);
@@ -565,7 +565,7 @@ function scrollToActive() {
 .mention-empty {
   padding: 20px 14px;
   text-align: center;
-  font-size: 13px;
+  font-size: round(13px * var(--fs-mult), 1px);
   color: var(--ink-3);
 }
 
@@ -577,7 +577,7 @@ function scrollToActive() {
   padding: 8px 14px;
   border-top: 1px solid var(--line);
   background: var(--paper-1);
-  font-size: 10.5px;
+  font-size: round(10.5px * var(--fs-mult), 1px);
   color: var(--ink-2);
 }
 .kbd-hint {
@@ -592,7 +592,7 @@ function scrollToActive() {
   background: var(--paper-0);
   border: 1px solid var(--line-2);
   border-radius: 3px;
-  font-size: 10px;
+  font-size: round(10px * var(--fs-mult), 1px);
   color: var(--ink-1);
   font-weight: 600;
   font-family: var(--font-mono);
@@ -600,7 +600,7 @@ function scrollToActive() {
   display: inline-block;
 }
 .kbd-tab-hint {
-  font-size: 10px;
+  font-size: round(10px * var(--fs-mult), 1px);
   font-family: var(--font-mono);
   color: var(--ink-3);
 }

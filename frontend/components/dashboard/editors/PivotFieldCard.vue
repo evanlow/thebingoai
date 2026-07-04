@@ -16,11 +16,11 @@
           {{ local.label || local.column || 'Untitled' }}
         </span>
         <!-- Format badge -->
-        <span v-if="local.format && local.format !== 'number'" class="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide flex-shrink-0">
+        <span v-if="local.format && local.format !== 'number'" class="text-sm text-gray-400 dark:text-neutral-500 uppercase tracking-wide flex-shrink-0">
           {{ local.format }}
         </span>
         <!-- Aggregation badge -->
-        <span v-if="local.aggregation" class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
+        <span v-if="local.aggregation" class="text-sm px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
           {{ aggLabel(local.aggregation) }}
         </span>
       </div>
@@ -49,7 +49,7 @@
 
       <!-- Column picker -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Column</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Column</label>
         <div class="flex gap-2">
           <select
             :value="local.column"
@@ -75,24 +75,24 @@
 
       <!-- Label -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Label</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Label</label>
         <input
           :value="local.label ?? ''"
           type="text"
           placeholder="Label (optional)"
           :readonly="!editMode"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @input="setField('label', ($event.target as HTMLInputElement).value || undefined)"
         />
       </div>
 
       <!-- Aggregation -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400 dark:text-neutral-500">Aggregation</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Aggregation</label>
         <select
           :value="local.aggregation || 'sum'"
           :disabled="!editMode"
-          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="setField('aggregation', ($event.target as HTMLSelectElement).value)"
         >
           <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>

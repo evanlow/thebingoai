@@ -6,12 +6,12 @@
     >
       <!-- Header: name + badge -->
       <div class="flex items-center justify-between mb-1.5">
-        <span class="font-semibold text-gray-900 dark:text-white text-[13px]">
+        <span class="font-semibold text-gray-900 dark:text-white text-sm">
           <component :is="typeIcon" class="w-3.5 h-3.5 text-gray-400 dark:text-neutral-500 inline-block align-middle" />
           {{ suggestion.suggested_name }}
         </span>
         <span
-          class="text-[10px] rounded-full px-2 py-0.5 font-semibold"
+          class="text-sm rounded-full px-2 py-0.5 font-semibold"
           :class="isRecommended
             ? 'bg-green-100 text-green-800'
             : 'bg-amber-100 text-amber-800'"
@@ -21,12 +21,12 @@
       </div>
 
       <!-- Description -->
-      <div v-if="suggestion.suggested_description" class="text-gray-500 dark:text-neutral-400 text-xs mb-2">
+      <div v-if="suggestion.suggested_description" class="text-gray-500 dark:text-neutral-400 text-sm mb-2">
         {{ suggestion.suggested_description }}
       </div>
 
       <!-- Reasoning -->
-      <div v-if="suggestion.recommendation_reason" class="text-gray-400 dark:text-neutral-500 text-[11px] italic mb-2.5">
+      <div v-if="suggestion.recommendation_reason" class="text-gray-400 dark:text-neutral-500 text-sm italic mb-2.5">
         {{ suggestion.recommendation_reason }}
       </div>
 
@@ -35,13 +35,13 @@
         <template v-if="isRecommended">
           <button
             @click="emit('accept', suggestion.id)"
-            class="bg-orange-500 text-white border-none rounded-md px-3.5 py-1 text-xs cursor-pointer font-medium hover:bg-orange-600 transition-colors"
+            class="bg-orange-500 text-white border-none rounded-md px-3.5 py-1 text-sm cursor-pointer font-medium hover:bg-orange-600 transition-colors"
           >
             Accept
           </button>
           <button
             @click="emit('dismiss', suggestion.id)"
-            class="bg-white dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 border border-gray-200 dark:border-neutral-600 rounded-md px-3.5 py-1 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-600 transition-colors"
+            class="bg-white dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 border border-gray-200 dark:border-neutral-600 rounded-md px-3.5 py-1 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-600 transition-colors"
           >
             Dismiss
           </button>
@@ -49,13 +49,13 @@
         <template v-else>
           <button
             @click="emit('accept', suggestion.id)"
-            class="bg-white dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 border border-gray-200 dark:border-neutral-600 rounded-md px-3.5 py-1 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-600 transition-colors"
+            class="bg-white dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 border border-gray-200 dark:border-neutral-600 rounded-md px-3.5 py-1 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-600 transition-colors"
           >
             Accept anyway
           </button>
           <button
             @click="emit('dismiss', suggestion.id)"
-            class="bg-white dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 border border-gray-200 dark:border-neutral-600 rounded-md px-3.5 py-1 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-600 transition-colors"
+            class="bg-white dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 border border-gray-200 dark:border-neutral-600 rounded-md px-3.5 py-1 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-600 transition-colors"
           >
             Dismiss
           </button>

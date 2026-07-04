@@ -7,7 +7,7 @@
       <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
         <div>
           <h2 class="text-sm font-semibold text-gray-900">SQL Query</h2>
-          <p class="text-[11px] text-gray-400 mt-0.5">{{ widgetTitle }}</p>
+          <p class="text-sm text-gray-400 mt-0.5">{{ widgetTitle }}</p>
         </div>
         <button
           class="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
@@ -24,12 +24,12 @@
         <div class="flex gap-5 flex-1 min-h-0">
           <!-- Left: SQL editor -->
           <div class="flex-1 flex flex-col gap-1.5 min-h-0">
-            <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide flex-shrink-0">Query</label>
+            <label class="text-sm font-medium text-gray-500 uppercase tracking-wide flex-shrink-0">Query</label>
             <div class="relative flex-1 min-h-0 rounded-lg border border-gray-200 overflow-hidden" :class="editMode ? 'bg-white' : 'bg-gray-50'">
               <!-- Highlighted code overlay -->
               <div
                 ref="highlightRef"
-                class="absolute inset-0 px-3 py-2.5 font-mono text-xs leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
+                class="absolute inset-0 px-3 py-2.5 font-mono text-sm leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
                 aria-hidden="true"
                 v-html="highlightedSql"
               />
@@ -37,7 +37,7 @@
               <textarea
                 v-model="localSql"
                 :readonly="!editMode"
-                class="relative w-full h-full px-3 py-2.5 font-mono text-xs leading-relaxed resize-none bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+                class="relative w-full h-full px-3 py-2.5 font-mono text-sm leading-relaxed resize-none bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
                 :class="editMode ? '' : 'cursor-default'"
                 :style="{ color: highlightedSql ? 'transparent' : undefined, caretColor: 'black' }"
                 spellcheck="false"
@@ -48,7 +48,7 @@
 
           <!-- Right: Column mapping -->
           <div class="w-96 flex-shrink-0 flex flex-col gap-1.5 min-h-0">
-            <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide flex-shrink-0">Column Mapping</label>
+            <label class="text-sm font-medium text-gray-500 uppercase tracking-wide flex-shrink-0">Column Mapping</label>
             <div class="flex-1 min-h-0 overflow-y-auto">
               <DashboardMappingDisplay :mapping="widget.dataSource!.mapping" />
             </div>
@@ -56,12 +56,12 @@
         </div>
 
         <!-- Preview error with Suggest Fix -->
-        <div v-if="previewError" class="rounded-lg bg-rose-50 border border-rose-100 px-3 py-2.5 text-xs text-rose-600">
+        <div v-if="previewError" class="rounded-lg bg-rose-50 border border-rose-100 px-3 py-2.5 text-sm text-rose-600">
           <div class="flex items-start justify-between gap-2">
             <span class="flex-1">{{ previewError }}</span>
             <button
               v-if="editMode && widget.dataSource"
-              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40"
+              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-sm font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40"
               :disabled="suggestLoading"
               @click="suggestFix()"
             >
@@ -72,14 +72,14 @@
         </div>
 
         <!-- AI suggestion explanation -->
-        <div v-if="suggestion" class="rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5 text-xs text-indigo-700">
+        <div v-if="suggestion" class="rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5 text-sm text-indigo-700">
           <Sparkles class="h-3.5 w-3.5 inline mr-1" />
           <span class="font-medium">AI Fix Applied:</span> {{ suggestion.explanation }}
         </div>
         <div v-else-if="previewRows.length > 0" class="space-y-1.5">
-          <div class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Preview ({{ previewRows.length }} rows)</div>
+          <div class="text-sm font-medium text-gray-500 uppercase tracking-wide">Preview ({{ previewRows.length }} rows)</div>
           <div class="overflow-x-auto rounded-lg border border-gray-100">
-            <table class="w-full text-xs">
+            <table class="w-full text-sm">
               <thead class="bg-gray-50">
                 <tr>
                   <th
@@ -102,7 +102,7 @@
       <!-- Footer -->
       <div class="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50">
         <button
-          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           :disabled="testLoading"
           @click="testQuery()"
         >
@@ -111,7 +111,7 @@
         </button>
         <button
           v-if="editMode"
-          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           :disabled="!sqlDirty"
           @click="save()"
         >
@@ -119,7 +119,7 @@
           Save
         </button>
         <button
-          class="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 transition-colors"
+          class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
           @click="emit('close')"
         >
           Close

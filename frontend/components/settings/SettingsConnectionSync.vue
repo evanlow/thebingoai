@@ -10,7 +10,7 @@
 <template>
   <div class="space-y-3">
     <div class="flex items-center justify-between">
-      <span class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
+      <span class="text-sm font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
         Parquet sync
       </span>
     </div>
@@ -26,7 +26,7 @@
       class="border border-gray-200 dark:border-neutral-700 rounded-lg p-3 space-y-2"
     >
       <div class="text-sm text-gray-900 dark:text-neutral-100 font-medium">{{ pipeline.name }}</div>
-      <dl class="text-xs text-gray-600 dark:text-neutral-400 space-y-1">
+      <dl class="text-sm text-gray-600 dark:text-neutral-400 space-y-1">
         <div class="flex justify-between"><dt>Tables</dt><dd class="font-mono">{{ tableCountLabel }}</dd></div>
         <div class="flex justify-between"><dt>Schedule</dt><dd class="font-mono">{{ (isNewModel ? activeSchedule?.cron : pipeline.cron) ?? 'manual only' }} <span class="text-gray-400">{{ isNewModel ? activeSchedule?.timezone : pipeline.timezone }}</span></dd></div>
         <div class="flex justify-between"><dt>Last run</dt><dd>{{ pipeline.last_run_at ? formatRelative(pipeline.last_run_at) : '—' }}<template v-if="pipeline.last_run_status"> · {{ pipeline.last_run_status }}</template><template v-if="!effectiveEnabled"> · disabled</template></dd></div>
@@ -58,10 +58,10 @@
         v-if="showLoadHistory"
         class="mt-2 border border-violet-300 dark:border-violet-700 rounded-lg p-3 space-y-2 bg-violet-50/40 dark:bg-violet-900/10"
       >
-        <div class="text-xs font-medium text-gray-900 dark:text-neutral-100">
+        <div class="text-sm font-medium text-gray-900 dark:text-neutral-100">
           Load history from a specific date
         </div>
-        <p class="text-[11px] text-gray-500 dark:text-neutral-400">
+        <p class="text-sm text-gray-500 dark:text-neutral-400">
           Backfills rows with <code class="font-mono">{{ pipeline.incremental_key }} ≥ since</code>. Merge dedup keeps existing partitions intact.
         </p>
         <div class="flex items-center gap-2">
@@ -75,7 +75,7 @@
           </UiButton>
           <UiButton variant="outline" size="sm" @click="showLoadHistory = false">Cancel</UiButton>
         </div>
-        <div v-if="loadHistoryError" class="text-[11px] text-red-600">{{ loadHistoryError }}</div>
+        <div v-if="loadHistoryError" class="text-sm text-red-600">{{ loadHistoryError }}</div>
       </div>
     </div>
 
@@ -85,12 +85,12 @@
       class="border border-gray-200 dark:border-neutral-700 rounded-lg p-3 space-y-3"
       @submit.prevent="save"
     >
-      <p v-if="!pipeline" class="text-xs text-gray-500 dark:text-neutral-400">
+      <p v-if="!pipeline" class="text-sm text-gray-500 dark:text-neutral-400">
         Mirror source tables into Parquet on GCS. Dashboards query the snapshot via DuckDB instead of hitting the source DB live.
       </p>
 
       <div>
-        <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Pipeline name</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Pipeline name</label>
         <input
           v-model="form.name"
           type="text"
@@ -101,7 +101,7 @@
       </div>
 
       <div>
-        <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Tables to sync</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Tables to sync</label>
         <select
           v-model="form.tables"
           multiple
@@ -110,7 +110,7 @@
         >
           <option v-for="t in availableTables" :key="t" :value="t">{{ t }}</option>
         </select>
-        <p class="text-[11px] text-gray-400 mt-0.5">
+        <p class="text-sm text-gray-400 mt-0.5">
           Hold ⌘/Ctrl to select multiple.
           <template v-if="!availableTables.length">Refresh the connection schema first.</template>
         </p>
@@ -118,7 +118,7 @@
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Cron</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Cron</label>
           <input
             v-model="form.cron"
             type="text"
@@ -127,7 +127,7 @@
           />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Timezone</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Timezone</label>
           <input
             v-model="form.timezone"
             type="text"
@@ -141,7 +141,7 @@
            mode/cursor server-side from the selected tables, so hide these there. -->
       <div v-if="!isNewModel" class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Mode</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Mode</label>
           <select
             v-model="form.mode"
             class="w-full border border-gray-300 dark:border-neutral-600 rounded px-2 py-1.5 text-sm bg-white dark:bg-neutral-800"
@@ -151,7 +151,7 @@
           </select>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Cursor column</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Cursor column</label>
           <select
             v-model="form.incremental_key"
             :disabled="form.mode !== 'incremental'"
@@ -160,20 +160,20 @@
             <option value="">(none)</option>
             <option v-for="c in cursorCandidates" :key="c" :value="c">{{ c }}</option>
           </select>
-          <p v-if="form.mode === 'incremental' && !form.incremental_key" class="text-[11px] text-amber-600 mt-0.5">
+          <p v-if="form.mode === 'incremental' && !form.incremental_key" class="text-sm text-amber-600 mt-0.5">
             Incremental mode requires a cursor column.
           </p>
         </div>
       </div>
 
-      <div v-if="pkMissingForFirstTable" class="flex items-start gap-1.5 text-[11px] text-red-600 dark:text-red-400">
+      <div v-if="pkMissingForFirstTable" class="flex items-start gap-1.5 text-sm text-red-600 dark:text-red-400">
         <span class="inline-block h-2 w-2 mt-1 rounded-full bg-red-500" />
         <span>
           No PRIMARY KEY on <code class="font-mono">{{ form.tables[0] }}</code>. Merge dedup can't run — rerunning the pipeline may produce duplicates. Add a PK on the source or accept the risk.
         </span>
       </div>
 
-      <div v-if="submitError" class="text-xs text-red-600 dark:text-red-400">{{ submitError }}</div>
+      <div v-if="submitError" class="text-sm text-red-600 dark:text-red-400">{{ submitError }}</div>
 
       <div class="flex items-center justify-end gap-2 pt-1">
         <UiButton v-if="editing" variant="outline" size="sm" type="button" @click="cancelEdit">Cancel</UiButton>

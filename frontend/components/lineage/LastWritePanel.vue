@@ -31,17 +31,17 @@ watch(() => props.table, load)
 <template>
   <div class="rounded-lg border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 px-4 py-3 text-sm">
     <div class="flex items-center justify-between mb-1">
-      <div class="text-xs uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+      <div class="text-sm uppercase tracking-wide text-gray-500 dark:text-neutral-400">
         Last write
       </div>
-      <NuxtLink :to="`/lineage?table=${encodeURIComponent(table)}`" class="text-xs text-blue-600 hover:underline">
+      <NuxtLink :to="`/lineage?table=${encodeURIComponent(table)}`" class="text-sm text-blue-600 hover:underline">
         Lineage →
       </NuxtLink>
     </div>
 
-    <div v-if="loading" class="text-gray-500 dark:text-neutral-400 text-xs">Loading…</div>
-    <div v-else-if="error" class="text-red-600 text-xs">{{ error }}</div>
-    <div v-else-if="!data" class="text-gray-500 dark:text-neutral-400 text-xs">
+    <div v-if="loading" class="text-gray-500 dark:text-neutral-400 text-sm">Loading…</div>
+    <div v-else-if="error" class="text-red-600 text-sm">{{ error }}</div>
+    <div v-else-if="!data" class="text-gray-500 dark:text-neutral-400 text-sm">
       No write yet for <span class="font-mono">{{ table }}</span>
     </div>
     <div v-else class="space-y-1">
@@ -54,7 +54,7 @@ watch(() => props.table, load)
       <div>
         <span class="text-gray-500 dark:text-neutral-400">Status</span>
         <span
-          class="ml-1 inline-block px-2 py-0.5 rounded text-xs"
+          class="ml-1 inline-block px-2 py-0.5 rounded text-sm"
           :class="{
             'bg-green-100 text-green-800': data.status === 'success',
             'bg-red-100 text-red-800': data.status === 'failed',

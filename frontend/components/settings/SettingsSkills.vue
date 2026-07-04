@@ -9,7 +9,7 @@
 
     <!-- Scrolling body -->
     <div class="flex-1 overflow-y-auto px-7 py-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400 max-w-2xl mb-6">Skills are reusable tasks Bingo can perform. Create them by asking Bingo in chat, or accept suggestions where it spots a repeating pattern.</p>
+      <p class="text-base text-gray-500 dark:text-neutral-400 max-w-2xl mb-6">Skills are reusable tasks Bingo can perform. Create them by asking Bingo in chat, or accept suggestions where it spots a repeating pattern.</p>
 
     <!-- Suggestions Banner -->
     <div v-if="suggestions.length > 0" class="mb-6 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 p-4">
@@ -25,18 +25,18 @@
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-0.5">
               <p class="text-sm font-medium text-gray-900 dark:text-white truncate font-mono">{{ suggestion.suggested_name }}</p>
-              <span class="shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+              <span class="shrink-0 text-sm font-medium px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
                 {{ Math.round(suggestion.confidence * 100) }}% match
               </span>
             </div>
-            <p v-if="suggestion.pattern_summary" class="text-xs text-gray-500 dark:text-neutral-400 line-clamp-2">{{ suggestion.pattern_summary }}</p>
+            <p v-if="suggestion.pattern_summary" class="text-sm text-gray-500 dark:text-neutral-400 line-clamp-2">{{ suggestion.pattern_summary }}</p>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <button
               type="button"
               :disabled="respondingTo === suggestion.id"
               @click="previewSuggestion(suggestion)"
-              class="text-xs font-medium px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 transition-colors"
+              class="text-sm font-medium px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 transition-colors"
             >
               Preview
             </button>
@@ -44,7 +44,7 @@
               type="button"
               :disabled="respondingTo === suggestion.id"
               @click="respondToSuggestion(suggestion.id, 'dismiss')"
-              class="text-xs font-medium px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 transition-colors"
+              class="text-sm font-medium px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 transition-colors"
             >
               Dismiss
             </button>
@@ -52,7 +52,7 @@
               type="button"
               :disabled="respondingTo === suggestion.id"
               @click="respondToSuggestion(suggestion.id, 'accept')"
-              class="text-xs font-medium px-2.5 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              class="text-sm font-medium px-2.5 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
             >
               Create skill
             </button>
@@ -93,7 +93,7 @@
         </div>
 
         <!-- Description -->
-        <p class="text-xs text-gray-500 dark:text-neutral-400 line-clamp-3 mb-2">{{ skill.description }}</p>
+        <p class="text-sm text-gray-500 dark:text-neutral-400 line-clamp-3 mb-2">{{ skill.description }}</p>
 
         <!-- Badges -->
         <div class="flex flex-wrap gap-1 mb-auto">
@@ -157,7 +157,7 @@
           <UiBadge :variant="skillTypeBadgeVariant(previewingSuggestion.suggested_skill_type)" size="sm">
             {{ skillTypeLabel(previewingSuggestion.suggested_skill_type) }}
           </UiBadge>
-          <span class="text-xs text-amber-700 dark:text-amber-300">
+          <span class="text-sm text-amber-700 dark:text-amber-300">
             {{ Math.round(previewingSuggestion.confidence * 100) }}% confidence
           </span>
         </div>
@@ -165,7 +165,7 @@
           {{ previewingSuggestion.suggested_description }}
         </p>
         <div v-if="previewingSuggestion.pattern_summary">
-          <p class="text-xs font-medium text-gray-500 mb-1">Detected pattern</p>
+          <p class="text-sm font-medium text-gray-500 mb-1">Detected pattern</p>
           <p class="text-sm text-gray-700 dark:text-neutral-300 italic">{{ previewingSuggestion.pattern_summary }}</p>
         </div>
       </div>
@@ -199,7 +199,7 @@
           <UiBadge :variant="skillTypeBadgeVariant(skillDetail.skill_type)" size="sm">
             {{ skillTypeLabel(skillDetail.skill_type) }}
           </UiBadge>
-          <span v-if="skillDetail.version > 1" class="text-xs text-gray-400">v{{ skillDetail.version }}</span>
+          <span v-if="skillDetail.version > 1" class="text-sm text-gray-400">v{{ skillDetail.version }}</span>
         </div>
 
         <!-- Description -->
@@ -209,38 +209,38 @@
 
         <!-- Activation hint -->
         <div v-if="skillDetail.activation_hint">
-          <p class="text-xs font-medium text-gray-500 mb-1">Activation hint</p>
+          <p class="text-sm font-medium text-gray-500 mb-1">Activation hint</p>
           <p class="text-sm text-gray-700 italic">{{ skillDetail.activation_hint }}</p>
         </div>
 
         <!-- Instructions preview -->
         <div v-if="skillDetail.instructions">
-          <p class="text-xs font-medium text-gray-500 mb-1">Instructions</p>
-          <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{{ instructionsPreview(skillDetail.instructions) }}</div>
+          <p class="text-sm font-medium text-gray-500 mb-1">Instructions</p>
+          <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{{ instructionsPreview(skillDetail.instructions) }}</div>
         </div>
 
         <!-- Code preview -->
         <div v-if="skillDetail.has_code">
-          <p class="text-xs font-medium text-gray-500 mb-1">Code</p>
-          <div class="rounded-md bg-gray-900 p-3 text-xs text-green-400 font-mono max-h-32 overflow-y-auto">
+          <p class="text-sm font-medium text-gray-500 mb-1">Code</p>
+          <div class="rounded-md bg-gray-900 p-3 text-sm text-green-400 font-mono max-h-32 overflow-y-auto">
             <span class="text-gray-400">async def run(): ...</span>
           </div>
         </div>
 
         <!-- Prompt template preview -->
         <div v-if="skillDetail.prompt_template">
-          <p class="text-xs font-medium text-gray-500 mb-1">Prompt template</p>
-          <div class="rounded-md bg-blue-50 border border-blue-100 p-3 text-xs text-gray-700 max-h-32 overflow-y-auto">{{ skillDetail.prompt_template }}</div>
+          <p class="text-sm font-medium text-gray-500 mb-1">Prompt template</p>
+          <div class="rounded-md bg-blue-50 border border-blue-100 p-3 text-sm text-gray-700 max-h-32 overflow-y-auto">{{ skillDetail.prompt_template }}</div>
         </div>
 
         <!-- References -->
         <div v-if="skillDetail.references.length > 0">
-          <p class="text-xs font-medium text-gray-500 mb-1">References ({{ skillDetail.references.length }})</p>
+          <p class="text-sm font-medium text-gray-500 mb-1">References ({{ skillDetail.references.length }})</p>
           <div class="flex flex-col gap-1">
             <div
               v-for="ref in skillDetail.references"
               :key="ref.id"
-              class="flex items-center gap-2 text-xs text-gray-700 px-2 py-1.5 rounded bg-gray-50 border border-gray-100"
+              class="flex items-center gap-2 text-sm text-gray-700 px-2 py-1.5 rounded bg-gray-50 border border-gray-100"
             >
               <component :is="FileText" class="h-3.5 w-3.5 text-gray-400 shrink-0" />
               {{ ref.title }}
@@ -250,8 +250,8 @@
 
         <!-- Parameters schema -->
         <div v-if="skillDetail.parameters_schema">
-          <p class="text-xs font-medium text-gray-500 mb-1">Parameters</p>
-          <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700 font-mono">
+          <p class="text-sm font-medium text-gray-500 mb-1">Parameters</p>
+          <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700 font-mono">
             <div v-for="(type, name) in skillDetail.parameters_schema" :key="name" class="flex gap-2">
               <span class="text-blue-600">{{ name }}</span>
               <span class="text-gray-400">{{ type }}</span>

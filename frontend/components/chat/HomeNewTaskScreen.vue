@@ -174,7 +174,7 @@ const useSkill = (skill: SkillItem) => {
 .home-hero-heading {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 56px;
+  font-size: round(56px * var(--fs-mult), 1px);
   line-height: 1.05;
   letter-spacing: -0.02em;
   color: var(--ink-0);
@@ -188,7 +188,7 @@ const useSkill = (skill: SkillItem) => {
 }
 
 .home-hero-sub {
-  font-size: 16px;
+  font-size: round(16px * var(--fs-mult), 1px);
   color: var(--ink-1);
   line-height: 1.6;
   max-width: 560px;
@@ -215,7 +215,7 @@ const useSkill = (skill: SkillItem) => {
   align-self: center;
 }
 .home-section-count {
-  font-size: 11px;
+  font-size: round(11px * var(--fs-mult), 1px);
   color: var(--ink-2);
   flex-shrink: 0;
 }
@@ -247,7 +247,7 @@ const useSkill = (skill: SkillItem) => {
 }
 
 .home-skill-icon {
-  font-size: 22px;
+  font-size: round(22px * var(--fs-mult), 1px);
   color: var(--ember);
   font-family: var(--font-display);
   margin-bottom: 8px;
@@ -255,7 +255,7 @@ const useSkill = (skill: SkillItem) => {
 }
 
 .home-skill-title {
-  font-size: 13px;
+  font-size: round(13px * var(--fs-mult), 1px);
   font-weight: 500;
   line-height: 1.3;
   color: var(--ink-0);
@@ -268,7 +268,7 @@ const useSkill = (skill: SkillItem) => {
   align-items: center;
   gap: 6px;
   margin-top: 8px;
-  font-size: 10.5px;
+  font-size: round(10.5px * var(--fs-mult), 1px);
   color: var(--ink-2);
 }
 .home-skill-dot { color: var(--line-2); }
@@ -279,7 +279,7 @@ const useSkill = (skill: SkillItem) => {
   padding: 28px;
   text-align: center;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: round(13px * var(--fs-mult), 1px);
   line-height: 1.6;
   display: flex;
   flex-direction: column;
@@ -287,7 +287,7 @@ const useSkill = (skill: SkillItem) => {
 }
 .home-skills-empty-link {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: round(12px * var(--fs-mult), 1px);
   color: var(--ember);
   text-decoration: none;
 }
@@ -306,13 +306,13 @@ const useSkill = (skill: SkillItem) => {
   align-items: center;
   gap: 14px;
   padding: 10px 14px;
-  font-size: 12.5px;
+  font-size: round(12.5px * var(--fs-mult), 1px);
 }
 
 .home-sched-time {
   width: 96px;
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: round(11px * var(--fs-mult), 1px);
   flex-shrink: 0;
 }
 
@@ -326,7 +326,7 @@ const useSkill = (skill: SkillItem) => {
 }
 
 .home-sched-next {
-  font-size: 11px;
+  font-size: round(11px * var(--fs-mult), 1px);
   color: var(--ink-2);
   flex-shrink: 0;
 }

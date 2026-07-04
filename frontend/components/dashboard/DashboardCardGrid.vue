@@ -111,7 +111,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 }
 
 .dash-card-title {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink-0);
   line-height: 1.35;
@@ -127,7 +127,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 .dash-card-widgets {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink-2);
   background: var(--paper-1);
@@ -144,7 +144,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
   gap: 5px;
   color: var(--ink-2);
   overflow: hidden;
-  font-size: 12px;
+  font-size: 14px;
   font-family: var(--font-sans);
 }
 
@@ -167,7 +167,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
   overflow: hidden;
   text-overflow: ellipsis;
   font-style: italic;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* ── Meta row ── */
@@ -191,7 +191,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
 
 .dash-card-schedule {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 14px;
   color: var(--ink-1);
   white-space: nowrap;
   overflow: hidden;
@@ -200,13 +200,13 @@ function scheduleLabel(item: DashboardListItem): string | null {
 
 .dash-card-refreshed {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 14px;
   color: var(--ink-3);
   white-space: nowrap;
 }
 
 .dash-card-muted {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--ink-3);
 }
 
@@ -228,13 +228,13 @@ function scheduleLabel(item: DashboardListItem): string | null {
   border-radius: 50%;
   background: var(--ember-wash, color-mix(in srgb, var(--ember) 15%, transparent));
   color: var(--ember);
-  font-size: 9px;
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--font-sans);
 }
 
 .dash-card-owner-handle {
-  font-size: 11.5px;
+  font-size: 14px;
   color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
@@ -246,7 +246,7 @@ function scheduleLabel(item: DashboardListItem): string | null {
   grid-column: 1 / -1;
   padding: 32px 20px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-3);
 }
 </style>

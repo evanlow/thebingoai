@@ -12,4 +12,6 @@
 useKeyboardShortcuts()
 // Apply persisted paper theme (kraft / cool / ink) on first client load
 useAppTheme()
+// Apply persisted text size (sm / md / lg) on first client load
+useAppFontSize()
 </script>

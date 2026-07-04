@@ -11,10 +11,10 @@
       </button>
       <div class="min-w-0">
         <h2 class="text-sm font-semibold text-gray-900 dark:text-neutral-100">Edit Widget</h2>
-        <p class="text-[11px] text-gray-400 dark:text-neutral-500">{{ widgetTypeLabel }}</p>
+        <p class="text-sm text-gray-400 dark:text-neutral-500">{{ widgetTypeLabel }}</p>
       </div>
       <div class="ml-auto flex items-center gap-2">
-        <span v-if="!editMode" class="text-[11px] text-gray-400 dark:text-neutral-500">View only</span>
+        <span v-if="!editMode" class="text-sm text-gray-400 dark:text-neutral-500">View only</span>
       </div>
     </div>
 
@@ -144,9 +144,9 @@
         class="h-full overflow-y-auto px-5 py-3 space-y-3"
       >
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">SQL Data Source</h3>
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">SQL Data Source</h3>
           <button
-            class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             :disabled="testLoading || !props.widget.dataSource"
             @click="testQuery()"
           >
@@ -157,7 +157,7 @@
 
         <!-- Source picker (Phase 6: Org tables vs Live source connections) -->
         <div class="space-y-1">
-          <div class="flex gap-2 text-[11px]">
+          <div class="flex gap-2 text-sm">
             <button
               type="button"
               :disabled="!editMode"
@@ -195,14 +195,14 @@
                 {{ t.name }}{{ t.writer ? ` — ${t.writer}` : '' }}
               </option>
             </select>
-            <p v-if="orgTables.length === 0" class="text-[11px] text-gray-500 dark:text-neutral-400">
+            <p v-if="orgTables.length === 0" class="text-sm text-gray-500 dark:text-neutral-400">
               No DataPlane tables yet. Switch to <em>Live source connections</em> to query a database directly.
             </p>
           </div>
 
           <!-- Tab 2: Live source connections (legacy default) -->
           <div v-else class="mt-2 space-y-1">
-            <label class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Connection</label>
+            <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Connection</label>
             <select
               v-model="selectedConnectionId"
               :disabled="!editMode"
@@ -222,7 +222,7 @@
           <!-- Highlighted code overlay -->
           <div
             ref="sqlHighlightRef"
-            class="absolute inset-0 pl-3 pr-8 py-2 font-mono text-xs leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
+            class="absolute inset-0 pl-3 pr-8 py-2 font-mono text-sm leading-relaxed pointer-events-none overflow-auto whitespace-pre-wrap break-words sql-highlight"
             aria-hidden="true"
             v-html="highlightedSql"
           />
@@ -230,7 +230,7 @@
           <textarea
             v-model="localSql"
             :readonly="!editMode"
-            class="relative w-full h-48 px-3 py-2 pr-8 font-mono text-xs leading-relaxed resize-none bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="relative w-full h-48 px-3 py-2 pr-8 font-mono text-sm leading-relaxed resize-none bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :class="editMode ? '' : 'cursor-default'"
             :style="{ color: highlightedSql ? 'transparent' : undefined, caretColor: 'black' }"
             spellcheck="false"
@@ -251,12 +251,12 @@
         <DashboardMappingDisplay v-if="props.widget.dataSource" :mapping="props.widget.dataSource.mapping" />
 
         <!-- Preview error -->
-        <div v-if="previewError" class="rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/60 px-3 py-2 text-xs text-rose-600 dark:text-rose-300">
+        <div v-if="previewError" class="rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/60 px-3 py-2 text-sm text-rose-600 dark:text-rose-300">
           <div class="flex items-start justify-between gap-2">
             <span class="flex-1">{{ previewError }}</span>
             <button
               v-if="editMode && widget.dataSource"
-              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 disabled:opacity-40"
+              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-sm font-medium bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 disabled:opacity-40"
               :disabled="suggestLoading"
               @click="suggestFix()"
             >
@@ -267,16 +267,16 @@
         </div>
 
         <!-- AI suggestion explanation -->
-        <div v-if="suggestion" class="rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-300">
+        <div v-if="suggestion" class="rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 px-3 py-2 text-sm text-indigo-700 dark:text-indigo-300">
           <Sparkles class="h-3.5 w-3.5 inline mr-1" />
           <span class="font-medium">AI Fix Applied:</span> {{ suggestion.explanation }}
         </div>
 
         <!-- Preview table -->
         <div v-else-if="previewRows.length > 0" class="space-y-1">
-          <div class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Preview ({{ previewRows.length }} rows)</div>
+          <div class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Preview ({{ previewRows.length }} rows)</div>
           <div class="overflow-x-auto rounded-lg border border-gray-100 dark:border-neutral-800">
-            <table class="w-full text-xs">
+            <table class="w-full text-sm">
               <thead class="bg-gray-50 dark:bg-neutral-900">
                 <tr>
                   <th

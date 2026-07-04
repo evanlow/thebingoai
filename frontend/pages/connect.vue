@@ -22,7 +22,7 @@
         <template v-else>
           <!-- Section: Default Connection -->
           <div v-if="sampleConnection" class="mb-8">
-            <p class="text-[11px] tracking-widest font-medium text-neutral-400 dark:text-neutral-500 uppercase mb-3">
+            <p class="text-sm tracking-widest font-medium text-neutral-400 dark:text-neutral-500 uppercase mb-3">
               Default Connection
             </p>
             <div class="grid grid-cols-3 gap-3">
@@ -45,13 +45,13 @@
 
                 <!-- Icon -->
                 <div class="h-10 w-10 shrink-0" v-if="connectorIcons[sampleConnection.db_type]" v-html="connectorIcons[sampleConnection.db_type]" />
-                <div v-else class="h-7 w-7 rounded-md flex items-center justify-center text-[11px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-500">
+                <div v-else class="h-7 w-7 rounded-md flex items-center justify-center text-sm font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-500">
                   {{ sampleConnection.db_type.charAt(0).toUpperCase() }}
                 </div>
 
                 <div class="min-w-0">
-                  <p class="text-xs font-semibold text-neutral-800 dark:text-neutral-100 leading-tight truncate">{{ sampleConnection.name }}</p>
-                  <p class="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">
+                  <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 leading-tight truncate">{{ sampleConnection.name }}</p>
+                  <p class="text-sm text-neutral-400 dark:text-neutral-500 mt-0.5">
                     {{ connectorTypeMap[sampleConnection.db_type]?.display_name || sampleConnection.db_type }}
                     <template v-if="sampleConnection.table_count != null"> · {{ sampleConnection.table_count }} tables</template>
                   </p>
@@ -62,7 +62,7 @@
 
           <!-- Section: Add a new source -->
           <div>
-            <p class="text-[11px] tracking-widest font-medium text-neutral-400 dark:text-neutral-500 uppercase mb-3">
+            <p class="text-sm tracking-widest font-medium text-neutral-400 dark:text-neutral-500 uppercase mb-3">
               Add a new source
             </p>
             <div class="grid grid-cols-3 gap-3">
@@ -78,20 +78,20 @@
                 <!-- Recommended badge -->
                 <span
                   v-if="type.id === 'postgres'"
-                  class="absolute top-2 right-2 text-[9px] font-semibold tracking-widest uppercase text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950 px-1.5 py-0.5 rounded-full"
+                  class="absolute top-2 right-2 text-sm font-semibold tracking-widest uppercase text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950 px-1.5 py-0.5 rounded-full"
                 >
                   Popular
                 </span>
 
                 <!-- Icon or letter badge -->
                 <div class="h-10 w-10 shrink-0" v-if="connectorIcons[type.id]" v-html="connectorIcons[type.id]" />
-                <div v-else class="h-7 w-7 rounded-md flex items-center justify-center text-[11px] font-bold shrink-0" :class="badgeClasses(type.badge_variant)">
+                <div v-else class="h-7 w-7 rounded-md flex items-center justify-center text-sm font-bold shrink-0" :class="badgeClasses(type.badge_variant)">
                   {{ type.display_name.charAt(0).toUpperCase() }}
                 </div>
 
                 <div class="min-w-0">
-                  <p class="text-xs font-semibold text-neutral-800 dark:text-neutral-100 leading-tight truncate">{{ type.display_name }}</p>
-                  <p class="text-[11px] text-neutral-400 dark:text-neutral-500 mt-0.5">{{ type.description || type.card_meta_items?.[0] || '' }}</p>
+                  <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-100 leading-tight truncate">{{ type.display_name }}</p>
+                  <p class="text-sm text-neutral-400 dark:text-neutral-500 mt-0.5">{{ type.description || type.card_meta_items?.[0] || '' }}</p>
                 </div>
               </button>
             </div>
@@ -107,7 +107,7 @@
           <!-- Network callout -->
           <div class="mt-6 flex items-center gap-3 text-sm text-neutral-500 dark:text-neutral-400">
             <div class="h-4 w-4 rounded-full border border-neutral-300 dark:border-neutral-600 flex items-center justify-center shrink-0">
-              <span class="text-[9px]">?</span>
+              <span class="text-sm">?</span>
             </div>
             <span>
               <span class="font-medium text-neutral-600 dark:text-neutral-300">Network not open?</span>

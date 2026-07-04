@@ -50,7 +50,7 @@
       </div>
     </div>
 
-    <p class="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+    <p class="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
       Press Enter to send, Shift+Enter for new line
     </p>
   </div>

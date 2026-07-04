@@ -6,8 +6,8 @@
       class="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
     >
       <div class="flex items-center gap-1.5">
-        <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Dashboards</span>
-        <span v-if="dashboards.length" class="text-[9px] bg-gray-100 dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 px-1.5 py-px rounded-full">
+        <span class="text-sm uppercase tracking-wider text-gray-400 font-semibold">Dashboards</span>
+        <span v-if="dashboards.length" class="text-sm bg-gray-100 dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 px-1.5 py-px rounded-full">
           {{ dashboards.length }}
         </span>
       </div>
@@ -27,7 +27,7 @@
         <svg class="w-5 h-5 mx-auto text-gray-200 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
         </svg>
-        <p class="text-[11px] text-gray-300">No dashboards created yet</p>
+        <p class="text-sm text-gray-300">No dashboards created yet</p>
       </div>
 
       <!-- Dashboard list -->
@@ -42,14 +42,14 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             <div class="min-w-0">
-              <p class="text-[11px] font-medium text-gray-600 dark:text-neutral-300 truncate">{{ db.name }}</p>
-              <p class="text-[10px] text-gray-300">{{ db.widgetCount }} widget{{ db.widgetCount !== 1 ? 's' : '' }}</p>
+              <p class="text-sm font-medium text-gray-600 dark:text-neutral-300 truncate">{{ db.name }}</p>
+              <p class="text-sm text-gray-300">{{ db.widgetCount }} widget{{ db.widgetCount !== 1 ? 's' : '' }}</p>
             </div>
           </div>
           <button
             v-if="db.dashboardId"
             @click="navigateTo(db.dashboardId ? `/dashboard?id=${db.dashboardId}` : '/dashboard')"
-            class="text-[10px] text-indigo-500 font-medium hover:text-indigo-600 shrink-0 ml-2"
+            class="text-sm text-indigo-500 font-medium hover:text-indigo-600 shrink-0 ml-2"
           >
             View &rarr;
           </button>

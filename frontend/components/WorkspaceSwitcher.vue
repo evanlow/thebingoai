@@ -5,7 +5,7 @@
       class="flex items-center gap-2 rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-sm text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
     >
       <span class="truncate max-w-[10rem]">{{ activeName }}</span>
-      <span v-if="store.isViewer" class="text-[10px] rounded bg-gray-100 dark:bg-neutral-700 px-1">viewer</span>
+      <span v-if="store.isViewer" class="text-sm rounded bg-gray-100 dark:bg-neutral-700 px-1">viewer</span>
       <ChevronDown class="h-3.5 w-3.5" />
     </button>
     <div v-if="open" class="absolute z-50 mt-1 w-64 rounded-lg border border-[var(--line)] bg-white dark:bg-neutral-800 shadow-lg p-1">
@@ -17,7 +17,7 @@
         :class="w.org_id === store.activeOrgId ? 'bg-gray-50 dark:bg-neutral-700' : ''"
       >
         <span class="truncate">{{ w.org_name || w.org_id.slice(0, 8) }}</span>
-        <span class="text-[10px] text-gray-400">{{ w.is_home ? 'home' : w.role }}</span>
+        <span class="text-sm text-gray-400">{{ w.is_home ? 'home' : w.role }}</span>
       </button>
     </div>
   </div>

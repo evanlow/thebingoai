@@ -15,7 +15,7 @@
       </div>
     </div>
     <div class="flex-1 overflow-y-auto px-7 py-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400 max-w-2xl mb-6">
+      <p class="text-base text-gray-500 dark:text-neutral-400 max-w-2xl mb-6">
         Define SQL models that join and aggregate your pipeline data.
       </p>
 
@@ -53,12 +53,12 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-[var(--line)] bg-[var(--paper-1)]">
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Transform</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Type</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">SQL</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Schedule</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Status</th>
-            <th class="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Last run</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Transform</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Type</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">SQL</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Schedule</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Status</th>
+            <th class="text-left px-4 py-2.5 text-sm font-medium uppercase tracking-wide text-[var(--ink-3)]">Last run</th>
             <th class="px-4 py-2.5"></th>
           </tr>
         </thead>
@@ -81,18 +81,18 @@
               </UiBadge>
             </td>
             <td class="px-4 py-3 max-w-xs">
-              <span class="font-mono text-xs text-[var(--ink-2)] truncate block">{{ sqlPreview(transform.sql) }}</span>
+              <span class="font-mono text-sm text-[var(--ink-2)] truncate block">{{ sqlPreview(transform.sql) }}</span>
             </td>
             <td class="px-4 py-3">
-              <span v-if="transform.cron" class="font-mono text-xs text-[var(--ink-2)]">{{ transform.cron }}</span>
-              <span v-else class="text-xs italic text-[var(--ink-3)]">Manual only</span>
+              <span v-if="transform.cron" class="font-mono text-sm text-[var(--ink-2)]">{{ transform.cron }}</span>
+              <span v-else class="text-sm italic text-[var(--ink-3)]">Manual only</span>
             </td>
             <td class="px-4 py-3">
               <UiBadge :variant="statusVariant(transform.last_run_status)" size="sm" :dot="true">
                 {{ statusLabel(transform.last_run_status) }}
               </UiBadge>
             </td>
-            <td class="px-4 py-3 text-xs text-[var(--ink-3)] whitespace-nowrap">
+            <td class="px-4 py-3 text-sm text-[var(--ink-3)] whitespace-nowrap">
               {{ transform.last_run_at ? formatRelative(transform.last_run_at) : '—' }}
             </td>
             <td class="px-4 py-3 text-right">

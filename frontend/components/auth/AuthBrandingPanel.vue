@@ -9,7 +9,7 @@
 
       <!-- Marketing headline -->
       <div class="flex flex-col justify-center pl-8">
-        <p class="text-[13px] tracking-widest font-medium text-neutral-500 dark:text-neutral-500 uppercase mb-2.5">
+        <p class="text-sm tracking-widest font-medium text-neutral-500 dark:text-neutral-500 uppercase mb-2.5">
           {{ stepContext }}
         </p>
         <h1 class="font-display text-6xl font-bold leading-[1.1] text-neutral-900 dark:text-neutral-50 mb-3">
@@ -23,7 +23,7 @@
 
         <!-- Setup progress stepper -->
         <div class="mt-5 border-t border-dashed border-neutral-300 dark:border-neutral-700 pt-6">
-          <p class="text-[13px] tracking-widest font-medium text-neutral-500 dark:text-neutral-500 uppercase mb-4">
+          <p class="text-sm tracking-widest font-medium text-neutral-500 dark:text-neutral-500 uppercase mb-4">
             Setup · {{ step }}/3
           </p>
           <div class="flex gap-1.5 mb-3">
@@ -34,7 +34,7 @@
               :class="i <= step ? 'bg-purple-600' : 'bg-neutral-200 dark:bg-neutral-700'"
             ></div>
           </div>
-          <div class="flex text-[13px] text-neutral-400 dark:text-neutral-600">
+          <div class="flex text-sm text-neutral-400 dark:text-neutral-600">
             <span class="flex-1 text-left">Connect your Account</span>
             <span class="flex-1 text-center">Connect your First Plugin</span>
             <span class="flex-1 text-right">Start your First task</span>
@@ -44,8 +44,8 @@
 
       <!-- Compliance footer -->
       <div>
-        <p class="text-[11px] text-neutral-400 dark:text-neutral-600 tracking-wide">SOC 2 Type II · GDPR · HIPAA</p>
-        <p class="text-[11px] text-neutral-400 dark:text-neutral-600 mt-1">Your queries never leave your warehouse.</p>
+        <p class="text-sm text-neutral-400 dark:text-neutral-600 tracking-wide">SOC 2 Type II · GDPR · HIPAA</p>
+        <p class="text-sm text-neutral-400 dark:text-neutral-600 mt-1">Your queries never leave your warehouse.</p>
       </div>
     </div>
   </div>

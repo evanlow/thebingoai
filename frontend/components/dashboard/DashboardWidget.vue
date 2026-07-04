@@ -8,8 +8,8 @@
     >
       <div class="widget-drag-handle flex cursor-grab items-center gap-1.5 active:cursor-grabbing">
         <GripVertical class="h-3.5 w-3.5 text-[var(--ink-3)]" />
-        <span v-if="widget.title" class="text-[11px] font-medium text-[var(--ink-2)] truncate max-w-[140px]">{{ widget.title }}</span>
-        <span v-else class="text-[11px] text-[var(--ink-3)]">{{ widgetDisplayName }}</span>
+        <span v-if="widget.title" class="text-sm font-medium text-[var(--ink-2)] truncate max-w-[140px]">{{ widget.title }}</span>
+        <span v-else class="text-sm text-[var(--ink-3)]">{{ widgetDisplayName }}</span>
       </div>
       <div class="flex items-center gap-1">
         <button
@@ -146,16 +146,16 @@
       v-if="error"
       class="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 bg-rose-50 px-3 py-1.5 border-t border-rose-100"
     >
-      <span class="flex-1 text-[11px] text-rose-600 truncate">{{ error }}</span>
+      <span class="flex-1 text-sm text-rose-600 truncate">{{ error }}</span>
       <button
-        class="flex-shrink-0 text-[11px] font-medium text-rose-600 hover:text-rose-800"
+        class="flex-shrink-0 text-sm font-medium text-rose-600 hover:text-rose-800"
         @click="refresh()"
       >
         Retry
       </button>
       <button
         v-if="hasDataSource"
-        class="flex-shrink-0 text-[11px] font-medium text-[var(--ember)] hover:text-[var(--d-moss)]"
+        class="flex-shrink-0 text-sm font-medium text-[var(--ember)] hover:text-[var(--d-moss)]"
         @click="emit('open-sql-editor', widget.id, error ?? undefined)"
       >
         Fix
@@ -276,7 +276,7 @@ function formatRelativeTime(isoString: string): string {
 
 .provenance {
   font-family: var(--font-sans);
-  font-size: 10px;
+  font-size: 14px;
   color: var(--ink-3);
   display: flex;
   align-items: center;
@@ -302,7 +302,7 @@ function formatRelativeTime(isoString: string): string {
 
 .age {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 14px;
   color: var(--ink-3);
   opacity: 0.55;
   flex-shrink: 0;
@@ -316,7 +316,7 @@ function formatRelativeTime(isoString: string): string {
   flex-shrink: 0;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 14px;
   letter-spacing: 0.02em;
   padding: 1px 6px;
   border-radius: 999px;

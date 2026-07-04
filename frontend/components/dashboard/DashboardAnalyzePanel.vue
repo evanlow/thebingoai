@@ -43,7 +43,7 @@
             <Sparkles v-else class="h-4 w-4" />
             {{ busy ? 'Creating briefing…' : 'Brief this dashboard' }}
           </button>
-          <p v-if="error" class="text-xs text-red-500">{{ error }}</p>
+          <p v-if="error" class="text-sm text-red-500">{{ error }}</p>
         </div>
       </template>
     </div>

@@ -35,7 +35,7 @@ const agentDotClass = computed(() => {
 <template>
   <div>
     <!-- Node row -->
-    <div :class="node.type === 'reasoning' ? 'items-start' : 'items-center'" class="flex text-xs py-0.5 min-h-[18px]">
+    <div :class="node.type === 'reasoning' ? 'items-start' : 'items-center'" class="flex text-sm py-0.5 min-h-[18px]">
       <!-- Ancestor continuation lines -->
       <span
         v-for="(hasLine, i) in ancestors"
@@ -62,7 +62,7 @@ const agentDotClass = computed(() => {
         <!-- Result: green checkmark -->
         <span
           v-else-if="node.type === 'result'"
-          class="text-green-500 shrink-0 text-[10px] leading-none"
+          class="text-green-500 shrink-0 text-sm leading-none"
         >✓</span>
         <!-- Reasoning: small dot (pulsing amber when streaming, gray when done) -->
         <span
@@ -71,7 +71,7 @@ const agentDotClass = computed(() => {
           class="w-1.5 h-1.5 rounded-full shrink-0"
         />
         <!-- Completed action: gray arrow -->
-        <span v-else class="text-gray-400 shrink-0 text-[10px] leading-none">›</span>
+        <span v-else class="text-gray-400 shrink-0 text-sm leading-none">›</span>
 
         <!-- Label -->
         <span
@@ -85,20 +85,20 @@ const agentDotClass = computed(() => {
         <!-- Count badge for grouped actions -->
         <span
           v-if="node.count && node.count > 1"
-          class="text-[9px] bg-gray-200/70 text-gray-500 px-1 py-px rounded-full ml-1 shrink-0"
+          class="text-sm bg-gray-200/70 text-gray-500 px-1 py-px rounded-full ml-1 shrink-0"
         >&times;{{ node.count }}</span>
 
         <!-- Duration (inline, after label) -->
         <span
           v-if="node.duration"
-          class="text-gray-400 font-mono text-[10px] shrink-0"
+          class="text-gray-400 font-mono text-sm shrink-0"
         >{{ node.duration }}</span>
       </div>
 
     </div>
 
     <!-- Detail line (formatted args) shown below the node row -->
-    <div v-if="node.detail" class="flex text-[10px] text-gray-400 py-0.5 min-w-0">
+    <div v-if="node.detail" class="flex text-sm text-gray-400 py-0.5 min-w-0">
       <span
         v-for="(hasLine, i) in ancestors"
         :key="'d'+i"
@@ -136,13 +136,13 @@ const agentDotClass = computed(() => {
   animation: blink 1s step-end infinite;
 }
 .prose-detail .prose-chat {
-  @apply text-[10px] text-gray-500 leading-tight;
+  @apply text-sm text-gray-500 leading-tight;
 }
 .prose-detail .prose-chat h1,
 .prose-detail .prose-chat h2,
 .prose-detail .prose-chat h3,
 .prose-detail .prose-chat h4 {
-  @apply text-[10px] font-medium mt-1 mb-0.5 text-gray-500;
+  @apply text-sm font-medium mt-1 mb-0.5 text-gray-500;
 }
 .prose-detail .prose-chat p {
   @apply mb-1 leading-tight;
@@ -155,10 +155,10 @@ const agentDotClass = computed(() => {
   @apply mb-0;
 }
 .prose-detail .prose-chat code {
-  @apply text-[9px] px-1 py-0;
+  @apply text-sm px-1 py-0;
 }
 .prose-detail .prose-chat pre {
-  @apply p-2 mb-1 text-[9px];
+  @apply p-2 mb-1 text-sm;
 }
 .prose-detail .prose-chat blockquote {
   @apply my-1 pl-2;

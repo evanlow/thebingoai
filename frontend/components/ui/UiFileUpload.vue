@@ -27,7 +27,7 @@
           <span class="text-gray-600 dark:text-neutral-400">Click to upload</span>
           or drag and drop
         </p>
-        <p v-if="hint" class="mt-1 text-xs text-gray-500 dark:text-neutral-500">
+        <p v-if="hint" class="mt-1 text-sm text-gray-500 dark:text-neutral-500">
           {{ hint }}
         </p>
       </div>

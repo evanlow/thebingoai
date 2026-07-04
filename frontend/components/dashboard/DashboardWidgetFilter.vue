@@ -5,7 +5,7 @@
       :key="control.key"
       class="flex items-center gap-2"
     >
-      <label class="text-xs font-medium text-gray-500 dark:text-neutral-400 whitespace-nowrap">{{ control.label }}</label>
+      <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 whitespace-nowrap">{{ control.label }}</label>
 
       <!-- Dropdown — always checkbox multi-select (Data-Studio style) -->
       <div
@@ -15,7 +15,7 @@
       >
         <button
           :ref="el => { if (el) multiButtonRefs.set(control.key, el as HTMLElement) }"
-          class="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 hover:border-gray-300 focus:outline-none min-w-[100px] dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:hover:border-neutral-500"
+          class="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 hover:border-gray-300 focus:outline-none min-w-[100px] dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:hover:border-neutral-500"
           @click="toggleMultiDropdown(control.key)"
         >
           <span v-if="getSelectedMulti(control.key).length === 0" class="text-gray-400 dark:text-neutral-500">All</span>
@@ -32,7 +32,7 @@
             <!-- Select all / Clear master row -->
             <label
               v-if="getOptions(control).length > 0"
-              class="sticky top-0 flex items-center gap-2 border-b border-gray-100 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 cursor-pointer dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+              class="sticky top-0 flex items-center gap-2 border-b border-gray-100 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
             >
               <input
                 type="checkbox"
@@ -46,7 +46,7 @@
             <label
               v-for="opt in getOptions(control)"
               :key="opt"
-              class="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer dark:text-neutral-200 dark:hover:bg-neutral-700"
+              class="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer dark:text-neutral-200 dark:hover:bg-neutral-700"
             >
               <input
                 type="checkbox"
@@ -56,10 +56,10 @@
               />
               {{ opt }}
             </label>
-            <div v-if="loadingOptions.has(control.key)" class="px-3 py-2 text-xs text-gray-400 dark:text-neutral-500">
+            <div v-if="loadingOptions.has(control.key)" class="px-3 py-2 text-sm text-gray-400 dark:text-neutral-500">
               Loading...
             </div>
-            <div v-else-if="getOptions(control).length === 0" class="px-3 py-2 text-xs text-gray-400 dark:text-neutral-500">
+            <div v-else-if="getOptions(control).length === 0" class="px-3 py-2 text-sm text-gray-400 dark:text-neutral-500">
               No options available
             </div>
           </div>
@@ -71,7 +71,7 @@
         v-else-if="control.type === 'search'"
         type="text"
         placeholder="Search..."
-        class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-gray-400 focus:outline-none w-36 dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:placeholder-neutral-500 dark:focus:border-neutral-500"
+        class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-gray-400 focus:outline-none w-36 dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:placeholder-neutral-500 dark:focus:border-neutral-500"
         :value="store.filterValues[control.key] ?? ''"
         @input="onSearchInput(control.key, ($event.target as HTMLInputElement).value)"
       />
@@ -83,20 +83,20 @@
       >
         <input
           type="date"
-          class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-gray-400 focus:outline-none dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:focus:border-neutral-500"
+          class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-gray-400 focus:outline-none dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:focus:border-neutral-500"
           :value="(store.filterValues[control.key] as any)?.from ?? ''"
           @change="onDateChange(control.key, 'from', ($event.target as HTMLInputElement).value)"
         />
-        <span class="text-xs text-gray-400 dark:text-neutral-500">to</span>
+        <span class="text-sm text-gray-400 dark:text-neutral-500">to</span>
         <input
           type="date"
-          class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-gray-400 focus:outline-none dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:focus:border-neutral-500"
+          class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-gray-400 focus:outline-none dark:bg-neutral-700 dark:border-neutral-600 dark:text-neutral-200 dark:focus:border-neutral-500"
           :value="(store.filterValues[control.key] as any)?.to ?? ''"
           @change="onDateChange(control.key, 'to', ($event.target as HTMLInputElement).value)"
         />
       </div>
     </div>
-    <div v-if="config.controls.length === 0" class="flex items-center gap-2 text-xs text-gray-400 dark:text-neutral-500">
+    <div v-if="config.controls.length === 0" class="flex items-center gap-2 text-sm text-gray-400 dark:text-neutral-500">
       <SlidersHorizontal class="h-3.5 w-3.5" />
       <span>No filters configured</span>
     </div>

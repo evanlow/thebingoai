@@ -19,7 +19,7 @@
             :key="`month-${label.x}`"
             :x="label.x + LEFT_OFFSET"
             :y="10"
-            font-size="9"
+            font-size="11"
             fill="#57606a"
           >{{ label.text }}</text>
         </g>
@@ -31,7 +31,7 @@
             :key="`day-${day.row}`"
             :x="0"
             :y="TOP_OFFSET + day.row * (cellSize + CELL_GAP) + cellSize - 1"
-            font-size="9"
+            font-size="11"
             fill="#57606a"
           >{{ day.text }}</text>
         </g>
@@ -55,7 +55,7 @@
 
         <!-- Legend -->
         <g :transform="`translate(${LEFT_OFFSET + svgWidth - LEFT_OFFSET - legendWidth}, ${svgHeight - LEGEND_SIZE - 1})`">
-          <text x="0" y="9" font-size="9" fill="#57606a">Less</text>
+          <text x="0" y="9" font-size="11" fill="#57606a">Less</text>
           <rect
             v-for="(color, i) in COLORS"
             :key="`legend-${i}`"
@@ -67,7 +67,7 @@
             ry="2"
             :fill="color"
           />
-          <text :x="28 + COLORS.length * (LEGEND_SIZE + 2) + 3" y="9" font-size="9" fill="#57606a">More</text>
+          <text :x="28 + COLORS.length * (LEGEND_SIZE + 2) + 3" y="9" font-size="11" fill="#57606a">More</text>
         </g>
       </svg>
     </div>

@@ -1,21 +1,21 @@
 <template>
   <div>
-    <div v-if="!loaded && loading" class="text-[13px] text-[var(--ink-2)] py-4 text-center">
+    <div v-if="!loaded && loading" class="text-sm text-[var(--ink-2)] py-4 text-center">
       Loading briefings…
     </div>
 
-    <div v-else-if="error && !briefings.length" class="text-[13px] text-red-500 py-4 text-center">
+    <div v-else-if="error && !briefings.length" class="text-sm text-red-500 py-4 text-center">
       {{ error }}
     </div>
 
-    <div v-else-if="!briefings.length" class="text-[13px] text-[var(--ink-2)] py-8 text-center">
+    <div v-else-if="!briefings.length" class="text-sm text-[var(--ink-2)] py-8 text-center">
       <p class="mb-1">No briefings yet</p>
-      <p class="text-[11px]">Open a dashboard and click "Brief me" to get started.</p>
+      <p class="text-sm">Open a dashboard and click "Brief me" to get started.</p>
     </div>
 
     <template v-else>
       <template v-for="group in groups" :key="group.label || '__recent__'">
-        <p v-if="group.label" class="px-0.5 pt-2 pb-1 text-[10px] font-semibold tracking-widest uppercase text-[var(--ink-2)]">
+        <p v-if="group.label" class="px-0.5 pt-2 pb-1 text-sm font-semibold tracking-widest uppercase text-[var(--ink-2)]">
           {{ group.label }}
         </p>
 
@@ -36,16 +36,16 @@
                 }"
               />
               <div class="flex-1 min-w-0">
-                <p class="text-[13px] font-semibold text-[var(--ink-0)] leading-snug">
+                <p class="text-sm font-semibold text-[var(--ink-0)] leading-snug">
                   {{ b.payload?.headline || 'Generating briefing…' }}
                 </p>
-                <p v-if="b.payload?.deck" class="mt-1 text-[12px] text-[var(--ink-2)] leading-relaxed line-clamp-2">
+                <p v-if="b.payload?.deck" class="mt-1 text-sm text-[var(--ink-2)] leading-relaxed line-clamp-2">
                   {{ b.payload.deck }}
                 </p>
-                <p v-else-if="b.status === 'generating'" class="mt-1 text-[12px] text-amber-500">
+                <p v-else-if="b.status === 'generating'" class="mt-1 text-sm text-amber-500">
                   Generating…
                 </p>
-                <p class="mt-2 text-[11px] text-[var(--ink-2)]">
+                <p class="mt-2 text-sm text-[var(--ink-2)]">
                   {{ formatRelative(b.created_at) }}
                   <template v-if="b.trigger === 'scheduled'">
                     <span class="mx-1">·</span>auto
@@ -65,10 +65,10 @@
               class="flex-shrink-0 w-3.5 h-3.5"
               :class="b.status === 'ready' ? 'text-violet-400' : 'text-[var(--ink-2)]'"
             />
-            <span class="min-w-0 truncate text-[12.5px] text-[var(--ink-1)]">
+            <span class="min-w-0 truncate text-sm text-[var(--ink-1)]">
               {{ b.payload?.headline || 'Untitled briefing' }}
             </span>
-            <span class="absolute right-1.5 text-[11px] text-[var(--ink-2)] tabular-nums">
+            <span class="absolute right-1.5 text-sm text-[var(--ink-2)] tabular-nums">
               {{ formatShort(b.created_at) }}
             </span>
           </button>

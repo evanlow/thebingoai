@@ -42,7 +42,7 @@
       <!-- Sources -->
       <div v-if="message.role === 'assistant' && message.sources && message.sources.length > 0" class="mt-2">
         <details class="group/sources">
-          <summary class="cursor-pointer text-xs text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100">
+          <summary class="cursor-pointer text-sm text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100">
             <component :is="FileText" class="mr-1 inline h-3 w-3" />
             {{ message.sources.length }} source{{ message.sources.length > 1 ? 's' : '' }}
           </summary>
@@ -50,7 +50,7 @@
             <div
               v-for="(source, idx) in message.sources"
               :key="idx"
-              class="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+              class="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             >
               <span class="font-light text-neutral-900 dark:text-neutral-100">
                 {{ source.source }}
@@ -64,7 +64,7 @@
       </div>
 
       <!-- Timestamp -->
-      <p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+      <p class="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
         {{ formatDate(message.timestamp, 'HH:mm') }}
       </p>
     </div>

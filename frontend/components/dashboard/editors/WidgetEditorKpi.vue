@@ -3,10 +3,10 @@
 
     <!-- Display section -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Display</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Display</h3>
 
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-600 dark:text-neutral-400">Label</label>
+        <label class="text-sm text-gray-600 dark:text-neutral-400">Label</label>
         <input
           v-model="localLabel"
           type="text"
@@ -20,21 +20,21 @@
       <!-- Primary field: Dimension / Metric role + column + (metric only) aggregation -->
       <template v-if="dataSource">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Primary field</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Primary field</label>
           <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
             <button
               v-for="r in (['dimension', 'metric'] as const)"
               :key="r"
               type="button"
               :disabled="!editMode"
-              class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
               :class="primaryRole === r
                 ? 'bg-indigo-600 text-white'
                 : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
               @click="editMode && setPrimaryRole(r)"
             >{{ r === 'dimension' ? 'Dimension' : 'Metric' }}</button>
           </div>
-          <p class="text-[10px] text-gray-400 dark:text-neutral-500 mt-1">
+          <p class="text-sm text-gray-400 dark:text-neutral-500 mt-1">
             {{ primaryRole === 'dimension'
               ? 'Shows the raw value from a single row (no aggregation).'
               : 'Aggregates the selected column across all rows.' }}
@@ -42,7 +42,7 @@
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Field</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Field</label>
           <select
             :value="kpiMapping?.valueColumn || ''"
             :disabled="!editMode"
@@ -55,7 +55,7 @@
         </div>
 
         <div v-if="primaryRole === 'metric'" class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Aggregation</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Aggregation</label>
           <select
             :value="kpiMapping?.aggregation ?? 'sum'"
             :disabled="!editMode"
@@ -72,7 +72,7 @@
         </div>
 
         <div v-else class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Row</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Row</label>
           <select
             :value="kpiMapping?.aggregation === 'last' ? 'last' : 'first'"
             :disabled="!editMode"
@@ -87,7 +87,7 @@
 
       <!-- Value: manual input when no data source -->
       <div v-else class="space-y-1.5">
-        <label class="text-xs text-gray-600 dark:text-neutral-400">Value</label>
+        <label class="text-sm text-gray-600 dark:text-neutral-400">Value</label>
         <input
           v-model="localValue"
           type="text"
@@ -100,7 +100,7 @@
 
       <div class="flex gap-2">
         <div class="flex-1 space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Prefix</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Prefix</label>
           <input
             v-model="localPrefix"
             type="text"
@@ -111,7 +111,7 @@
           />
         </div>
         <div class="flex-1 space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Suffix</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Suffix</label>
           <input
             v-model="localSuffix"
             type="text"
@@ -134,11 +134,11 @@
 
     <!-- Comparison section (replaces Trend) -->
     <div class="space-y-3">
-      <h3 class="text-[11px] font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison</h3>
 
       <!-- Type selector -->
       <div class="space-y-1.5">
-        <label class="text-xs text-gray-600 dark:text-neutral-400">Type</label>
+        <label class="text-sm text-gray-600 dark:text-neutral-400">Type</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
           <button
             v-for="opt in availableComparisonTypes"
@@ -146,7 +146,7 @@
             type="button"
             :disabled="!editMode || opt.disabled"
             :title="opt.disabled ? opt.reason : undefined"
-            class="flex-1 py-1.5 text-[11px] font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:cursor-not-allowed"
+            class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:cursor-not-allowed"
             :class="[
               localComparisonType === opt.value && !opt.disabled
                 ? 'bg-indigo-600 text-white'
@@ -157,7 +157,7 @@
             @click="editMode && !opt.disabled && setComparisonType(opt.value)"
           >{{ opt.label }}</button>
         </div>
-        <p v-if="availableComparisonTypes.some(o => o.disabled)" class="text-[10px] text-gray-400 dark:text-neutral-500">
+        <p v-if="availableComparisonTypes.some(o => o.disabled)" class="text-sm text-gray-400 dark:text-neutral-500">
           Greyed options need a different query shape. Hover for details.
         </p>
       </div>
@@ -166,13 +166,13 @@
       <template v-if="localComparisonType === 'period'">
         <!-- Auto-calculated info -->
         <div v-if="isAutoTrend" class="rounded-lg bg-gray-100 dark:bg-neutral-700 px-3 py-2">
-          <p class="text-[11px] text-gray-500 dark:text-neutral-400">
+          <p class="text-sm text-gray-500 dark:text-neutral-400">
             Comparison is auto-calculated from your query. Select a period and date column to control it.
           </p>
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Period</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Period</label>
           <select
             v-model="localTrendPeriod"
             :disabled="!editMode"
@@ -200,7 +200,7 @@
 
         <!-- Date column picker -->
         <div v-if="needsDateColumn && sourceColumns?.length" class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Date column</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Date column</label>
           <select
             :value="kpiMapping?.trendDateColumn || ''"
             :disabled="!editMode"
@@ -215,7 +215,7 @@
         <!-- Manual direction/value for static (no data source) scorecards -->
         <template v-if="!dataSource">
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Direction</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Direction</label>
             <select
               v-model="localTrendDirection"
               :disabled="!editMode"
@@ -227,7 +227,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Change (%)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Change (%)</label>
             <input
               v-model.number="localTrendValue"
               type="number"
@@ -243,7 +243,7 @@
       <!-- Value options -->
       <template v-if="localComparisonType === 'value'">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Target value</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Target value</label>
           <input
             v-model.number="localTargetValue"
             type="number"
@@ -258,7 +258,7 @@
       <!-- Metric options -->
       <template v-if="localComparisonType === 'metric'">
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Target metric column</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Target metric column</label>
           <select
             v-model="localTargetMetric"
             :disabled="!editMode"
@@ -275,7 +275,7 @@
         <div class="flex items-center justify-between py-1">
           <div>
             <span class="text-sm text-gray-700 dark:text-neutral-200">Show as progress</span>
-            <p class="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">Renders a progress bar/circle instead of % change</p>
+            <p class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5">Renders a progress bar/circle instead of % change</p>
           </div>
           <button
             type="button"
@@ -294,7 +294,7 @@
         </div>
 
         <div v-if="localShowAsProgress" class="space-y-1.5">
-          <label class="text-xs text-gray-600 dark:text-neutral-400">Starting value</label>
+          <label class="text-sm text-gray-600 dark:text-neutral-400">Starting value</label>
           <input
             v-model.number="localStartingValue"
             type="number"

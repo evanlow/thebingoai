@@ -31,7 +31,7 @@
           <p class="truncate text-sm font-light text-neutral-900 dark:text-neutral-100">
             {{ conversation.title }}
           </p>
-          <p class="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+          <p class="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">
             {{ conversation.message_count }} messages · {{ timeAgo(conversation.updated_at) }}
           </p>
         </div>

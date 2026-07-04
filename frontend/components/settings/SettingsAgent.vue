@@ -29,22 +29,22 @@
 
         <!-- Intro card -->
         <div class="bg-[var(--ember-wash)] border border-[color-mix(in_oklch,var(--ember)_20%,var(--line))] rounded-[var(--r-lg)] px-7 py-6 mb-6">
-          <p class="text-[9.5px] font-bold tracking-[.1em] uppercase text-[var(--ink-3)] mb-2">The Agent</p>
+          <p class="text-xs font-bold tracking-[.1em] uppercase text-[var(--ink-3)] mb-2">The Agent</p>
           <h2 class="text-2xl font-bold text-[var(--ink-0)] mb-3 leading-snug">
             <em class="font-serif italic text-[var(--ember)]]">{{ agentName }}</em> is a document.
           </h2>
-          <p class="text-xs text-[var(--ink-2)] leading-relaxed mb-4 max-w-2xl">
+          <p class="text-sm text-[var(--ink-2)] leading-relaxed mb-4 max-w-2xl">
             Identity is who it is. Soul is how it thinks. User context is everything it knows about the person on the other end. Edit any section — the rest stays consistent.
           </p>
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-[10px] font-semibold px-2.5 py-1 rounded-full border bg-[color-mix(in_oklch,var(--ember)_12%,var(--paper-0))] border-[color-mix(in_oklch,var(--ember)_30%,var(--line))] text-[var(--ember)]">
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full border bg-[color-mix(in_oklch,var(--ember)_12%,var(--paper-0))] border-[color-mix(in_oklch,var(--ember)_30%,var(--line))] text-[var(--ember)]">
               ✦ {{ agentProfile.versionLabel.value }} · {{ agentProfile.isDraft.value ? 'draft' : 'published' }}
             </span>
-            <span class="text-[10px] px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
+            <span class="text-xs px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
               {{ agentProfile.lastPublishedLabel.value }}
             </span>
             <span v-if="agentProfile.changedCount.value > 0"
-                  class="text-[10px] px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
+                  class="text-xs px-2.5 py-1 rounded-full border border-[var(--line)] bg-[var(--paper-0)] text-[var(--ink-2)]">
               {{ agentProfile.changedCount.value }} section{{ agentProfile.changedCount.value > 1 ? 's' : '' }} changed
             </span>
           </div>
@@ -87,17 +87,17 @@
          @keydown.esc="showResetConfirm = false">
       <div class="bg-[var(--paper-0)] border border-[var(--line)] rounded-[var(--r-lg)] p-6 w-full max-w-md shadow-xl">
         <h3 class="font-serif italic text-lg font-bold text-[var(--ember)] mb-1">Discard draft changes?</h3>
-        <p class="text-[12px] text-[var(--ink-2)] leading-relaxed mb-4">
+        <p class="text-sm text-[var(--ink-2)] leading-relaxed mb-4">
           Every unpublished edit since the last publish will be reverted. This can't be undone.
         </p>
         <div class="flex justify-end gap-2">
           <button @click="showResetConfirm = false"
-                  class="text-[11px] font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
+                  class="text-sm font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
             Keep editing
           </button>
           <button @click="confirmReset"
                   :disabled="agentProfile.resetting.value"
-                  class="text-[11px] font-semibold text-white bg-[var(--ember)] px-3 py-1.5 rounded-[var(--r-sm)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
+                  class="text-sm font-semibold text-white bg-[var(--ember)] px-3 py-1.5 rounded-[var(--r-sm)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
             {{ agentProfile.resetting.value ? 'Reverting…' : 'Discard changes' }}
           </button>
         </div>
@@ -111,17 +111,17 @@
          @keydown.esc="showFactoryResetConfirm = false">
       <div class="bg-[var(--paper-0)] border border-[var(--line)] rounded-[var(--r-lg)] p-6 w-full max-w-md shadow-xl">
         <h3 class="font-serif italic text-lg font-bold text-[var(--ember)] mb-1">Revert to Bingo default?</h3>
-        <p class="text-[12px] text-[var(--ink-2)] leading-relaxed mb-4">
+        <p class="text-sm text-[var(--ink-2)] leading-relaxed mb-4">
           This wipes every Identity, Soul, and User-context customization — including avatar, name, model overrides, and any saved profile facts — and immediately republishes the defaults so new chats reflect the reset. This can't be undone.
         </p>
         <div class="flex justify-end gap-2">
           <button @click="showFactoryResetConfirm = false"
-                  class="text-[11px] font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
+                  class="text-sm font-medium border border-[var(--line)] text-[var(--ink-1)] px-3 py-1.5 rounded-[var(--r-sm)] bg-[var(--paper-0)] hover:bg-[var(--paper-2)] transition-colors">
             Keep my customizations
           </button>
           <button @click="confirmFactoryReset"
                   :disabled="agentProfile.resetting.value"
-                  class="text-[11px] font-semibold text-white bg-[var(--ember)] px-3 py-1.5 rounded-[var(--r-sm)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
+                  class="text-sm font-semibold text-white bg-[var(--ember)] px-3 py-1.5 rounded-[var(--r-sm)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
             {{ agentProfile.resetting.value ? 'Reverting…' : 'Revert to default' }}
           </button>
         </div>

@@ -9,11 +9,11 @@
       <div class="mb-3 flex items-start justify-between">
         <div class="min-w-0 flex-1">
           <h3 class="truncate text-sm font-medium text-gray-800 dark:text-neutral-100">{{ dashboard.title }}</h3>
-          <p v-if="dashboard.description" class="mt-0.5 line-clamp-2 text-xs text-gray-400 dark:text-neutral-400">
+          <p v-if="dashboard.description" class="mt-0.5 line-clamp-2 text-sm text-gray-400 dark:text-neutral-400">
             {{ dashboard.description }}
           </p>
         </div>
-        <span class="ml-3 flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-neutral-700 dark:text-neutral-400">
+        <span class="ml-3 flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-500 dark:bg-neutral-700 dark:text-neutral-400">
           {{ dashboard.widgetCount }} {{ dashboard.widgetCount === 1 ? 'widget' : 'widgets' }}
         </span>
       </div>
@@ -28,7 +28,7 @@
               class="h-3.5 w-3.5 text-gray-300 dark:text-neutral-600"
             />
           </div>
-          <span v-if="formattedDate" class="truncate text-[10px] text-gray-300 dark:text-neutral-500">
+          <span v-if="formattedDate" class="truncate text-sm text-gray-300 dark:text-neutral-500">
             {{ formattedDate }}
           </span>
         </div>

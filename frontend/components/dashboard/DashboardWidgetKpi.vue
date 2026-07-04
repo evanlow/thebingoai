@@ -46,7 +46,7 @@
               :style="{ width: (progressPct * 100).toFixed(1) + '%', background: progressColor }"
             />
           </div>
-          <div v-if="!config.comparison?.hideComparisonLabel" class="text-[11px] text-[var(--ink-3)] tabular-nums">
+          <div v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)] tabular-nums">
             {{ (progressPct * 100).toFixed(1) }}% {{ comparisonLabel }}
           </div>
         </div>
@@ -68,7 +68,7 @@
               {{ (progressPct * 100).toFixed(0) }}%
             </text>
           </svg>
-          <span v-if="!config.comparison?.hideComparisonLabel" class="text-[11px] text-[var(--ink-3)]">{{ comparisonLabel }}</span>
+          <span v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)]">{{ comparisonLabel }}</span>
         </div>
       </template>
 
@@ -84,10 +84,10 @@
           :style="{ color: comparisonDisplay.color }"
         />
         <span
-          class="text-xs font-medium tabular-nums font-mono"
+          class="text-sm font-medium tabular-nums font-mono"
           :style="{ color: comparisonDisplay.color }"
         >{{ comparisonDisplay.delta }}</span>
-        <span v-if="!config.comparison?.hideComparisonLabel" class="text-xs text-[var(--ink-3)]">
+        <span v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)]">
           {{ comparisonDisplay.label }}
         </span>
       </div>

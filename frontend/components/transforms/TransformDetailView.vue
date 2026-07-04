@@ -36,7 +36,7 @@
             <UiBadge v-if="!transform.enabled" variant="warning" size="sm">Disabled</UiBadge>
           </div>
           <p class="mt-1 text-sm text-gray-500 dark:text-neutral-400">
-            Transform ID: <code class="font-mono text-xs">{{ transform.id }}</code>
+            Transform ID: <code class="font-mono text-sm">{{ transform.id }}</code>
           </p>
         </div>
 
@@ -55,33 +55,33 @@
         <h2 class="text-sm font-medium text-gray-700 dark:text-neutral-300 mb-3">Transform Details</h2>
         <dl class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
           <div>
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Materialization</dt>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Materialization</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 capitalize">{{ transform.materialization }}</dd>
           </div>
           <div v-if="transform.unique_key">
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Unique Key</dt>
-            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-xs">{{ transform.unique_key }}</dd>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Unique Key</dt>
+            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-sm">{{ transform.unique_key }}</dd>
           </div>
           <div>
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Schedule</dt>
-            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-xs">
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Schedule</dt>
+            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-sm">
               {{ transform.cron || 'Manual only' }}
             </dd>
           </div>
           <div v-if="transform.last_run_at">
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Last Run</dt>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Last Run</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100">{{ formatDate(transform.last_run_at) }}</dd>
           </div>
           <div v-if="transform.next_run_at">
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Next Run</dt>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Next Run</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100">{{ formatDate(transform.next_run_at) }}</dd>
           </div>
         </dl>
 
         <!-- SQL preview -->
         <div v-if="transform.sql" class="mt-4">
-          <dt class="text-xs text-gray-500 dark:text-neutral-400 mb-1">SQL Preview</dt>
-          <pre class="text-xs font-mono bg-gray-50 dark:bg-neutral-900 rounded-md px-3 py-2 text-gray-800 dark:text-neutral-200 overflow-x-auto whitespace-pre-wrap break-all">{{ transform.sql.slice(0, 200) }}{{ transform.sql.length > 200 ? '…' : '' }}</pre>
+          <dt class="text-sm text-gray-500 dark:text-neutral-400 mb-1">SQL Preview</dt>
+          <pre class="text-sm font-mono bg-gray-50 dark:bg-neutral-900 rounded-md px-3 py-2 text-gray-800 dark:text-neutral-200 overflow-x-auto whitespace-pre-wrap break-all">{{ transform.sql.slice(0, 200) }}{{ transform.sql.length > 200 ? '…' : '' }}</pre>
         </div>
       </UiCard>
 
@@ -121,7 +121,7 @@
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-base font-medium text-gray-900 dark:text-neutral-100">Run History</h2>
           <button
-            class="text-xs text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-100"
+            class="text-sm text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-100"
             @click="loadRuns"
           >
             Refresh

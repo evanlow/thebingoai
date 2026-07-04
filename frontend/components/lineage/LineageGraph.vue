@@ -129,17 +129,17 @@ const legendItems = Object.entries(KIND_PALETTE).map(([kind, pal]) => ({
           }"
         >
           <span
-            class="grid place-items-center h-8 w-8 rounded-lg text-[13px] font-semibold text-white shrink-0 uppercase"
+            class="grid place-items-center h-8 w-8 rounded-lg text-sm font-semibold text-white shrink-0 uppercase"
             :style="{ background: KIND_PALETTE[data.kind]?.dot ?? '#9ca3af' }"
           >
             {{ data.lineage?.name?.[0] ?? '?' }}
           </span>
           <div class="min-w-0 flex-1">
-            <p class="text-[13px] font-medium text-[var(--ink-0)] truncate leading-snug">
+            <p class="text-sm font-medium text-[var(--ink-0)] truncate leading-snug">
               {{ data.label }}
             </p>
             <p
-              class="text-[9.5px] font-semibold tracking-widest uppercase text-gray-400 dark:text-neutral-500 leading-tight"
+              class="text-sm font-semibold tracking-widest uppercase text-gray-400 dark:text-neutral-500 leading-tight"
             >
               {{ KIND_PALETTE[data.kind]?.label ?? data.kind?.toUpperCase() }}
             </p>
@@ -152,7 +152,7 @@ const legendItems = Object.entries(KIND_PALETTE).map(([kind, pal]) => ({
 
     <!-- Legend -->
     <div
-      class="absolute top-3 right-3 rounded-xl border border-[var(--line)] bg-white/90 dark:bg-neutral-800/90 backdrop-blur-sm px-3 py-2.5 text-xs space-y-1.5 z-10"
+      class="absolute top-3 right-3 rounded-xl border border-[var(--line)] bg-white/90 dark:bg-neutral-800/90 backdrop-blur-sm px-3 py-2.5 text-sm space-y-1.5 z-10"
     >
       <div
         v-for="item in legendItems"

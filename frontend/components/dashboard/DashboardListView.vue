@@ -12,7 +12,7 @@
     <div v-else class="flex flex-1 flex-col items-center justify-center min-h-[400px]">
       <LayoutGrid class="h-10 w-10 text-gray-200 mb-3" />
       <p class="text-sm font-light text-gray-400">No dashboards yet</p>
-      <p class="text-xs text-gray-300 mt-1">Ask the AI to generate one or create it manually</p>
+      <p class="text-sm text-gray-300 mt-1">Ask the AI to generate one or create it manually</p>
     </div>
   </div>
 </template>

@@ -27,7 +27,7 @@
 
     <!-- Generating (briefing exists but payload not written yet) — useBriefing polls every 3s -->
     <div v-else-if="!briefing.payload" class="max-w-3xl mx-auto px-6 py-10 space-y-4">
-      <p class="text-xs uppercase tracking-wider text-neutral-500">Generating your briefing…</p>
+      <p class="text-sm uppercase tracking-wider text-neutral-500">Generating your briefing…</p>
       <div class="h-10 w-3/4 bg-neutral-200 dark:bg-neutral-700 rounded animate-pulse" />
       <div class="h-4 w-full bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
       <div class="h-4 w-5/6 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
@@ -38,14 +38,14 @@
     <article v-else ref="articleRef" class="max-w-3xl mx-auto px-6 py-10">
       <div data-pdf-ignore="true" class="flex justify-end gap-2 mb-6">
         <button
-          class="text-xs px-3 py-1 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          class="text-sm px-3 py-1 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="exporting"
           @click="onExportPdf"
         >
           {{ exporting ? 'Generating…' : 'Export PDF' }}
         </button>
         <button
-          class="text-xs px-3 py-1 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+          class="text-sm px-3 py-1 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
           @click="copyLink"
         >
           Copy link
@@ -53,7 +53,7 @@
       </div>
 
       <div data-pdf-block>
-        <p class="text-xs uppercase tracking-wider text-neutral-500 mb-3">
+        <p class="text-sm uppercase tracking-wider text-neutral-500 mb-3">
           Dashboard #{{ briefing.dashboard_id }}
           <template v-if="briefing.date_range_from"> &middot; {{ formatRange(briefing) }}</template>
         </p>
@@ -86,9 +86,9 @@
           class="pl-3"
           :class="{ 'border-l border-neutral-200 dark:border-neutral-700': i > 0 }"
         >
-          <div class="text-[11px] uppercase tracking-wide text-neutral-500">{{ k.label }}</div>
+          <div class="text-sm uppercase tracking-wide text-neutral-500">{{ k.label }}</div>
           <div class="text-2xl font-semibold mt-1">{{ k.value }}</div>
-          <div v-if="k.delta_vs_prev" class="text-xs mt-1" :class="deltaClass(k.delta_direction)">
+          <div v-if="k.delta_vs_prev" class="text-sm mt-1" :class="deltaClass(k.delta_direction)">
             {{ k.delta_vs_prev }}
           </div>
         </div>
@@ -115,7 +115,7 @@
         data-pdf-block
         class="rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-5 mt-4"
       >
-        <p class="text-[11px] uppercase tracking-wider font-semibold text-yellow-900 dark:text-yellow-200 mb-2">
+        <p class="text-sm uppercase tracking-wider font-semibold text-yellow-900 dark:text-yellow-200 mb-2">
           Key takeaways
         </p>
         <ul class="list-disc pl-5 space-y-1 text-yellow-950 dark:text-yellow-200">

@@ -612,7 +612,7 @@ definePageMeta({
 
 .dashboard-list-sub {
   margin: 10px 0 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-2);
   line-height: 1.55;
   max-width: 600px;

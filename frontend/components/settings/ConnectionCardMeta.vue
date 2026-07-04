@@ -1,15 +1,15 @@
 <template>
-  <div class="mt-auto border-t border-gray-100 dark:border-neutral-600 pt-2.5 flex items-center gap-3 flex-wrap">
+  <div class="mt-auto border-t border-gray-100 dark:border-neutral-600 pt-2.5 flex items-center justify-center gap-3 flex-wrap">
     <!-- Slot 1: profiling status (always) -->
     <div class="flex flex-col items-center gap-1" :title="statusTitle">
       <component :is="status.icon" :class="['h-3.5 w-3.5', status.color, status.spin ? 'animate-spin' : '']" />
-      <span :class="['text-[10px]', status.color]">{{ status.label }}</span>
+      <span :class="['text-[12px]', status.color]">{{ status.label }}</span>
     </div>
 
     <!-- Slot 2: SSL (only when enabled) -->
     <div v-if="connection.ssl_enabled" class="flex flex-col items-center gap-1" title="SSL Enabled">
       <Shield class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-300" />
-      <span class="text-[10px] text-gray-500 dark:text-neutral-300">SSL</span>
+      <span class="text-[12px] text-gray-500 dark:text-neutral-300">SSL</span>
     </div>
 
     <!-- Slot 3: table count (only when profile success) -->
@@ -19,13 +19,13 @@
       :title="`${connection.table_count} tables`"
     >
       <Table2 class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-300" />
-      <span class="text-[10px] text-gray-500 dark:text-neutral-300">{{ connection.table_count }} tables</span>
+      <span class="text-[12px] text-gray-500 dark:text-neutral-300">{{ connection.table_count }} tables</span>
     </div>
 
     <!-- Slot 4: time-ago (always; label depends on status) -->
     <div class="flex flex-col items-center gap-1" :title="timeTitle">
       <Clock class="h-3.5 w-3.5 text-gray-500 dark:text-neutral-300" />
-      <span class="text-[10px] text-gray-500 dark:text-neutral-300">{{ timeLabel }}</span>
+      <span class="text-[12px] text-gray-500 dark:text-neutral-300">{{ timeLabel }}</span>
     </div>
   </div>
 </template>
