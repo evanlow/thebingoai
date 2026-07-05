@@ -1,6 +1,7 @@
 <template>
   <!-- Floating panel — positioned by parent (ChatInputBar) -->
   <div
+    ref="panelRef"
     class="mention-panel"
     @mousedown.prevent
   >
@@ -62,7 +63,7 @@
     </div>
 
     <!-- ── Body list ──────────────────────────────────────── -->
-    <div class="mention-body" ref="bodyRef">
+    <div class="mention-body" ref="bodyRef" :style="{ maxHeight: bodyMax + 'px' }">
 
       <!-- ROOT: one row per group, grouped by kind (icon type) -->
       <template v-if="props.mentionLevel === 'root'">
@@ -176,11 +177,31 @@ const emit = defineEmits<{
 
 const searchRef = ref<HTMLInputElement | null>(null)
 const bodyRef = ref<HTMLElement | null>(null)
+const panelRef = ref<HTMLElement | null>(null)
 const { mentionQuery, setQuery, drillIntoGroup, goBackToRoot } = useMentions()
 
 // ── Local state ───────────────────────────────────────────────
 const activeIndex = ref(0)
 const filterKind = ref<'all' | string>('all')
+
+// Body height: capped at 360, shrunk so the (upward-growing) panel never
+// clips above the viewport top. Panel bottom is pinned to the input, so
+// clamping against the measured bottom is stable in a single pass.
+const BODY_MAX = 360
+const BODY_MIN = 120
+const VIEWPORT_MARGIN = 12
+const bodyMax = ref(BODY_MAX)
+
+function clampBody() {
+  nextTick(() => {
+    const panel = panelRef.value
+    const body = bodyRef.value
+    if (!panel || !body) return
+    const chrome = panel.offsetHeight - body.offsetHeight   // header + filters + footer
+    const room = panel.getBoundingClientRect().bottom - VIEWPORT_MARGIN - chrome
+    bodyMax.value = Math.max(BODY_MIN, Math.min(BODY_MAX, Math.round(room)))
+  })
+}
 
 // Keep local query in sync with composable
 const localQuery = ref('')
@@ -191,11 +212,18 @@ watch(() => props.mentionLevel, () => {
   localQuery.value = ''
   // Refocus the always-present input so keyboard events keep firing in drill mode
   nextTick(() => searchRef.value?.focus())
+  clampBody()
 })
-watch(() => props.filteredGroups.length, () => { activeIndex.value = 0 })
-watch(() => props.activeGroupItems.length, () => { activeIndex.value = 0 })
+watch(() => props.filteredGroups.length, () => { activeIndex.value = 0; clampBody() })
+watch(filterKind, () => clampBody())
+watch(() => props.activeGroupItems.length, () => { activeIndex.value = 0; clampBody() })
 
-onMounted(() => nextTick(() => searchRef.value?.focus()))
+onMounted(() => {
+  nextTick(() => searchRef.value?.focus())
+  clampBody()
+  window.addEventListener('resize', clampBody)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', clampBody))
 
 // ── Kind metadata ─────────────────────────────────────────────
 const KIND_META: Record<string, { label: string; color: string; wash: string }> = {
@@ -464,7 +492,7 @@ function scrollToActive() {
 
 /* ── Body ─────────────────────────────────────────────────────── */
 .mention-body {
-  max-height: 360px;
+  /* max-height set inline via bodyMax (clamped to fit above the input) */
   overflow-y: auto;
   padding: 6px 0;
 }

@@ -123,6 +123,46 @@ describe('auth store', () => {
     expect(store.user).toBeNull()
   })
 
+  // ── deleteAccount ─────────────────────────────────────────────────
+  it('deleteAccount() calls DELETE /api/auth/account and clears session', async () => {
+    vi.mocked($fetch).mockResolvedValueOnce({})
+    const store = useAuthStore()
+    store.authConfig = { provider: 'sso' }
+    store.token = 'at'
+    store.refreshToken = 'rt'
+    store.user = {
+      id: '1', email: 'a@b.com', org_id: null, sso_id: null,
+      auth_provider: 'sso', created_at: '',
+    }
+    await store.deleteAccount()
+    expect(vi.mocked($fetch)).toHaveBeenCalledWith(
+      '/api/auth/account',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer at' },
+        body: { refresh_token: 'rt' },
+      }),
+    )
+    expect(store.token).toBeNull()
+    expect(store.refreshToken).toBeNull()
+    expect(store.user).toBeNull()
+  })
+
+  it('deleteAccount() clears session even when the DELETE request fails', async () => {
+    vi.mocked($fetch).mockRejectedValueOnce(new Error('network'))
+    const store = useAuthStore()
+    store.authConfig = { provider: 'sso' }
+    store.token = 'at'
+    store.refreshToken = 'rt'
+    store.user = {
+      id: '1', email: 'a@b.com', org_id: null, sso_id: null,
+      auth_provider: 'sso', created_at: '',
+    }
+    await expect(store.deleteAccount()).rejects.toThrow()
+    expect(store.token).toBeNull()
+    expect(store.user).toBeNull()
+  })
+
   // ── _doRefreshToken ───────────────────────────────────────────────
   it('_doRefreshToken() calls /sso-api/auth/token/refresh', async () => {
     vi.mocked($fetch).mockResolvedValueOnce({ access_token: 'new_at' })

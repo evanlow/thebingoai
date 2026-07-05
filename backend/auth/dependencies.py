@@ -235,9 +235,16 @@ def _create_user(db: Session, sso_user) -> User:
                 from backend.models.team import Team
 
                 trial_days = int(_os.environ.get("TRIAL_PERIOD_DAYS", "14"))
+                # organizations.name is UNIQUE. A tombstoned prior account can leave
+                # a stale org still named after this email (deletion frees the email
+                # but not the org name); reusing it would collide. Suffix the name
+                # when it's already taken so re-signup succeeds.
+                org_name = sso_user.email
+                if db.query(Organization.id).filter(Organization.name == org_name).first() is not None:
+                    org_name = f"{sso_user.email}-{_uuid.uuid4().hex[:8]}"
                 org = Organization(
                     id=str(_uuid.uuid4()),
-                    name=sso_user.email,
+                    name=org_name,
                     plan_state="trial",
                     trial_expires_at=_dt.datetime.utcnow() + _dt.timedelta(days=trial_days),
                     feature_flags={"governance_v1": True, "governance_v2": True},

@@ -42,11 +42,22 @@ def tombstone_account(db, user, new_email: str) -> None:
         raise ValueError("tombstone_account: new_email must be a non-empty masked email")
 
     user_id = user.id
+    old_email = user.email
 
     # 1. Mirror SSO's email mask and flag the row inactive. Keep the row so the
     #    KEEP set (conversations, briefs, dashboards, file connections) survives.
     user.email = new_email
     user.is_active = False
+
+    # 1b. Free the per-user org's UNIQUE name too. Under per_user_org_signup the
+    #     org is named after the email; leaving it occupied blocks re-registering
+    #     the same email (org-name collision -> IntegrityError). The name guard
+    #     skips the shared community DEFAULT_ORG (not named after an email).
+    if user.org_id:
+        from backend.models.organization import Organization
+        org = db.query(Organization).filter(Organization.id == user.org_id).first()
+        if org is not None and org.name == old_email:
+            org.name = new_email
 
     # 2. Disable live DB connections (KEEP file-based ones). Rows + encrypted
     #    creds stay at rest but are never used while inactive; connection

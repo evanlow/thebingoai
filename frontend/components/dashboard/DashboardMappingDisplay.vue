@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-2">
     <!-- Chart mapping -->
-    <template v-if="mapping.type === 'chart' && (mapping.labelColumn || mapping.datasetColumns.length > 0 || mapping.xMetricColumn)">
+    <template v-if="mapping.type === 'chart' && (mapping.labelColumn || (mapping.datasetColumns?.length ?? 0) > 0 || mapping.xMetricColumn)">
       <div class="text-sm font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
       <table class="w-full text-sm">
         <tbody class="divide-y divide-gray-100">
@@ -17,7 +17,7 @@
             <td class="py-1 pr-3 text-gray-500 w-24">Dimension</td>
             <td class="py-1 font-mono text-gray-800">{{ mapping.labelColumn }}</td>
           </tr>
-          <tr v-for="ds in mapping.datasetColumns" :key="ds.column">
+          <tr v-for="ds in (mapping.datasetColumns || [])" :key="ds.column">
             <td class="py-1 pr-3 text-gray-500">Metric "{{ ds.label || ds.column }}"</td>
             <td class="py-1 font-mono text-gray-800">{{ ds.column }}<span v-if="ds.aggregation && ds.aggregation !== 'none'" class="ml-1 text-gray-400">({{ ds.aggregation }})</span></td>
           </tr>
@@ -43,7 +43,7 @@
     </template>
 
     <!-- Table mapping -->
-    <template v-else-if="mapping.type === 'table' && mapping.columnConfig.length > 0">
+    <template v-else-if="mapping.type === 'table' && (mapping.columnConfig?.length ?? 0) > 0">
       <div class="text-sm font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
       <table class="w-full text-sm">
         <thead>
