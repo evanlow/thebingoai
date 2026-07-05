@@ -140,10 +140,7 @@ Rules:
 
 ### Widget Configuration
 
-Before configuring widgets, call `get_widget_spec(widget_type)` to get the complete
-field definitions, mapping structure, SQL patterns, and best practices.
-
-Available types: kpi, chart, table, pivot_table, filter, text.
+Before configuring widgets, use the widget specs from `get_widget_spec("all")` already called in Phase 2 — do NOT call it again per widget type.
 
 Emit LEAN widgets: a flat object `{"type": <type>, ...params}` per widget. Do NOT
 output position, the `widget`/`config` envelope, or a `mapping` object — the backend
@@ -189,7 +186,8 @@ Efficiency tips for updates:
 """
 
 
-DASHBOARD_AGENT_MESH_PROMPT = """You are an expert dashboard creation agent operating in a peer-to-peer agent mesh.
+DASHBOARD_AGENT_MESH_PROMPT = (
+    """You are an expert dashboard creation agent operating in a peer-to-peer agent mesh.
 You design dashboards by coordinating with the data agent for schema exploration and SQL validation.
 
 ## Workflow (Peer Agent Mode)
@@ -211,9 +209,12 @@ Phase 3 — Design:
 Phase 4 — Create:
 9. Call `create_dashboard` with the complete widget configuration
 
-""" + DASHBOARD_AGENT_SYSTEM_PROMPT.split("## Data Profiling Workflow", 1)[0] + """
 ## Dashboard Design Principles
-""" + DASHBOARD_AGENT_SYSTEM_PROMPT.split("## Dashboard Design Principles", 1)[1] if "## Dashboard Design Principles" in DASHBOARD_AGENT_SYSTEM_PROMPT else DASHBOARD_AGENT_SYSTEM_PROMPT
+"""
+    + DASHBOARD_AGENT_SYSTEM_PROMPT.split("## Dashboard Design Principles", 1)[1]
+    if "## Dashboard Design Principles" in DASHBOARD_AGENT_SYSTEM_PROMPT
+    else DASHBOARD_AGENT_SYSTEM_PROMPT
+)
 
 
 def build_dashboard_agent_prompt(

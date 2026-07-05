@@ -458,12 +458,17 @@ async def _run_judge_retry(
             AIMessage(content=initial_answer),
             HumanMessage(content=retry_directive),
         ]
+        _t0_retry = time.time()
         retry_result = await orchestrator.ainvoke(
             {"messages": retry_messages},
             config={
                 "recursion_limit": settings.agent_recursion_limit,
                 "callbacks": callbacks or [],
             },
+        )
+        logger.info(
+            "[LATENCY][judge_retry] orchestrator ainvoke: %dms",
+            int((time.time() - _t0_retry) * 1000),
         )
         retry_messages_out = retry_result.get("messages", [])
         # Extract any tool steps the retry produced so the frontend can detect
@@ -1182,6 +1187,7 @@ async def stream_orchestrator(
         SSE events: {"type": "status|token|done|error", "content": ...}
     """
     try:
+        _stream_t0 = time.time()
         yield {"type": "status", "content": "Starting orchestrator..."}
 
         tools = build_orchestrator_tools(context, custom_agents, db_session_factory, user_skills, llm_provider=llm_provider)
@@ -1408,6 +1414,12 @@ async def stream_orchestrator(
         if final_answer_text:
             yield {"type": "token", "content": final_answer_text}
 
+        _stream_total_ms = int((time.time() - _stream_t0) * 1000)
+        logger.info(
+            "[LATENCY][orchestrator] stream total: %dms steps=%d",
+            _stream_total_ms,
+            len(collected_steps),
+        )
         yield {
             "type": "done",
             "content": "Orchestrator completed",
@@ -1415,6 +1427,7 @@ async def stream_orchestrator(
             "steps": collected_steps,
             "retry_succeeded": retry_succeeded,
             "judge_metadata": judge_metadata,
+            "total_ms": _stream_total_ms,
         }
 
     except LoopDetectedError as e:
