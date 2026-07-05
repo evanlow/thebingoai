@@ -162,12 +162,13 @@ function computeTrendlineDatasets(processedDatasets: ChartDataset[], origDataset
 
 // ── Dataset color + style application ────────────────────────────────────────
 
-function applyDefaultColors(
+export function applyDefaultColors(
   datasets: ChartConfig['data']['datasets'],
   type: ChartType
 ): ChartDataset[] {
   const isPieOrDoughnut = type === 'pie' || type === 'doughnut'
   const isLineOrArea = type === 'line' || type === 'area'
+  const isScatter = type === 'scatter'
 
   return datasets.map((ds, i) => {
     const color = DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]
@@ -195,13 +196,13 @@ function applyDefaultColors(
     const useFill = ds.gradient || type === 'area'
     const bgColor = ds.backgroundColor ?? (useFill ? `${color}33` : color)
 
-    // Points: explicit toggle wins, otherwise default to no points
+    // Points: explicit toggle wins, otherwise default to no points (scatter: visible)
     const pointRadius = ds.showPoints === true ? (ds.pointRadius ?? 3)
       : ds.showPoints === false ? 0
-      : (ds.pointRadius ?? 0)
+      : (ds.pointRadius ?? (isScatter ? 3 : 0))
 
-    // Per-dataset datalabels — default ON, except line series default OFF.
-    const datalabels = { display: ds.showDataLabels ?? !(isLineOrArea || ds.seriesType === 'line') }
+    // Per-dataset datalabels — default ON, except line series and scatter default OFF.
+    const datalabels = { display: ds.showDataLabels ?? !(isLineOrArea || ds.seriesType === 'line' || isScatter) }
 
     const processed: Record<string, any> = {
       ...ds,
@@ -449,6 +450,11 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
             anchor: 'end' as const,
             align: isHorizontal ? 'right' : 'top',
             formatter: (value: unknown) => {
+              // Scatter datum is an {x, y} object — format like the tooltip.
+              if (value && typeof value === 'object' && 'x' in value && 'y' in value) {
+                const v = value as { x: unknown; y: unknown }
+                return `(${formatValue(v.x)}, ${formatValue(v.y)})`
+              }
               if (typeof value !== 'number') return value
               const formatted = formatValue(value)
               return isPercentage ? `${formatted}%` : formatted
