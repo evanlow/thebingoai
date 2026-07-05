@@ -268,6 +268,47 @@ def test_raw_object_exists(plane, scope):
     assert plane.raw_object_exists(scope, "sqlite_blobs/c1.sqlite") is True
 
 
+# ── DuckDB in-memory table caching ────────────────────────────────────────
+
+def test_query_populates_loaded_table_cache(plane, scope, sample_table):
+    """First query materializes the table into DuckDB and records the cache key."""
+    plane.write_parquet(scope, "cached", sample_table)
+    assert (scope.as_path(), "cached") not in plane._loaded_tables
+    plane.query(scope, "SELECT count(*) FROM cached")
+    assert (scope.as_path(), "cached") in plane._loaded_tables
+
+
+def test_write_invalidates_cache_so_next_query_sees_fresh_data(plane, scope):
+    """Regression: a cached table must be dropped on write so overwrite is visible.
+
+    Populate the cache (query once), overwrite the Parquet, then query again — the
+    result must reflect the new data, not the stale in-memory TABLE.
+    """
+    plane.write_parquet(scope, "t", pa.table({"v": pa.array([1, 2, 3], type=pa.int64())}))
+    assert plane.query(scope, "SELECT count(*) AS n FROM t").rows[0][0] == 3  # loads cache
+    assert (scope.as_path(), "t") in plane._loaded_tables  # now cached
+
+    plane.write_parquet(scope, "t", pa.table({"v": pa.array([99], type=pa.int64())}), mode="overwrite")
+    assert (scope.as_path(), "t") not in plane._loaded_tables  # invalidated by write
+    assert plane.query(scope, "SELECT count(*) AS n FROM t").rows[0][0] == 1  # fresh, not stale 3
+
+
+def test_invalidate_table_clears_cache_key(plane, scope, sample_table):
+    plane.write_parquet(scope, "inv", sample_table)
+    plane.query(scope, "SELECT 1 FROM inv LIMIT 1")
+    assert (scope.as_path(), "inv") in plane._loaded_tables
+    plane.invalidate_table(scope, "inv")
+    assert (scope.as_path(), "inv") not in plane._loaded_tables
+
+
+def test_repeat_query_returns_consistent_data_from_cache(plane, scope, sample_table):
+    """Second query hits the cached table and returns the same result."""
+    plane.write_parquet(scope, "repeat", sample_table)
+    first = plane.query(scope, "SELECT count(*) AS n FROM repeat").rows[0][0]
+    second = plane.query(scope, "SELECT count(*) AS n FROM repeat").rows[0][0]
+    assert first == second == 3
+
+
 # ── storage_bytes ─────────────────────────────────────────────────────────
 
 def test_storage_bytes_zero_for_unwritten_scope(plane, scope):

@@ -12,6 +12,15 @@ from backend.models.user import User
 from backend.services.data_plane_service import _scope_chain, get_default_plane
 
 
+@pytest.fixture(autouse=True)
+def _clear_local_plane_cache():
+    """The plane cache is a module global — reset it around each test for isolation."""
+    import backend.services.data_plane_service as svc
+    svc._local_plane_cache.clear()
+    yield
+    svc._local_plane_cache.clear()
+
+
 @pytest.fixture
 def org(db_session):
     o = Organization(id=str(uuid.uuid4()), name=f"org-{uuid.uuid4()}")
@@ -125,3 +134,37 @@ def test_non_default_row_ignored(db_session, org_user, org):
     plane = get_default_plane(OwnerScope("user", org_user.id), db_session)
 
     assert plane.root_path == org_row.config["root_path"]
+
+
+# ── LocalFilesystemDataPlane instance caching ──────────────────────────────
+
+def test_instantiate_caches_plane_by_root(db_session, org):
+    """Two resolutions of the same DB-backed local plane return the SAME instance."""
+    _make_plane(db_session, "org", org.id, config={"root_path": "/tmp/cache-me"})
+    first = get_default_plane(OwnerScope("org", org.id), db_session)
+    second = get_default_plane(OwnerScope("org", org.id), db_session)
+    assert first is second  # cached, not a fresh DuckDB connection each call
+
+
+def test_no_row_fallback_caches_plane_by_root(db_session, org_user):
+    """The no-row local fallback also returns a cached instance across calls."""
+    first = get_default_plane(OwnerScope("user", org_user.id), db_session)
+    second = get_default_plane(OwnerScope("user", org_user.id), db_session)
+    assert first is second
+
+
+def test_cache_separates_distinct_roots(db_session):
+    """Different root_paths must map to different cached instances."""
+    import uuid as _uuid
+    from backend.models.organization import Organization
+
+    o1 = Organization(id=str(_uuid.uuid4()), name=f"org-{_uuid.uuid4()}")
+    o2 = Organization(id=str(_uuid.uuid4()), name=f"org-{_uuid.uuid4()}")
+    db_session.add_all([o1, o2])
+    db_session.commit()
+    _make_plane(db_session, "org", o1.id, config={"root_path": "/tmp/root-a"})
+    _make_plane(db_session, "org", o2.id, config={"root_path": "/tmp/root-b"})
+
+    plane_a = get_default_plane(OwnerScope("org", o1.id), db_session)
+    plane_b = get_default_plane(OwnerScope("org", o2.id), db_session)
+    assert plane_a is not plane_b
