@@ -6,9 +6,9 @@
         @click="chatStore.toggleInfoSection('summary')"
         class="flex-1 flex items-center justify-between hover:opacity-70 transition-opacity"
       >
-        <span class="text-[12px] uppercase tracking-wider text-gray-400 font-semibold">Summary</span>
+        <span class="text-sm uppercase tracking-wider text-gray-400 font-semibold">Summary</span>
         <div class="flex items-center gap-2">
-          <span v-if="chatStore.conversationSummary?.updated_at" class="text-[10px] text-gray-300">
+          <span v-if="chatStore.conversationSummary?.updated_at" class="text-sm text-gray-300">
             {{ timeAgo }}
           </span>
           <svg
@@ -57,7 +57,7 @@
             :style="{ width: tokenPercent + '%' }"
           />
         </div>
-        <span class="text-[10px] text-gray-300 whitespace-nowrap">
+        <span class="text-sm text-gray-300 whitespace-nowrap">
           {{ formattedTokenCount }} / {{ formattedTokenLimit }}
         </span>
       </div>

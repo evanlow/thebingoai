@@ -41,5 +41,12 @@ services:
       postgres:
         condition: service_healthy
 
+  celery-pipelines:
+    environment:
+      - DATABASE_URL=postgresql://thebingo_user:thebingo_password@postgres:5432/thebingo
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:

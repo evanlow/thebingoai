@@ -31,10 +31,10 @@
         class="h-5 w-5 flex-shrink-0 text-neutral-500 dark:text-neutral-400"
       />
       <div class="min-w-0 flex-1">
-        <p class="truncate text-xs font-medium text-neutral-800 dark:text-neutral-200">
+        <p class="truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
           {{ file.file.name }}
         </p>
-        <p class="text-xs text-neutral-500 dark:text-neutral-400">
+        <p class="text-sm text-neutral-500 dark:text-neutral-400">
           {{ formattedSize }}
         </p>
       </div>
@@ -48,7 +48,7 @@
       class="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-white/70 dark:bg-neutral-900/70"
     >
       <template v-if="(file.progress ?? 0) < 100">
-        <span class="text-xs font-medium text-neutral-700 dark:text-neutral-200">
+        <span class="text-sm font-medium text-neutral-700 dark:text-neutral-200">
           {{ file.progress ?? 0 }}%
         </span>
         <div class="absolute bottom-0 left-0 right-0 h-1 bg-neutral-200 dark:bg-neutral-700 rounded-b-lg overflow-hidden">
@@ -60,7 +60,7 @@
       </template>
       <!-- 100%: transfer done, server is parsing/building schema — show spinner instead of frozen bar -->
       <template v-else>
-        <span class="text-[10px] font-medium text-amber-500">Processing…</span>
+        <span class="text-sm font-medium text-amber-500">Processing…</span>
         <div class="w-3 h-3 flex-shrink-0 rounded-full border-2 border-neutral-300 dark:border-neutral-600 border-t-violet-400 animate-spin" aria-hidden="true" />
       </template>
     </div>
@@ -82,7 +82,7 @@
       v-else-if="displayStatus === 'processing'"
       class="absolute inset-0 flex items-center justify-center gap-1.5 rounded-lg bg-white/70 dark:bg-neutral-900/70"
     >
-      <span class="text-[10px] font-medium text-amber-500">Processing…</span>
+      <span class="text-sm font-medium text-amber-500">Processing…</span>
       <div class="w-3 h-3 flex-shrink-0 rounded-full border-2 border-neutral-300 dark:border-neutral-600 border-t-violet-400 animate-spin" aria-hidden="true" />
     </div>
 

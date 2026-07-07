@@ -42,16 +42,16 @@
 
     <!-- Identity (read-only until PATCH /api/auth/me exists) -->
     <div class="space-y-4">
-      <p class="eyebrow">Identity</p>
+      <p class="text-sm font-medium tracking-[0.12em] uppercase text-[var(--ink-2)]">Identity</p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-neutral-400 mb-1">Display name</label>
+          <label class="block text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Display name</label>
           <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2 text-sm text-gray-700 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-800">
             {{ displayName || '—' }}
           </div>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-neutral-400 mb-1">Email</label>
+          <label class="block text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Email</label>
           <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2 text-sm text-gray-700 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-800">
             {{ authStore.user?.email || '—' }}
           </div>
@@ -61,7 +61,7 @@
 
     <!-- Preferences -->
     <div class="space-y-4">
-      <p class="eyebrow">Preferences</p>
+      <p class="text-sm font-medium tracking-[0.12em] uppercase text-[var(--ink-2)]">Preferences</p>
 
       <!-- Appearance: theme swatches -->
       <UiCard class="p-5">
@@ -108,23 +108,74 @@
           </button>
         </div>
       </UiCard>
+
+      <!-- Text size -->
+      <UiCard class="p-5">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-sm font-medium text-gray-900 dark:text-white">Text size</p>
+            <p class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">Adjust the size of text across Bingo.</p>
+          </div>
+          <div class="flex gap-1 shrink-0 rounded-lg border border-gray-200 dark:border-neutral-700 p-0.5">
+            <button
+              v-for="opt in FONT_SIZE_OPTIONS"
+              :key="opt.value"
+              type="button"
+              @click="fontSize.preference.value = opt.value"
+              class="px-3 py-1 rounded-md text-sm font-medium transition-colors"
+              :class="fontSize.preference.value === opt.value
+                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                : 'text-gray-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700'"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
+      </UiCard>
     </div>
 
     <!-- Danger zone -->
     <div class="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-900/10 p-5">
       <p class="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Danger zone</p>
-      <p class="text-sm text-red-600/80 dark:text-red-400/60 mb-4">Logging out ends your session on this browser.</p>
-      <UiButton variant="outline" @click="handleLogout">Log out</UiButton>
+      <p class="text-sm text-red-600/80 dark:text-red-400/60 mb-4">Logging out ends your session on this browser. Deleting your account is permanent.</p>
+      <div class="flex gap-3">
+        <UiButton variant="outline" @click="handleLogout">Log out</UiButton>
+        <UiButton variant="danger" @click="showDeleteDialog = true">Delete account</UiButton>
+      </div>
     </div>
     </div>
+
+    <!-- Delete account confirmation -->
+    <UiDialog v-model:open="showDeleteDialog" title="Delete account" size="sm">
+      <p class="text-sm text-gray-600 dark:text-neutral-300">
+        Permanently delete <strong>{{ authStore.user?.email }}</strong>? Your login is
+        disabled and you're signed out. This cannot be undone.
+      </p>
+      <template #footer>
+        <UiButton variant="outline" @click="showDeleteDialog = false">Cancel</UiButton>
+        <UiButton variant="danger" :loading="deleting" @click="confirmDelete">Delete account</UiButton>
+      </template>
+    </UiDialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { toast } from 'vue-sonner'
+
 const authStore = useAuthStore()
 const router = useRouter()
 const colorMode = useColorMode()
 const appTheme = useAppTheme()
+const fontSize = useAppFontSize()
+
+const FONT_SIZE_OPTIONS = [
+  { value: 'sm' as const, label: 'Small' },
+  { value: 'md' as const, label: 'Medium' },
+  { value: 'lg' as const, label: 'Large' },
+]
+
+const showDeleteDialog = ref(false)
+const deleting = ref(false)
 
 const isDark = computed({
   get: () => colorMode.value === 'dark',
@@ -167,5 +218,19 @@ function swatchStyle(theme: string): Record<string, string> {
 function handleLogout() {
   authStore.logout()
   router.push('/login')
+}
+
+async function confirmDelete() {
+  deleting.value = true
+  try {
+    await authStore.deleteAccount()
+    toast.success('Account deleted')
+    showDeleteDialog.value = false
+    router.push('/login')
+  } catch (err: any) {
+    toast.error(err?.data?.detail?.message || err?.data?.detail || err?.message || 'Failed to delete account')
+  } finally {
+    deleting.value = false
+  }
 }
 </script>

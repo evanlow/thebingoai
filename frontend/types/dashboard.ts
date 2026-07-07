@@ -44,9 +44,6 @@ export interface KpiWidgetConfig {
     value: number
     period?: string
   }
-  sparkline?: number[]
-  sparklineLabels?: string[]
-
   // title (separate from `label`, shown above the widget)
   title?: string
   showTitle?: boolean
@@ -57,12 +54,6 @@ export interface KpiWidgetConfig {
 
   // primary metric display
   compactNumbers?: boolean
-
-  // sparkline appearance
-  sparklineColor?: string
-  sparklineFill?: boolean
-  sparklineSmooth?: boolean
-  sparklineMissingData?: 'linear' | 'breaks' | 'zero'
 
   // progress visual (used when comparison.showAsProgress is on)
   progressVisual?: 'bar' | 'circle' | 'none'
@@ -100,6 +91,7 @@ export interface TableColumn {
   roundValue?: boolean
   decimalPlaces?: number
   align?: 'left' | 'center' | 'right'
+  width?: number                   // px, set by drag-resize in edit mode
   displayType?: 'number' | 'bar' | 'heatmap'
   showBarValue?: boolean
   // Metrics
@@ -120,7 +112,6 @@ export interface TableWidgetConfig {
   showHeader?: boolean
   showRowNumbers?: boolean
   stripedRows?: boolean
-  wrapText?: boolean
   horizontalScrolling?: boolean
   showSummaryRow?: boolean
   missingDataDisplay?: 'dash' | 'blank' | 'noData'
@@ -178,8 +169,10 @@ export interface PivotTableWidgetConfig {
   columnLimit?: number
   sortBy?: string                      // value column to sort row groups by ('' = first row dim)
   sortDir?: 'asc' | 'desc'
+  // Per-column widths (px), set by drag-resize. Key 'rowHeader' for the left
+  // label column; value column key (column/label) for data columns.
+  columnWidths?: Record<string, number>
   // Style (mirrors TableWidgetConfig)
-  wrapText?: boolean
   stripedRows?: boolean
   horizontalScrolling?: boolean
   headerBackground?: string
@@ -260,6 +253,11 @@ export interface ChartDataSourceMapping {
   // Series breakdown: split the first metric into one series per distinct value
   // of this column. Pair with options.stacked for stacked / 100%-stacked bars.
   breakdownColumn?: string
+  // Timeline-only (chartType 'timeline'): labelColumn doubles as the row label.
+  startColumn?: string
+  endColumn?: string
+  barLabelColumn?: string
+  tooltipColumn?: string
   options?: Record<string, any>
 }
 
@@ -269,16 +267,12 @@ export interface KpiDataSourceMapping {
   // Primary-field role: dimension shows raw value, metric applies aggregation
   role?: 'dimension' | 'metric'
   aggregation?: 'sum' | 'avg' | 'count' | 'countDistinct' | 'min' | 'max' | 'first' | 'last'
-  // Auto-trend: derive trend + sparkline from multi-row time-series results
+  // Auto-trend: derive trend from multi-row time-series results
   autoTrend?: boolean
   trendDateColumn?: string      // date column for period-based trend comparison
   periodLabel?: string          // calculation preference e.g. "vs last month"
   // Legacy: pre-computed trend (kept for backward compat)
   trendValueColumn?: string
-  sparklineXColumn?: string
-  sparklineYColumn?: string
-  sparklineSortColumn?: string
-  sparklineSortDirection?: 'asc' | 'desc'
 }
 
 export interface TableDataSourceMapping {

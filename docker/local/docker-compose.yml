@@ -129,6 +129,32 @@ services:
       - ../../alembic:/app/alembic
       - ../../data:/app/data
 
+  celery-pipelines:
+    build:
+      context: ../../
+      dockerfile: docker/backend/Dockerfile
+    container_name: thebingo-pipelines
+    command: celery -A backend.tasks.upload_tasks worker --queues=pipelines --concurrency=10 --loglevel=info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_URL=redis://redis:6379/2
+      - AGENT_MESH_REDIS_URL=redis://redis:6379/4
+      - QDRANT_URL=http://qdrant:6333
+    env_file:
+      - ../../.env
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - ../../backend:/app/backend
+      - ../../alembic:/app/alembic
+      - ../../data:/app/data
+
   frontend:
     build:
       context: ../../frontend

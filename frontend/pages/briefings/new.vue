@@ -10,7 +10,7 @@
       <!-- Creating — shown instantly so the click feels responsive even while the
            POST waits behind the dashboard's in-flight widget-refresh requests. -->
       <template v-else>
-        <p class="text-xs uppercase tracking-wider text-neutral-500">Generating your briefing…</p>
+        <p class="text-sm uppercase tracking-wider text-neutral-500">Generating your briefing…</p>
         <div class="h-10 w-3/4 bg-neutral-200 dark:bg-neutral-700 rounded animate-pulse" />
         <div class="h-4 w-full bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
         <div class="h-4 w-5/6 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />

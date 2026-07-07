@@ -6,8 +6,8 @@
       class="w-full flex items-center justify-between px-4 py-3 hover:bg-[var(--paper-2)] transition-colors"
     >
       <div class="flex items-center gap-1.5">
-        <span class="text-[10px] uppercase tracking-wider text-[var(--ink-2)] font-semibold">Datasets</span>
-        <span v-if="datasets.length" class="text-[9px] bg-[var(--paper-3)] text-[var(--ink-2)] px-1.5 py-px rounded-full">
+        <span class="text-sm uppercase tracking-wider text-[var(--ink-2)] font-semibold">Datasets</span>
+        <span v-if="datasets.length" class="text-sm bg-[var(--paper-3)] text-[var(--ink-2)] px-1.5 py-px rounded-full">
           {{ datasets.length }}
         </span>
       </div>
@@ -27,7 +27,7 @@
         <svg class="w-5 h-5 mx-auto text-[var(--ink-3)] mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
-        <p class="text-[11px] text-[var(--ink-3)]">No datasets uploaded yet</p>
+        <p class="text-sm text-[var(--ink-3)]">No datasets uploaded yet</p>
       </div>
 
       <!-- Dataset list -->
@@ -44,8 +44,8 @@
             <!-- Header row: name | rows · size | × | ▼ -->
             <div class="flex items-center gap-1.5 px-2.5 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer" @click="toggleDataset(ds.fileId ?? ds.name)">
               <div class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-              <p class="text-[11px] font-medium text-gray-700 dark:text-neutral-200 truncate flex-1 min-w-0">{{ ds.name }}</p>
-              <span class="text-[10px] text-gray-400 dark:text-neutral-500 shrink-0 whitespace-nowrap">
+              <p class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate flex-1 min-w-0">{{ ds.name }}</p>
+              <span class="text-sm text-gray-400 dark:text-neutral-500 shrink-0 whitespace-nowrap">
                 <template v-if="rowCount(ds) != null">{{ rowCount(ds)!.toLocaleString() }} rows<template v-if="ds.size"> · </template></template>
                 <template v-if="ds.size">{{ formatSize(ds.size) }}</template>
               </span>
@@ -67,7 +67,7 @@
                 <div v-for="n in 5" :key="n" class="h-3 bg-gray-100 dark:bg-neutral-700 rounded animate-pulse" />
               </div>
               <!-- Error -->
-              <p v-else-if="schemaFor(ds.connectionId).error" class="text-[10px] text-red-400">{{ schemaFor(ds.connectionId).error }}</p>
+              <p v-else-if="schemaFor(ds.connectionId).error" class="text-sm text-red-400">{{ schemaFor(ds.connectionId).error }}</p>
               <!-- Column list -->
               <div v-else-if="columnsFor(ds.connectionId)" class="space-y-0.5">
                 <div
@@ -75,9 +75,9 @@
                   :key="col.name"
                   class="flex items-center gap-1.5 py-0.5 px-1"
                 >
-                  <span class="text-[11px] text-gray-600 dark:text-neutral-300 truncate flex-1 min-w-0">{{ col.name }}</span>
-                  <span class="text-[9px] text-violet-400 bg-gray-100 dark:bg-neutral-700 px-1 py-0.5 rounded font-mono shrink-0">{{ col.type }}</span>
-                  <span v-if="col.nullable" class="text-[9px] text-gray-400 dark:text-neutral-500 shrink-0">?</span>
+                  <span class="text-sm text-gray-600 dark:text-neutral-300 truncate flex-1 min-w-0">{{ col.name }}</span>
+                  <span class="text-sm text-violet-400 bg-gray-100 dark:bg-neutral-700 px-1 py-0.5 rounded font-mono shrink-0">{{ col.type }}</span>
+                  <span v-if="col.nullable" class="text-sm text-gray-400 dark:text-neutral-500 shrink-0">?</span>
                 </div>
               </div>
             </div>
@@ -94,8 +94,8 @@
               <svg class="w-3.5 h-3.5 text-[var(--ink-2)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <span class="text-[11px] font-medium text-gray-600 truncate min-w-0 flex-1">{{ ds.name }}</span>
-              <span class="text-[9px] text-gray-300 shrink-0">{{ formatSize(ds.size) }}</span>
+              <span class="text-sm font-medium text-gray-600 truncate min-w-0 flex-1">{{ ds.name }}</span>
+              <span class="text-sm text-gray-300 shrink-0">{{ formatSize(ds.size) }}</span>
             </div>
 
             <!-- Vertical timeline -->
@@ -133,7 +133,7 @@
             <button
               v-if="ds.step === 'failed' && ds.connectionId && stepStatus(ds, 'profiling') === 'failed'"
               @click="retryProfiling(ds.connectionId!)"
-              class="mt-1.5 ml-6 text-[9px] text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded px-2 py-0.5 hover:bg-[var(--paper-3)] transition-colors"
+              class="mt-1.5 ml-6 text-sm text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded px-2 py-0.5 hover:bg-[var(--paper-3)] transition-colors"
             >
               Retry
             </button>

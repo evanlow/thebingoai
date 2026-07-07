@@ -9,7 +9,7 @@
 
     <!-- Scrolling body -->
     <div class="flex-1 overflow-y-auto px-7 pt-6 pb-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400 max-w-2xl mb-3">Bingo automatically learns from your conversations. Each chat adds to what it remembers — and you stay in control of what sticks.</p>
+      <p class="text-base text-gray-500 dark:text-neutral-400 max-w-2xl mb-3">Bingo automatically learns from your conversations. Each chat adds to what it remembers — and you stay in control of what sticks.</p>
 
       <div class="space-y-8">
     <!-- Section 1: Auto conversation memory -->
@@ -48,7 +48,7 @@
       <div class="mt-4 pt-4 border-t border-gray-100 dark:border-neutral-700">
         <div class="flex items-center justify-between mb-3">
           <p class="eyebrow">Activity</p>
-          <p v-if="!heatmapLoading && heatmapTotalConversations > 0" class="text-xs text-gray-400 dark:text-neutral-500">
+          <p v-if="!heatmapLoading && heatmapTotalConversations > 0" class="text-base text-gray-400 dark:text-neutral-500">
             {{ heatmapTotalConversations }} conversations · {{ heatmapTotalDays }} days recorded
           </p>
         </div>
@@ -139,7 +139,7 @@
           </div>
         </div>
 
-        <p v-if="entries.length >= 50" class="text-xs text-gray-400 text-center pt-1">
+        <p v-if="entries.length >= 50" class="text-sm text-gray-400 text-center pt-1">
           Memory limit reached (50 entries). Delete some to add more.
         </p>
       </div>

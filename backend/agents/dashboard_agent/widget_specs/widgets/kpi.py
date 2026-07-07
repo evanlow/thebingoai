@@ -18,16 +18,14 @@ class KpiWidget(BaseWidget):
         "- `aggregation` (sum|avg|count|countDistinct|min|max|first|last): default 'first'\n"
         "- `prefix`/`suffix` (string), `compactNumbers`/`roundValue` (bool), `decimalPlaces` (number)\n"
         "- `comparison` (object), `progressVisual` (bar|circle|none)\n"
-        "- trend: `autoTrend` (bool), `periodLabel`, `trendDateColumn`, `trendValueColumn`,\n"
-        "  `sparklineXColumn`, `sparklineYColumn`, `sparklineSortColumn`, `sparklineSortDirection`\n"
+        "- trend: `autoTrend` (bool), `periodLabel`, `trendDateColumn`, `trendValueColumn`\n"
         "- `connectionId`* (int), `sql`* (string), `sources` (string[])\n"
     )
 
     _CONFIG_KEYS = ("label", "prefix", "suffix", "roundValue", "decimalPlaces",
                     "compactNumbers", "comparison", "progressVisual")
     _MAPPING_KEYS = ("valueColumn", "aggregation", "autoTrend", "periodLabel",
-                     "trendDateColumn", "trendValueColumn", "sparklineXColumn",
-                     "sparklineYColumn", "sparklineSortColumn", "sparklineSortDirection")
+                     "trendDateColumn", "trendValueColumn")
 
     def _config(self, params: dict) -> dict:
         return _pick(params, self._CONFIG_KEYS)

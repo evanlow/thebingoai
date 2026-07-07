@@ -18,7 +18,7 @@
             <th
               v-for="column in columns"
               :key="column.key"
-              class="px-4 py-3 text-left text-xs font-normal uppercase tracking-wider text-gray-700 dark:text-neutral-400"
+              class="px-4 py-3 text-left text-sm font-normal uppercase tracking-wider text-gray-700 dark:text-neutral-400"
               :class="column.sortable && 'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-neutral-700'"
               @click="column.sortable && handleSort(column.key)"
             >

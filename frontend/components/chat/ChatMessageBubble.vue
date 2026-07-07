@@ -3,7 +3,7 @@
     <!-- User message: left-aligned chat bubble -->
     <div v-if="message.role === 'user'">
       <!-- Name + time label -->
-      <div class="mb-1.5 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[var(--ink-2)]">
+      <div class="mb-1.5 text-sm font-medium tracking-[0.08em] uppercase text-[var(--ink-2)]">
         {{ senderName }} · {{ messageTime }}
       </div>
 
@@ -44,8 +44,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <div class="min-w-0 flex-1">
-              <p class="truncate text-xs font-medium text-gray-700">{{ attachment.name }}</p>
-              <p class="text-xs text-gray-500">{{ formatAttachmentSize(attachment.size) }}</p>
+              <p class="truncate text-sm font-medium text-gray-700">{{ attachment.name }}</p>
+              <p class="text-sm text-gray-500">{{ formatAttachmentSize(attachment.size) }}</p>
             </div>
           </div>
         </template>
@@ -56,11 +56,11 @@
     <div v-else-if="message.source === 'skill_suggestion'" class="pr-4 md:pr-32">
       <div class="flex gap-2.5 items-start">
         <div class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-          <span class="text-white text-xs">&starf;</span>
+          <span class="text-white text-sm">&starf;</span>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="font-semibold text-gray-900 mb-1 text-[13px]">I noticed some patterns in your conversations</div>
-          <div class="text-gray-500 text-xs mb-3">
+          <div class="font-semibold text-gray-900 mb-1 text-sm">I noticed some patterns in your conversations</div>
+          <div class="text-gray-500 text-sm mb-3">
             Based on your recent activity, I have {{ pendingSuggestions.length }} skill suggestion{{ pendingSuggestions.length !== 1 ? 's' : '' }} that could save you time.
           </div>
           <TransitionGroup name="suggestion-list" tag="div" class="space-y-2">
@@ -89,7 +89,7 @@
         <div class="flex-1 min-w-0">
       <!-- Heartbeat source label -->
       <div v-if="message.source === 'heartbeat'" class="mb-1.5 flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 uppercase tracking-wide">
+        <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-500 uppercase tracking-wide">
           <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -106,7 +106,7 @@
       </div>
 
       <!-- Live steps log (collapses when final answer arrives) -->
-      <div v-if="message.steps_log?.length" class="mt-1 font-mono text-[11px] text-gray-400 dark:text-neutral-400 bg-gray-50/80 dark:bg-neutral-800/60 border border-gray-100 dark:border-neutral-700 rounded-md px-3 py-2 leading-relaxed">
+      <div v-if="message.steps_log?.length" class="mt-1 font-mono text-sm text-gray-400 dark:text-neutral-400 bg-gray-50/80 dark:bg-neutral-800/60 border border-gray-100 dark:border-neutral-700 rounded-md px-3 py-2 leading-relaxed">
         <button
           @click="message.steps_log_expanded = !message.steps_log_expanded"
           class="flex items-center gap-1 cursor-pointer text-gray-400 dark:text-neutral-400 hover:text-gray-500 dark:hover:text-neutral-300"
@@ -119,7 +119,7 @@
         </button>
         <div v-if="message.steps_log_expanded" class="mt-1.5 whitespace-pre-wrap">{{ message.steps_log.join('\n') }}
           <div v-if="chatStore.isStreaming && props.isLast" class="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-700">
-            <span class="text-[10px] text-glow-orange">working...</span>
+            <span class="text-sm text-glow-orange">working...</span>
           </div>
         </div>
       </div>
@@ -128,7 +128,7 @@
       <!-- Loop detected: agent stopped banner -->
       <div
         v-if="message.loop_detected"
-        class="mt-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800/40 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+        class="mt-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800/40 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
       >
         <svg class="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -140,7 +140,7 @@
       <div v-if="hasSteps && !message.steps_log?.length" class="mt-3">
         <button
           @click="reasoningExpanded = !reasoningExpanded"
-          class="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          class="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors"
         >
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.15A4.98 4.98 0 0112 17a4.98 4.98 0 01-2.39-.606l-.347-.15z" />
@@ -343,14 +343,21 @@ const createdDashboardId = computed<number | null>(() => {
   // delegates dashboard creation through the wrapper, which returns the
   // same {success, dashboard_id} shape but under a different tool_name.
   const DASHBOARD_TOOLS = new Set(['create_dashboard', 'update_dashboard', 'dashboard_agent'])
+  let createId: number | null = null
+  let lastId: number | null = null
   for (const step of props.message.agent_steps ?? []) {
     if (!DASHBOARD_TOOLS.has(step.tool_name)) continue
     try {
       const result = typeof step.content?.result === 'string' ? JSON.parse(step.content.result) : step.content?.result
-      if (result?.success === true && result?.dashboard_id) return result.dashboard_id
+      if (result?.success === true && result?.dashboard_id) {
+        lastId = result.dashboard_id
+        if (step.tool_name === 'create_dashboard') createId = result.dashboard_id
+      }
     } catch { continue }
   }
-  return null
+  // Prefer a freshly CREATED dashboard so "View Dashboard" opens the new one, not
+  // an existing dashboard an earlier step may have touched; else the last match.
+  return createId ?? lastId
 })
 
 const viewDashboard = async () => {

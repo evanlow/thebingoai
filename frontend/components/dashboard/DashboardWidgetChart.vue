@@ -4,7 +4,9 @@
       <span class="widget-label">{{ config.title }}</span>
     </div>
     <div class="relative min-h-0 flex-1">
-      <canvas ref="canvasRef" />
+      <DashboardWidgetFunnel v-if="config.type === 'funnel'" :config="config" />
+      <DashboardWidgetTimeline v-else-if="config.type === 'timeline'" :config="config" />
+      <canvas v-else ref="canvasRef" />
     </div>
   </div>
 </template>

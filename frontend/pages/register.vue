@@ -44,7 +44,7 @@
               <div class="w-full border-t border-neutral-200 dark:border-neutral-700"></div>
             </div>
             <div class="relative flex justify-center">
-              <span class="px-3 bg-white dark:bg-neutral-900 text-[11px] tracking-widest uppercase text-neutral-400">
+              <span class="px-3 bg-white dark:bg-neutral-900 text-sm tracking-widest uppercase text-neutral-400">
                 or email
               </span>
             </div>

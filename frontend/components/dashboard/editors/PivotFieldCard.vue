@@ -1,33 +1,33 @@
 <template>
   <div
-    class="relative rounded-lg border border-gray-200 bg-gray-50 transition-shadow"
+    class="relative rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 transition-shadow"
     :class="expanded ? 'p-3 space-y-2' : ''"
   >
     <!-- Collapsed header -->
     <button
       v-if="!expanded"
       type="button"
-      class="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-100 rounded-lg transition-colors"
+      class="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
       @click="expanded = true"
     >
       <div class="flex items-center gap-2 min-w-0">
-        <ChevronRight class="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-        <span class="text-sm font-medium text-gray-700 truncate">
+        <ChevronRight class="h-3.5 w-3.5 text-gray-400 dark:text-neutral-500 flex-shrink-0" />
+        <span class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate">
           {{ local.label || local.column || 'Untitled' }}
         </span>
         <!-- Format badge -->
-        <span v-if="local.format && local.format !== 'number'" class="text-[10px] text-gray-400 uppercase tracking-wide flex-shrink-0">
+        <span v-if="local.format && local.format !== 'number'" class="text-sm text-gray-400 dark:text-neutral-500 uppercase tracking-wide flex-shrink-0">
           {{ local.format }}
         </span>
         <!-- Aggregation badge -->
-        <span v-if="local.aggregation" class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 flex-shrink-0">
+        <span v-if="local.aggregation" class="text-sm px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
           {{ aggLabel(local.aggregation) }}
         </span>
       </div>
       <button
         v-if="editMode"
         type="button"
-        class="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors flex-shrink-0"
+        class="flex h-5 w-5 items-center justify-center rounded text-gray-300 dark:text-neutral-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors flex-shrink-0"
         title="Remove"
         @click.stop="emit('remove')"
       >
@@ -40,7 +40,7 @@
       <!-- Collapse button -->
       <button
         type="button"
-        class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors z-10"
+        class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 dark:text-neutral-500 hover:bg-gray-200 dark:hover:bg-neutral-600 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors z-10"
         title="Collapse"
         @click="expanded = false"
       >
@@ -49,12 +49,12 @@
 
       <!-- Column picker -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400">Column</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Column</label>
         <div class="flex gap-2">
           <select
             :value="local.column"
             :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
+            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="setField('column', ($event.target as HTMLSelectElement).value)"
           >
             <option value="" disabled>Column…</option>
@@ -64,7 +64,7 @@
           <button
             v-if="editMode"
             type="button"
-            class="flex h-7 w-7 items-center justify-center rounded text-gray-300 hover:bg-rose-50 hover:text-rose-500 transition-colors flex-shrink-0"
+            class="flex h-7 w-7 items-center justify-center rounded text-gray-300 dark:text-neutral-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors flex-shrink-0"
             title="Remove"
             @click="emit('remove')"
           >
@@ -75,24 +75,24 @@
 
       <!-- Label -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400">Label</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Label</label>
         <input
           :value="local.label ?? ''"
           type="text"
           placeholder="Label (optional)"
           :readonly="!editMode"
-          class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @input="setField('label', ($event.target as HTMLInputElement).value || undefined)"
         />
       </div>
 
       <!-- Aggregation -->
       <div class="space-y-1">
-        <label class="text-[10px] text-gray-400">Aggregation</label>
+        <label class="text-sm text-gray-400 dark:text-neutral-500">Aggregation</label>
         <select
           :value="local.aggregation || 'sum'"
           :disabled="!editMode"
-          class="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50"
+          class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @change="setField('aggregation', ($event.target as HTMLSelectElement).value)"
         >
           <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>

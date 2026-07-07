@@ -1,10 +1,10 @@
 <template>
-  <div class="font-mono text-xs">
+  <div class="font-mono text-sm">
     <!-- Root: Orchestrator -->
     <div class="flex items-center gap-1.5 py-0.5 mb-0.5">
       <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-      <span class="font-medium text-gray-800 dark:text-neutral-200 font-sans text-[11px]">Orchestrator</span>
-      <span v-if="rootTimestamp" class="ml-auto text-[10px] font-mono text-gray-400">{{ rootTimestamp }}</span>
+      <span class="font-medium text-gray-800 dark:text-neutral-200 font-sans text-sm">Orchestrator</span>
+      <span v-if="rootTimestamp" class="ml-auto text-sm font-mono text-gray-400">{{ rootTimestamp }}</span>
     </div>
 
     <ChatReasoningTreeNode

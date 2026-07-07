@@ -10,7 +10,7 @@
 <template>
   <div class="space-y-3">
     <div class="flex items-center justify-between">
-      <span class="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
+      <span class="text-sm font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
         Parquet sync
       </span>
     </div>
@@ -26,10 +26,10 @@
       class="border border-gray-200 dark:border-neutral-700 rounded-lg p-3 space-y-2"
     >
       <div class="text-sm text-gray-900 dark:text-neutral-100 font-medium">{{ pipeline.name }}</div>
-      <dl class="text-xs text-gray-600 dark:text-neutral-400 space-y-1">
-        <div class="flex justify-between"><dt>Tables</dt><dd class="font-mono">{{ (pipeline.extraction_config?.tables ?? []).join(', ') || pipeline.target_table }}</dd></div>
-        <div class="flex justify-between"><dt>Schedule</dt><dd class="font-mono">{{ pipeline.cron ?? 'manual only' }} <span class="text-gray-400">{{ pipeline.timezone }}</span></dd></div>
-        <div class="flex justify-between"><dt>Last run</dt><dd>{{ pipeline.last_run_at ? formatRelative(pipeline.last_run_at) : '—' }}<template v-if="pipeline.last_run_status"> · {{ pipeline.last_run_status }}</template><template v-if="!pipeline.enabled"> · disabled</template></dd></div>
+      <dl class="text-sm text-gray-600 dark:text-neutral-400 space-y-1">
+        <div class="flex justify-between"><dt>Tables</dt><dd class="font-mono">{{ tableCountLabel }}</dd></div>
+        <div class="flex justify-between"><dt>Schedule</dt><dd class="font-mono">{{ (isNewModel ? activeSchedule?.cron : pipeline.cron) ?? 'manual only' }} <span class="text-gray-400">{{ isNewModel ? activeSchedule?.timezone : pipeline.timezone }}</span></dd></div>
+        <div class="flex justify-between"><dt>Last run</dt><dd>{{ pipeline.last_run_at ? formatRelative(pipeline.last_run_at) : '—' }}<template v-if="pipeline.last_run_status"> · {{ pipeline.last_run_status }}</template><template v-if="!effectiveEnabled"> · disabled</template></dd></div>
         <div class="flex justify-between"><dt>Next run</dt><dd>{{ pipeline.next_run_at ? formatRelative(pipeline.next_run_at) : '—' }}</dd></div>
       </dl>
       <div class="flex flex-wrap items-center gap-2 pt-1">
@@ -46,7 +46,7 @@
           <History class="h-3.5 w-3.5" /> Load history
         </UiButton>
         <UiButton variant="outline" size="sm" @click="toggleEnabled">
-          <Power class="h-3.5 w-3.5" /> {{ pipeline.enabled ? 'Disable' : 'Enable' }}
+          <Power class="h-3.5 w-3.5" /> {{ effectiveEnabled ? 'Disable' : 'Enable' }}
         </UiButton>
         <UiButton variant="danger" size="sm" :loading="deleting" @click="remove">
           <Trash2 class="h-3.5 w-3.5" /> Delete
@@ -58,10 +58,10 @@
         v-if="showLoadHistory"
         class="mt-2 border border-violet-300 dark:border-violet-700 rounded-lg p-3 space-y-2 bg-violet-50/40 dark:bg-violet-900/10"
       >
-        <div class="text-xs font-medium text-gray-900 dark:text-neutral-100">
+        <div class="text-sm font-medium text-gray-900 dark:text-neutral-100">
           Load history from a specific date
         </div>
-        <p class="text-[11px] text-gray-500 dark:text-neutral-400">
+        <p class="text-sm text-gray-500 dark:text-neutral-400">
           Backfills rows with <code class="font-mono">{{ pipeline.incremental_key }} ≥ since</code>. Merge dedup keeps existing partitions intact.
         </p>
         <div class="flex items-center gap-2">
@@ -75,7 +75,7 @@
           </UiButton>
           <UiButton variant="outline" size="sm" @click="showLoadHistory = false">Cancel</UiButton>
         </div>
-        <div v-if="loadHistoryError" class="text-[11px] text-red-600">{{ loadHistoryError }}</div>
+        <div v-if="loadHistoryError" class="text-sm text-red-600">{{ loadHistoryError }}</div>
       </div>
     </div>
 
@@ -85,12 +85,12 @@
       class="border border-gray-200 dark:border-neutral-700 rounded-lg p-3 space-y-3"
       @submit.prevent="save"
     >
-      <p v-if="!pipeline" class="text-xs text-gray-500 dark:text-neutral-400">
+      <p v-if="!pipeline" class="text-sm text-gray-500 dark:text-neutral-400">
         Mirror source tables into Parquet on GCS. Dashboards query the snapshot via DuckDB instead of hitting the source DB live.
       </p>
 
       <div>
-        <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Pipeline name</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Pipeline name</label>
         <input
           v-model="form.name"
           type="text"
@@ -101,7 +101,7 @@
       </div>
 
       <div>
-        <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Tables to sync</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Tables to sync</label>
         <select
           v-model="form.tables"
           multiple
@@ -110,7 +110,7 @@
         >
           <option v-for="t in availableTables" :key="t" :value="t">{{ t }}</option>
         </select>
-        <p class="text-[11px] text-gray-400 mt-0.5">
+        <p class="text-sm text-gray-400 mt-0.5">
           Hold ⌘/Ctrl to select multiple.
           <template v-if="!availableTables.length">Refresh the connection schema first.</template>
         </p>
@@ -118,7 +118,7 @@
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Cron</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Cron</label>
           <input
             v-model="form.cron"
             type="text"
@@ -127,7 +127,7 @@
           />
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Timezone</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Timezone</label>
           <input
             v-model="form.timezone"
             type="text"
@@ -137,10 +137,11 @@
         </div>
       </div>
 
-      <!-- Mode + cursor overrides (Phase 3) -->
-      <div class="grid grid-cols-2 gap-3">
+      <!-- Mode + cursor overrides (Phase 3). New-model schedules derive per-table
+           mode/cursor server-side from the selected tables, so hide these there. -->
+      <div v-if="!isNewModel" class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Mode</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Mode</label>
           <select
             v-model="form.mode"
             class="w-full border border-gray-300 dark:border-neutral-600 rounded px-2 py-1.5 text-sm bg-white dark:bg-neutral-800"
@@ -150,7 +151,7 @@
           </select>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Cursor column</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Cursor column</label>
           <select
             v-model="form.incremental_key"
             :disabled="form.mode !== 'incremental'"
@@ -159,20 +160,20 @@
             <option value="">(none)</option>
             <option v-for="c in cursorCandidates" :key="c" :value="c">{{ c }}</option>
           </select>
-          <p v-if="form.mode === 'incremental' && !form.incremental_key" class="text-[11px] text-amber-600 mt-0.5">
+          <p v-if="form.mode === 'incremental' && !form.incremental_key" class="text-sm text-amber-600 mt-0.5">
             Incremental mode requires a cursor column.
           </p>
         </div>
       </div>
 
-      <div v-if="pkMissingForFirstTable" class="flex items-start gap-1.5 text-[11px] text-red-600 dark:text-red-400">
+      <div v-if="pkMissingForFirstTable" class="flex items-start gap-1.5 text-sm text-red-600 dark:text-red-400">
         <span class="inline-block h-2 w-2 mt-1 rounded-full bg-red-500" />
         <span>
           No PRIMARY KEY on <code class="font-mono">{{ form.tables[0] }}</code>. Merge dedup can't run — rerunning the pipeline may produce duplicates. Add a PK on the source or accept the risk.
         </span>
       </div>
 
-      <div v-if="submitError" class="text-xs text-red-600 dark:text-red-400">{{ submitError }}</div>
+      <div v-if="submitError" class="text-sm text-red-600 dark:text-red-400">{{ submitError }}</div>
 
       <div class="flex items-center justify-end gap-2 pt-1">
         <UiButton v-if="editing" variant="outline" size="sm" type="button" @click="cancelEdit">Cancel</UiButton>
@@ -189,7 +190,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { useApi } from '~/composables/useApi'
 import type { DatabaseConnection, DatabaseSchema } from '~/types/connection'
-import type { Pipeline } from '~/utils/api/pipelinesApi'
+import type { Pipeline, PipelineSchedule } from '~/utils/api/pipelinesApi'
 import { Check, History, Loader2, Pencil, Play, Power, Search, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -224,6 +225,32 @@ const form = ref({
 })
 
 const availableTables = computed<string[]>(() => props.schema?.table_names ?? [])
+
+// New-model pipelines carry cron + per-table specs on a PipelineSchedule row
+// instead of Pipeline.cron / extraction_config.tables. Edit that schedule when present.
+const activeSchedule = computed<PipelineSchedule | null>(() => pipeline.value?.schedules?.[0] ?? null)
+const isNewModel = computed<boolean>(() => !!activeSchedule.value)
+const scheduleTableNames = computed<string[]>(
+  () => (activeSchedule.value?.tables ?? []).map((t) => t.source_table),
+)
+const effectiveEnabled = computed<boolean>(
+  () => (isNewModel.value ? !!activeSchedule.value?.enabled : !!pipeline.value?.enabled),
+)
+
+// Summary shown in the Parquet sync panel — never the raw list. The Database
+// Schema panel above renders the full tree with row counts; this row just
+// reports how many tables the pipeline covers.
+const tableCountLabel = computed<string>(() => {
+  if (!pipeline.value) return '—'
+  if (isNewModel.value) {
+    const n = scheduleTableNames.value.length
+    return n === 1 ? '1 table' : `${n} tables`
+  }
+  const cfg = pipeline.value.extraction_config || {}
+  const list = Array.isArray(cfg.tables) ? cfg.tables : []
+  if (list.length) return list.length === 1 ? '1 table' : `${list.length} tables`
+  return pipeline.value.target_table || '—'
+})
 
 // Columns of the first selected table — drive cursor dropdown + PK check.
 // `schema.schemas[<schemaName>].tables[<table>].columns` is the canonical
@@ -303,6 +330,19 @@ function seedDefaultForm() {
 
 function hydrateFormFromPipeline() {
   if (!pipeline.value) return
+  // New-model: read cron + tables from the schedule, not the legacy Pipeline fields.
+  if (activeSchedule.value) {
+    const s = activeSchedule.value
+    form.value = {
+      name: pipeline.value.name,
+      tables: scheduleTableNames.value,
+      cron: s.cron ?? '',
+      timezone: s.timezone || 'UTC',
+      mode: 'full',
+      incremental_key: '',
+    }
+    return
+  }
   const cfg = pipeline.value.extraction_config || {}
   form.value = {
     name: pipeline.value.name,
@@ -337,7 +377,16 @@ async function save() {
   }
   saving.value = true
   try {
-    if (pipeline.value) {
+    if (pipeline.value && isNewModel.value && activeSchedule.value) {
+      // New-model: edit the schedule (cron / timezone / tables). Per-table mode +
+      // cursor are re-derived server-side from the selected tables.
+      pipeline.value = await api.pipelines.updateSchedule(pipeline.value.id, activeSchedule.value.id, {
+        cron: form.value.cron || null,
+        timezone: form.value.timezone || 'UTC',
+        tables: form.value.tables,
+      })
+      editing.value = false
+    } else if (pipeline.value) {
       // PATCH covers schedule + name + enabled + mode/cursor overrides.
       // Table changes still require delete + recreate.
       pipeline.value = await api.pipelines.update(pipeline.value.id, {
@@ -419,6 +468,12 @@ async function runNow() {
 
 async function toggleEnabled() {
   if (!pipeline.value) return
+  if (isNewModel.value && activeSchedule.value) {
+    pipeline.value = await api.pipelines.updateSchedule(pipeline.value.id, activeSchedule.value.id, {
+      enabled: !activeSchedule.value.enabled,
+    })
+    return
+  }
   pipeline.value = await api.pipelines.update(pipeline.value.id, {
     enabled: !pipeline.value.enabled,
   })

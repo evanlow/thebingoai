@@ -2,16 +2,8 @@
   <div class="flex flex-shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--paper-1)] px-6 py-2 gap-4 dark:border-neutral-700 dark:bg-neutral-900">
     <!-- Type pills -->
     <div class="flex items-center gap-1.5 flex-wrap">
-      <!-- ADD -->
-      <button
-        class="add-pill"
-        @click="emit('add-widget', 'kpi')"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        Add
-      </button>
+      <!-- Label -->
+      <span class="add-label">Add:</span>
 
       <!-- KPI -->
       <button class="type-pill" @click="emit('add-widget', 'kpi')">
@@ -94,23 +86,13 @@ const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
 </script>
 
 <style scoped>
-.add-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 11px;
-  border-radius: 20px;
+.add-label {
   font-family: var(--font-sans);
-  font-size: 11.5px;
+  font-size: 14px;
   font-weight: 600;
-  border: 1px solid var(--ember);
-  background: var(--ember);
-  color: #fff;
-  cursor: pointer;
-  transition: opacity 0.1s;
+  color: var(--ink-3);
   white-space: nowrap;
 }
-.add-pill:hover { opacity: 0.88; }
 
 .type-pill {
   display: inline-flex;
@@ -119,7 +101,7 @@ const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
   padding: 4px 10px;
   border-radius: 20px;
   font-family: var(--font-sans);
-  font-size: 11.5px;
+  font-size: 14px;
   font-weight: 500;
   border: 1px solid var(--line);
   background: var(--paper-0);
@@ -136,7 +118,7 @@ const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
 
 .widget-count {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 14px;
   color: var(--ink-3);
 }
 </style>

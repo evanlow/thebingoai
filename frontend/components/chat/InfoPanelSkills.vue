@@ -6,8 +6,8 @@
       class="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
     >
       <div class="flex items-center gap-1.5">
-        <span class="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-400 font-semibold">Suggested Skills</span>
-        <span class="text-[10px] bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-1.5 py-px rounded-full font-semibold">
+        <span class="text-sm uppercase tracking-wider text-gray-400 dark:text-neutral-400 font-semibold">Suggested Skills</span>
+        <span class="text-sm bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-1.5 py-px rounded-full font-semibold">
           {{ suggestions.length }}
         </span>
       </div>
@@ -34,8 +34,8 @@
             >
               <component :is="getSkillTypeIcon(s.suggested_skill_type)" class="w-3.5 h-3.5 text-gray-400 dark:text-neutral-400 flex-shrink-0" />
               <div class="min-w-0">
-                <div class="text-[11px] font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ s.suggested_name }}</div>
-                <div class="text-[10px] text-gray-400 dark:text-neutral-500">
+                <div class="text-sm font-semibold text-gray-900 dark:text-neutral-100 truncate">{{ s.suggested_name }}</div>
+                <div class="text-sm text-gray-400 dark:text-neutral-500">
                   {{ s.frequency_count ? `Detected ${s.frequency_count} times` : 'Detected' }}
                 </div>
               </div>
@@ -43,7 +43,7 @@
             <div class="flex items-center gap-1 flex-shrink-0 ml-2">
               <button
                 @click="handleAccept(s.id)"
-                class="text-[9px] rounded-lg px-1.5 py-0.5 transition-colors"
+                class="text-sm rounded-lg px-1.5 py-0.5 transition-colors"
                 :class="s.recommendation === 'recommended'
                   ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/60'
                   : 'border border-gray-200 dark:border-neutral-600 text-gray-300 dark:text-neutral-500 hover:text-gray-500 dark:hover:text-neutral-300 hover:border-gray-300 dark:hover:border-neutral-400'"
@@ -52,7 +52,7 @@
               </button>
               <button
                 @click="handleDismiss(s.id)"
-                class="text-[9px] rounded-lg px-1.5 py-0.5 border border-gray-200 dark:border-neutral-600 text-gray-300 dark:text-neutral-500 hover:text-gray-500 dark:hover:text-neutral-300 hover:border-gray-300 dark:hover:border-neutral-400 transition-colors"
+                class="text-sm rounded-lg px-1.5 py-0.5 border border-gray-200 dark:border-neutral-600 text-gray-300 dark:text-neutral-500 hover:text-gray-500 dark:hover:text-neutral-300 hover:border-gray-300 dark:hover:border-neutral-400 transition-colors"
               >
                 &#10005;
               </button>
@@ -61,8 +61,8 @@
 
           <!-- Expanded details -->
           <div v-if="expandedIds.has(s.id)" class="bg-gray-50 dark:bg-neutral-800 rounded-md p-2 mt-1.5 mb-2">
-            <p v-if="s.suggested_description" class="text-[11px] text-gray-600 dark:text-neutral-300 mb-1">{{ s.suggested_description }}</p>
-            <p v-if="s.recommendation_reason" class="text-[10px] text-gray-400 dark:text-neutral-500 italic">{{ s.recommendation_reason }}</p>
+            <p v-if="s.suggested_description" class="text-sm text-gray-600 dark:text-neutral-300 mb-1">{{ s.suggested_description }}</p>
+            <p v-if="s.recommendation_reason" class="text-sm text-gray-400 dark:text-neutral-500 italic">{{ s.recommendation_reason }}</p>
           </div>
         </div>
       </TransitionGroup>

@@ -42,7 +42,7 @@
             <span
               v-if="datasetCount > 0"
               class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full
-                     bg-[var(--ember)] text-white text-[10px] font-semibold
+                     bg-[var(--ember)] text-white text-sm font-semibold
                      flex items-center justify-center leading-none pointer-events-none"
             >
               {{ datasetCount }}
@@ -55,13 +55,16 @@
     <!-- Scrollable message content -->
     <div ref="threadRef" class="flex-1 overflow-y-auto px-14 pt-7 pb-6">
       <div class="max-w-[760px] mx-auto">
-        <div v-if="chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
+        <div v-if="chatStore.messagesLoading && chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
+          <div class="h-6 w-6 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading conversation" />
+        </div>
+        <div v-else-if="chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
           <div v-if="chatStore.currentConversation?.type === 'permanent'" class="text-center max-w-sm">
             <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">
               Welcome to {{ chatStore.permanentConversation?.title || 'Bingo' }}
             </h2>
             <p class="text-[14px] text-[var(--ink-2)] mb-4 leading-relaxed">I'm your personal assistant — you can give me a name, set my personality, and teach me how you like to work.</p>
-            <p class="text-[13px] text-[var(--ink-3)]">For one-off data queries, use <span class="font-medium text-[var(--ink-2)]">New Task</span>.</p>
+            <p class="text-sm text-[var(--ink-3)]">For one-off data queries, use <span class="font-medium text-[var(--ink-2)]">New Task</span>.</p>
           </div>
           <div v-else class="text-center">
             <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">Ask me anything about your data</h2>
@@ -76,14 +79,14 @@
               class="flex items-center gap-3"
             >
               <div class="flex-1 border-t border-[var(--line)]" />
-              <span class="text-[11px] text-[var(--ink-3)]">{{ getDateLabel(message, index) }}</span>
+              <span class="text-sm text-[var(--ink-3)]">{{ getDateLabel(message, index) }}</span>
               <div class="flex-1 border-t border-[var(--line)]" />
             </div>
 
             <!-- Context reset divider -->
             <div v-if="message.source === 'context_reset'" class="flex items-center gap-3">
               <div class="flex-1 border-t border-[var(--line-2)]" />
-              <span class="text-[11px] text-[var(--ink-3)] whitespace-nowrap">New Topic</span>
+              <span class="text-sm text-[var(--ink-3)] whitespace-nowrap">New Topic</span>
               <div class="flex-1 border-t border-[var(--line-2)]" />
             </div>
 

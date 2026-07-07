@@ -5,7 +5,7 @@
       <!-- Out-of-credits banner -->
       <div
         v-if="isExhausted && featureConfig?.credits_enabled !== false"
-        class="mb-3 rounded-xl border border-[var(--warn)] bg-[color-mix(in_oklch,var(--warn)_8%,var(--paper-0))] px-4 py-3 text-[13px] text-[var(--ink-0)] flex items-center justify-between gap-3"
+        class="mb-3 rounded-xl border border-[var(--warn)] bg-[color-mix(in_oklch,var(--warn)_8%,var(--paper-0))] px-4 py-3 text-sm text-[var(--ink-0)] flex items-center justify-between gap-3"
       >
         <span v-if="orgExhausted">Workspace credits exhausted. Contact your admin.</span>
         <span v-else>Daily credits used up. Resets at midnight.</span>
@@ -53,7 +53,7 @@
 
           <!-- Inline error messages -->
           <div v-if="fileErrors.length > 0" class="mb-1">
-            <p v-for="(err, i) in fileErrors" :key="i" class="text-[11px] text-[var(--bad)]">
+            <p v-for="(err, i) in fileErrors" :key="i" class="text-sm text-[var(--bad)]">
               {{ err.name }}: {{ err.error }}
             </p>
           </div>
@@ -107,7 +107,7 @@
             </button>
 
             <div class="flex-1" />
-            <span class="font-mono text-[10.5px] text-[var(--ink-3)] mr-1 hidden md:inline">
+            <span class="font-mono text-sm text-[var(--ink-3)] mr-1 hidden md:inline">
               ⏎ send · ⇧⏎ new line
             </span>
 
@@ -132,7 +132,7 @@
         </form>
 
         <!-- Meta strip below composer -->
-        <div class="flex items-center gap-2 mt-2 px-0.5 text-[11px] text-[var(--ink-2)]">
+        <div class="flex items-center gap-2 mt-2 px-0.5 text-sm text-[var(--ink-2)]">
           <span class="text-[var(--ok)]">●</span>
           <span v-if="datasetsInContext > 0">{{ datasetsInContext }} dataset{{ datasetsInContext !== 1 ? 's' : '' }} in context</span>
           <span v-else>no datasets attached</span>
@@ -146,21 +146,21 @@
       </div>
     </div>
     <UiDialog v-model:open="showResetConfirm" title="Start a new topic?" size="sm">
-      <p class="text-[13px] text-[var(--ink-2)] leading-relaxed">
+      <p class="text-sm text-[var(--ink-2)] leading-relaxed">
         Bingo will clear the current context. Past messages stay visible but won't influence the next reply.
       </p>
       <template #footer>
         <div class="flex items-center justify-end gap-2">
           <button
             type="button"
-            class="px-3 py-1.5 rounded-md text-[12px] text-[var(--ink-1)] hover:bg-[var(--paper-2)] transition-colors"
+            class="px-3 py-1.5 rounded-md text-sm text-[var(--ink-1)] hover:bg-[var(--paper-2)] transition-colors"
             @click="showResetConfirm = false"
           >
             Cancel
           </button>
           <button
             type="button"
-            class="px-3 py-1.5 rounded-md text-[12px] font-medium bg-[var(--ember)] text-white hover:opacity-90 transition-opacity"
+            class="px-3 py-1.5 rounded-md text-sm font-medium bg-[var(--ember)] text-white hover:opacity-90 transition-opacity"
             @click="confirmReset"
           >
             Confirm

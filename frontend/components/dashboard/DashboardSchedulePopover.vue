@@ -14,7 +14,7 @@
         <circle cx="12" cy="12" r="10"/>
         <polyline points="12 6 12 12 16 14"/>
       </svg>
-      <span v-if="hasSchedule" class="text-xs">{{ currentLabel }}</span>
+      <span v-if="hasSchedule" class="text-sm">{{ currentLabel }}</span>
     </button>
 
     <!-- Popover -->
@@ -35,20 +35,20 @@
         <!-- Current status -->
         <div v-if="hasSchedule" class="bg-gray-50 rounded-lg p-3 space-y-1.5">
           <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500">Schedule</span>
-            <span class="text-xs font-medium text-violet-600">{{ currentLabel }}</span>
+            <span class="text-sm text-gray-500">Schedule</span>
+            <span class="text-sm font-medium text-violet-600">{{ currentLabel }}</span>
           </div>
           <div v-if="dashboard?.next_run_at" class="flex items-center justify-between">
-            <span class="text-xs text-gray-500">Next refresh</span>
-            <span class="text-xs text-gray-700">{{ formatRelative(dashboard.next_run_at) }}</span>
+            <span class="text-sm text-gray-500">Next refresh</span>
+            <span class="text-sm text-gray-700">{{ formatRelative(dashboard.next_run_at) }}</span>
           </div>
           <div v-if="dashboard?.last_run_at" class="flex items-center justify-between">
-            <span class="text-xs text-gray-500">Last refresh</span>
-            <span class="text-xs text-gray-700">{{ formatRelative(dashboard.last_run_at) }}</span>
+            <span class="text-sm text-gray-500">Last refresh</span>
+            <span class="text-sm text-gray-700">{{ formatRelative(dashboard.last_run_at) }}</span>
           </div>
           <!-- Active toggle -->
           <div class="flex items-center justify-between pt-1">
-            <span class="text-xs text-gray-500">Active</span>
+            <span class="text-sm text-gray-500">Active</span>
             <button
               @click="handleToggle"
               :disabled="toggling"
@@ -65,13 +65,13 @@
 
         <!-- Preset selector -->
         <div class="space-y-2">
-          <label class="text-xs text-gray-500">Refresh every</label>
+          <label class="text-sm text-gray-500">Refresh every</label>
           <div class="grid grid-cols-4 gap-1.5">
             <button
               v-for="preset in PRESETS"
               :key="preset.value"
               @click="selectPreset(preset.value)"
-              class="px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              class="px-2 py-1.5 rounded-lg text-sm font-medium transition-colors"
               :class="[
                 selectedPreset === preset.value && scheduleMode === 'preset'
                   ? 'bg-violet-500 text-white'
@@ -85,16 +85,16 @@
 
         <!-- Custom cron -->
         <div class="space-y-1.5">
-          <label class="text-xs text-gray-500">Custom cron expression</label>
+          <label class="text-sm text-gray-500">Custom cron expression</label>
           <div class="flex gap-2">
             <input
               v-model="customCron"
               @focus="scheduleMode = 'cron'"
               placeholder="*/30 * * * *"
-              class="flex-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-violet-500"
+              class="flex-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-violet-500"
             />
           </div>
-          <p v-if="cronError" class="text-xs text-red-400">{{ cronError }}</p>
+          <p v-if="cronError" class="text-sm text-red-400">{{ cronError }}</p>
         </div>
 
         <!-- Action buttons -->
@@ -102,14 +102,14 @@
           <button
             @click="handleSave"
             :disabled="saving || (!selectedPreset && !customCron)"
-            class="flex-1 py-2 rounded-lg text-xs font-medium bg-violet-500 text-white hover:bg-violet-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            class="flex-1 py-2 rounded-lg text-sm font-medium bg-violet-500 text-white hover:bg-violet-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {{ saving ? 'Saving…' : (hasSchedule ? 'Update' : 'Enable') }}
           </button>
           <button
             @click="handleTrigger"
             :disabled="triggering"
-            class="px-3 py-2 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 transition-colors"
+            class="px-3 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 transition-colors"
             title="Run now"
           >
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -120,7 +120,7 @@
             v-if="hasSchedule"
             @click="handleRemove"
             :disabled="removing"
-            class="px-3 py-2 rounded-lg text-xs font-medium bg-gray-100 text-red-500 hover:bg-red-50 disabled:opacity-40 transition-colors"
+            class="px-3 py-2 rounded-lg text-sm font-medium bg-gray-100 text-red-500 hover:bg-red-50 disabled:opacity-40 transition-colors"
             title="Remove schedule"
           >
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

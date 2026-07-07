@@ -11,15 +11,6 @@
       <span class="widget-label">{{ config.title }}</span>
     </div>
 
-    <!-- Sparkline background (behind content, hidden when showAsProgress) -->
-    <div
-      v-if="config.sparkline?.length && !showProgress"
-      class="absolute inset-0 pointer-events-none"
-      style="opacity: 0.15;"
-    >
-      <canvas ref="sparklineRef" class="w-full h-full" />
-    </div>
-
     <!-- Content overlay -->
     <div
       class="relative flex flex-col justify-between px-4 py-3 z-10 flex-1 min-h-0 min-w-0"
@@ -55,7 +46,7 @@
               :style="{ width: (progressPct * 100).toFixed(1) + '%', background: progressColor }"
             />
           </div>
-          <div v-if="!config.comparison?.hideComparisonLabel" class="text-[11px] text-[var(--ink-3)] tabular-nums">
+          <div v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)] tabular-nums">
             {{ (progressPct * 100).toFixed(1) }}% {{ comparisonLabel }}
           </div>
         </div>
@@ -77,7 +68,7 @@
               {{ (progressPct * 100).toFixed(0) }}%
             </text>
           </svg>
-          <span v-if="!config.comparison?.hideComparisonLabel" class="text-[11px] text-[var(--ink-3)]">{{ comparisonLabel }}</span>
+          <span v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)]">{{ comparisonLabel }}</span>
         </div>
       </template>
 
@@ -93,10 +84,10 @@
           :style="{ color: comparisonDisplay.color }"
         />
         <span
-          class="text-xs font-medium tabular-nums font-mono"
+          class="text-sm font-medium tabular-nums font-mono"
           :style="{ color: comparisonDisplay.color }"
         >{{ comparisonDisplay.delta }}</span>
-        <span v-if="!config.comparison?.hideComparisonLabel" class="text-xs text-[var(--ink-3)]">
+        <span v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)]">
           {{ comparisonDisplay.label }}
         </span>
       </div>
@@ -113,10 +104,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed } from 'vue'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-vue-next'
 import type { KpiWidgetConfig } from '~/types/dashboard'
-import { Chart } from 'chart.js'
 import { formatNumericValue, formatCompact } from '~/utils/numberFormat'
 
 const POSITIVE_COLOR_DEFAULT = 'var(--d-teal)'
@@ -125,9 +115,6 @@ const NEGATIVE_COLOR_DEFAULT = 'var(--d-ember)'
 const props = defineProps<{
   config: KpiWidgetConfig
 }>()
-
-const sparklineRef = ref<HTMLCanvasElement | null>(null)
-let sparklineInstance: Chart | null = null
 
 // ——————————————————————————————————————————
 // Derived comparison (back-compat: prefer `comparison`, fall back to `trend`)
@@ -303,7 +290,7 @@ const containerStyle = computed(() => {
     }
   }
   if (props.config.borderWidth && props.config.borderWidth > 0) {
-    const color = props.config.borderColor ?? '#e5e7eb'
+    const color = props.config.borderColor ?? 'var(--line)'
     const bStyle = props.config.borderStyle ?? 'solid'
     style.border = `${props.config.borderWidth}px ${bStyle} ${color}`
   }
@@ -377,70 +364,6 @@ const kpiValueClass = computed(() => {
   return ''
 })
 
-// ——————————————————————————————————————————
-// Sparkline rendering
-// ——————————————————————————————————————————
-function resolveSparklineColor(): string {
-  if (props.config.sparklineColor) return props.config.sparklineColor
-  const t = props.config.trend
-  if (t?.direction === 'down') return 'var(--d-ember)'
-  return 'var(--d-teal)'
-}
-
-function renderSparkline() {
-  sparklineInstance?.destroy()
-  sparklineInstance = null
-  if (!sparklineRef.value || !props.config.sparkline?.length || showProgress.value) return
-
-  const color = resolveSparklineColor()
-  const fill = props.config.sparklineFill !== false
-  const smooth = props.config.sparklineSmooth !== false
-  const missingData = props.config.sparklineMissingData ?? 'linear'
-
-  let spanGaps: boolean | number = missingData === 'linear' || missingData === 'zero'
-  if (missingData === 'zero') {
-    // replace nulls with 0 before passing to Chart.js
-  }
-
-  sparklineInstance = new Chart(sparklineRef.value, {
-    type: 'line',
-    data: {
-      labels: props.config.sparklineLabels ?? props.config.sparkline.map(() => ''),
-      datasets: [{
-        data: missingData === 'zero'
-          ? props.config.sparkline.map(v => v ?? 0)
-          : props.config.sparkline,
-        borderColor: color,
-        backgroundColor: fill ? `${color}40` : 'transparent',
-        borderWidth: 1.5,
-        fill,
-        tension: smooth ? 0.4 : 0,
-        pointRadius: 0,
-        spanGaps: missingData !== 'breaks',
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { enabled: false },
-        datalabels: { display: false },
-      },
-      scales: { x: { display: false }, y: { display: false } },
-    },
-  })
-}
-
-onMounted(() => renderSparkline())
-
-watch(
-  () => [props.config?.sparkline, props.config?.sparklineColor, props.config?.sparklineFill, props.config?.sparklineSmooth, props.config?.sparklineMissingData] as const,
-  () => nextTick(() => renderSparkline()),
-)
-
-onBeforeUnmount(() => sparklineInstance?.destroy())
 </script>
 
 <style scoped>

@@ -38,13 +38,26 @@ class PipelineCreate(BaseModel):
     extraction_config: dict[str, Any] = {}
 
 
+class ScheduleResponse(BaseModel):
+    """A new-model `PipelineSchedule` row (cadence + per-table specs)."""
+    id: str
+    name: str | None
+    cron: str | None
+    timezone: str
+    enabled: bool
+    next_run_at: datetime | None
+    tables: list[dict[str, Any]]
+
+    model_config = {"from_attributes": True}
+
+
 class PipelineResponse(BaseModel):
     id: str
     name: str
     source_connection_id: int
     owner_scope_kind: str
     owner_scope_id: str
-    target_table: str
+    target_table: str | None
     cron: str | None
     timezone: str
     mode: str
@@ -59,8 +72,18 @@ class PipelineResponse(BaseModel):
     created_by_user_id: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    schedules: list[ScheduleResponse] = []
 
     model_config = {"from_attributes": True}
+
+
+class ScheduleUpdate(BaseModel):
+    """Partial update for a new-model schedule. `tables` is a list of source
+    table names; specs are re-derived server-side."""
+    cron: str | None = None
+    timezone: str | None = None
+    enabled: bool | None = None
+    tables: list[str] | None = None
 
 
 class PipelineUpdate(BaseModel):
@@ -251,8 +274,10 @@ async def list_pipelines(
     db: Session = Depends(get_db),
 ):
     """List pipelines for the requesting user (created by them or scoped to them)."""
+    from sqlalchemy.orm import selectinload
     pipelines = (
         db.query(Pipeline)
+        .options(selectinload(Pipeline.schedules))
         .filter(
             (Pipeline.created_by_user_id == current_user.id)
             | (Pipeline.owner_scope_id == current_user.id)
@@ -364,6 +389,49 @@ async def update_pipeline(
     db.commit()
     db.refresh(pipeline)
     logger.info("Pipeline %s updated by user %s", pipeline.id, current_user.id)
+    return pipeline
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/pipelines/{pipeline_id}/schedules/{schedule_id} — edit a schedule
+# ---------------------------------------------------------------------------
+
+@router.patch("/{pipeline_id}/schedules/{schedule_id}", response_model=PipelineResponse)
+async def update_schedule_endpoint(
+    pipeline_id: str,
+    schedule_id: str,
+    body: ScheduleUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _viewer=Depends(forbid_viewer),
+):
+    """Edit a new-model schedule (cron / timezone / enabled / tables)."""
+    from sqlalchemy.orm import selectinload
+    from backend.models.pipeline import PipelineSchedule
+    from backend.pipelines.schedule_ops import update_schedule
+
+    pipeline = _get_pipeline_for_user(pipeline_id, current_user.id, db)
+    schedule = db.query(PipelineSchedule).filter(
+        PipelineSchedule.id == schedule_id,
+        PipelineSchedule.pipeline_id == pipeline_id,
+    ).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    fields = body.model_dump(exclude_unset=True)
+    try:
+        update_schedule(pipeline, schedule, db, **fields)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.commit()
+
+    pipeline = (
+        db.query(Pipeline)
+        .options(selectinload(Pipeline.schedules))
+        .filter(Pipeline.id == pipeline_id)
+        .first()
+    )
+    logger.info("Schedule %s updated by user %s", schedule_id, current_user.id)
     return pipeline
 
 

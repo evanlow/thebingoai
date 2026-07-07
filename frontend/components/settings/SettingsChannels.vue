@@ -9,7 +9,7 @@
 
     <!-- Scrolling body -->
     <div class="flex-1 overflow-y-auto px-7 py-6 space-y-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400 max-w-2xl">Bring Bingo into your team's messaging. Each channel becomes a route for scheduled digests and a two-way chat surface.</p>
+      <p class="text-base text-gray-500 dark:text-neutral-400 max-w-2xl">Bring Bingo into your team's messaging. Each channel becomes a route for scheduled digests and a two-way chat surface.</p>
 
     <div class="flex flex-wrap gap-4">
       <!-- Plugin-registered channels (e.g. Telegram) -->

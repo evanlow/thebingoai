@@ -90,7 +90,7 @@ describe('refreshAllWidgets (bulk loading)', () => {
     const cols = (store.currentWidgets[0].widget.config as any).columns
     expect(cols[0].aggregation).toBe('sum')
     expect(cols[0].align).toBe('right')
-    expect(cols[0].label).toBe('amt') // fresh label from backend wins when present
+    expect(cols[0].label).toBe('Amount') // data-only merge: saved label/edit wins, backend supplies data only
     expect((store.currentWidgets[0].widget.config as any).rows).toEqual([{ amt: 5 }])
   })
 

@@ -3,14 +3,14 @@
 
     <!-- Title -->
     <div class="space-y-1.5">
-      <label class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Title</label>
+      <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</label>
       <input
         v-model="localTitle"
         type="text"
         placeholder="e.g. Revenue by Region and Quarter"
-        class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+        class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
         :readonly="!editMode"
-        :class="!editMode ? 'cursor-default bg-gray-50' : ''"
+        :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''"
         @input="emitConfig()"
       />
     </div>
@@ -20,11 +20,11 @@
       <!-- Row dimensions -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Row Dimensions</h3>
-          <button v-if="editMode" type="button" class="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Row Dimensions</h3>
+          <button v-if="editMode" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addDim('row')">+ Add</button>
         </div>
-        <p v-if="!localRowDims.length" class="text-xs text-gray-400">Add a dimension to break down the rows.</p>
+        <p v-if="!localRowDims.length" class="text-sm text-gray-400 dark:text-neutral-500">Add a dimension to break down the rows.</p>
         <PivotDimCard
           v-for="(d, i) in localRowDims"
           :key="'r'+i"
@@ -36,19 +36,19 @@
         />
         <div v-if="localRowDims.length" class="space-y-2 pt-1">
           <div class="flex items-center justify-between py-0.5">
-            <span class="text-xs text-gray-700">Expand-collapse hierarchy</span>
+            <span class="text-sm text-gray-700 dark:text-neutral-200">Expand-collapse hierarchy</span>
             <button type="button" role="switch" :aria-checked="localExpand" :disabled="!editMode"
               class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors disabled:opacity-40"
-              :class="localExpand ? 'bg-indigo-600' : 'bg-gray-200'"
+              :class="localExpand ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
               @click="editMode && (localExpand = !localExpand, emitConfig())">
               <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition mt-0.5"
                 :class="localExpand ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
             </button>
           </div>
           <div v-if="localExpand && localRowDims.length > 1" class="flex items-center justify-between">
-            <span class="text-xs text-gray-700">Default expand level</span>
+            <span class="text-sm text-gray-700 dark:text-neutral-200">Default expand level</span>
             <select v-model.number="localExpandLevel" :disabled="!editMode"
-              class="w-28 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm disabled:bg-gray-50"
+              class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm disabled:bg-gray-50 dark:disabled:bg-neutral-800"
               @change="emitConfig()">
               <option v-for="(d, i) in localRowDims" :key="i" :value="i">{{ d.column || ('Level ' + (i+1)) }}</option>
             </select>
@@ -59,11 +59,11 @@
       <!-- Column dimensions -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Column Dimensions</h3>
-          <button v-if="editMode && localColDims.length < 2" type="button" class="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Column Dimensions</h3>
+          <button v-if="editMode && localColDims.length < 2" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addDim('col')">+ Add</button>
         </div>
-        <p v-if="!localColDims.length" class="text-xs text-gray-400">Optional. Each distinct value becomes a column group (max 2).</p>
+        <p v-if="!localColDims.length" class="text-sm text-gray-400 dark:text-neutral-500">Optional. Each distinct value becomes a column group (max 2).</p>
         <PivotDimCard
           v-for="(d, i) in localColDims"
           :key="'c'+i"
@@ -78,11 +78,11 @@
       <!-- Values / metrics -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Metrics</h3>
-          <button v-if="editMode" type="button" class="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Metrics</h3>
+          <button v-if="editMode" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addValue()">+ Add</button>
         </div>
-        <p v-if="!localValues.length" class="text-xs text-gray-400">Add at least one metric to show in the cells.</p>
+        <p v-if="!localValues.length" class="text-sm text-gray-400 dark:text-neutral-500">Add at least one metric to show in the cells.</p>
         <PivotFieldCard
           v-for="(v, i) in localValues"
           :key="'v'+i"
@@ -96,22 +96,22 @@
 
       <!-- Totals -->
       <div class="space-y-2">
-        <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Totals</h3>
+        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Totals</h3>
         <div class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700">Row totals (grand-total column)</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Row totals (grand-total column)</span>
           <button type="button" role="switch" :aria-checked="localShowRowTotals" :disabled="!editMode"
             class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors disabled:opacity-40"
-            :class="localShowRowTotals ? 'bg-indigo-600' : 'bg-gray-200'"
+            :class="localShowRowTotals ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
             @click="editMode && (localShowRowTotals = !localShowRowTotals, emitConfig())">
             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition mt-0.5"
               :class="localShowRowTotals ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
           </button>
         </div>
         <div class="flex items-center justify-between py-0.5">
-          <span class="text-xs text-gray-700">Column totals (grand-total row)</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Column totals (grand-total row)</span>
           <button type="button" role="switch" :aria-checked="localShowColTotals" :disabled="!editMode"
             class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors disabled:opacity-40"
-            :class="localShowColTotals ? 'bg-indigo-600' : 'bg-gray-200'"
+            :class="localShowColTotals ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-neutral-600'"
             @click="editMode && (localShowColTotals = !localShowColTotals, emitConfig())">
             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition mt-0.5"
               :class="localShowColTotals ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
@@ -121,41 +121,41 @@
 
       <!-- Sort & limits -->
       <div class="space-y-2">
-        <h3 class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Sort &amp; Limits</h3>
+        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Sort &amp; Limits</h3>
         <div class="flex items-center justify-between">
-          <span class="text-xs text-gray-700">Sort rows by</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Sort rows by</span>
           <select v-model="localSortBy" :disabled="!editMode"
-            class="w-36 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm disabled:bg-gray-50"
+            class="w-36 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitConfig()">
             <option value="">First row dimension</option>
             <option v-for="(v, i) in localValues" :key="i" :value="v.column">{{ v.label || v.column }}</option>
           </select>
         </div>
         <div v-if="localSortBy" class="flex items-center justify-between">
-          <span class="text-xs text-gray-700">Direction</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Direction</span>
           <select v-model="localSortDir" :disabled="!editMode"
-            class="w-28 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm disabled:bg-gray-50"
+            class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @change="emitConfig()">
             <option value="asc">Ascending</option>
             <option value="desc">Descending</option>
           </select>
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-xs text-gray-700">Number of rows</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Number of rows</span>
           <input v-model.number="localRowLimit" type="number" min="1" placeholder="All" :disabled="!editMode"
-            class="w-20 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-center disabled:bg-gray-50"
+            class="w-20 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-center disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="emitConfig()" />
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-xs text-gray-700">Number of columns</span>
+          <span class="text-sm text-gray-700 dark:text-neutral-200">Number of columns</span>
           <input v-model.number="localColLimit" type="number" min="1" placeholder="All" :disabled="!editMode"
-            class="w-20 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-center disabled:bg-gray-50"
+            class="w-20 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-center disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="emitConfig()" />
         </div>
       </div>
     </div>
 
-    <p v-else class="text-xs text-gray-400">Connect a data source (Data Source tab) to configure the pivot.</p>
+    <p v-else class="text-sm text-gray-400 dark:text-neutral-500">Connect a data source (Data Source tab) to configure the pivot.</p>
   </div>
 </template>
 

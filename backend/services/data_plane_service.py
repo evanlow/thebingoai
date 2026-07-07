@@ -13,7 +13,8 @@ the local-filesystem fallback is unchanged.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import threading
+from typing import Any, Optional
 
 from backend.data_plane.errors import (
     LocalPlaneUnderLockdownError,
@@ -23,6 +24,10 @@ from backend.data_plane.scope import OwnerScope
 
 logger = logging.getLogger(__name__)
 
+# Cache LocalFilesystemDataPlane instances by root_path so DuckDB connections
+# survive across execute_query calls in the same agent session.
+_local_plane_cache: dict[str, Any] = {}
+_local_plane_cache_lock = threading.Lock()
 
 _provision_on_miss = None
 
@@ -172,9 +177,16 @@ def _no_row_fallback(scope: OwnerScope):
     from backend.config import settings
     if getattr(settings, "disable_local_data_plane", False):
         raise NoPlaneProvisionedError(scope)
-    from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
     root = getattr(settings, "data_plane_local_root", "/data/data_plane")
-    return LocalFilesystemDataPlane(root_path=root)
+    plane = _local_plane_cache.get(root)
+    if plane is None:
+        with _local_plane_cache_lock:
+            plane = _local_plane_cache.get(root)
+            if plane is None:
+                from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
+                plane = LocalFilesystemDataPlane(root_path=root)
+                _local_plane_cache[root] = plane
+    return plane
 
 
 def _scope_chain(scope: OwnerScope, db) -> list[OwnerScope]:
@@ -254,7 +266,9 @@ def _instantiate(row):
             raise LocalPlaneUnderLockdownError(row.id)
         from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
         root = row.config.get("root_path", "/data/data_plane")
-        return LocalFilesystemDataPlane(root_path=root)
+        if root not in _local_plane_cache:
+            _local_plane_cache[root] = LocalFilesystemDataPlane(root_path=root)
+        return _local_plane_cache[root]
 
     if row.type == "google_cloud_project":
         from backend.security.encryption import decrypt_password

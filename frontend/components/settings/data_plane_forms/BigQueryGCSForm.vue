@@ -17,7 +17,7 @@
         placeholder="my-bingo-data-bucket"
         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-      <p class="mt-1 text-xs text-gray-500">Bucket name only — without the gs:// prefix.</p>
+      <p class="mt-1 text-sm text-gray-500">Bucket name only — without the gs:// prefix.</p>
     </div>
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">BigQuery Dataset</label>
@@ -27,7 +27,7 @@
         placeholder="bingo_dataplane"
         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-      <p class="mt-1 text-xs text-gray-500">BigQuery dataset where external Parquet tables will be registered.</p>
+      <p class="mt-1 text-sm text-gray-500">BigQuery dataset where external Parquet tables will be registered.</p>
     </div>
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Service Account JSON</label>
@@ -37,7 +37,7 @@
         placeholder='{"type": "service_account", "project_id": "...", ...}'
         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-      <p class="mt-1 text-xs text-gray-500">Paste the full JSON key file. Stored encrypted at rest.</p>
+      <p class="mt-1 text-sm text-gray-500">Paste the full JSON key file. Stored encrypted at rest.</p>
     </div>
   </div>
 </template>

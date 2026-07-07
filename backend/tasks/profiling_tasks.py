@@ -9,7 +9,7 @@ from backend.database.session import SessionLocal
 logger = logging.getLogger(__name__)
 
 
-@shared_task(name="profile_connection", bind=True, max_retries=2, time_limit=600)
+@shared_task(name="profile_connection", bind=True, max_retries=2)
 def profile_connection(self, connection_id: int):
     """Profile all tables for a connection and build a data context.
 
@@ -48,14 +48,24 @@ def profile_connection(self, connection_id: int):
         connection.profiling_started_at = datetime.now(timezone.utc)
         db.commit()
 
-        # Load the schema that was already discovered at connection creation
+        # Load the schema, discovering it now if the create request didn't.
+        # Discovery moved here (out of the HTTP request) so adding a connection
+        # with very many tables returns immediately instead of reading every
+        # table inline and timing out.
         try:
             schema_json = load_schema_file(connection_id)
         except FileNotFoundError:
-            connection.profiling_status = ProfilingStatus.FAILED.value
-            connection.profiling_error = "Schema file not found. Please refresh the connection schema first."
-            db.commit()
-            return
+            try:
+                schema_json = _discover_and_save_schema(db, connection)
+            except Exception as disc_err:
+                connection.profiling_status = ProfilingStatus.FAILED.value
+                connection.profiling_error = f"Schema discovery failed: {disc_err}"
+                db.commit()
+                logger.error(
+                    "profile_connection %d: schema discovery failed: %s",
+                    connection_id, disc_err,
+                )
+                return
 
         # Determine connector metadata
         reg = get_connector_registration(connection.db_type)
@@ -85,6 +95,11 @@ def profile_connection(self, connection_id: int):
         # Profile each table
         table_profiles: dict[str, dict] = {}
 
+        # Persist accumulated profiles to data_context every N tables so a crash
+        # or worker restart mid-run keeps completed tables instead of losing the
+        # whole batch (results were previously saved only at the very end).
+        PARTIAL_SAVE_EVERY = 50
+
         connector = get_connector_for_connection(connection)
         try:
             for idx, (schema_name, table_name, table_data) in enumerate(tables_to_profile, 1):
@@ -109,6 +124,20 @@ def profile_connection(self, connection_id: int):
                         connection_id, table_name, table_err,
                     )
                     table_profiles[table_name] = {"table_name": table_name, "columns": {}, "error": str(table_err)}
+
+                if idx % PARTIAL_SAVE_EVERY == 0 and _profiles_have_stats(table_profiles):
+                    try:
+                        partial = build_connection_context(connection_id, schema_json, table_profiles)
+                        save_connection_context(db, connection_id, partial)
+                        logger.info(
+                            "profile_connection %d: saved partial context (%d/%d tables)",
+                            connection_id, idx, total,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "profile_connection %d: partial context save failed at %d/%d",
+                            connection_id, idx, total,
+                        )
         finally:
             connector.close()
 
@@ -187,6 +216,47 @@ def profile_connection(self, connection_id: int):
         raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
     finally:
         db.close()
+
+
+def _discover_and_save_schema(db, connection):
+    """Discover the connection's schema and persist it.
+
+    Runs inside the profiling job (not the create request) so connections with
+    many tables don't block the HTTP call. Mirrors what the create endpoint used
+    to do inline: discover → augment with pipelines → save → set schema_json_path
+    and table_count on the connection row.
+    """
+    from datetime import datetime
+    from backend.connectors.factory import (
+        get_connector_for_connection, get_connector_registration,
+    )
+    from backend.services.schema_discovery import (
+        discover_schema, generate_schema_json, save_schema_file,
+        schema_key_for, augment_schema_with_pipelines,
+    )
+
+    connector = get_connector_for_connection(connection)
+    try:
+        schema_data = discover_schema(connector)
+        schema_data = augment_schema_with_pipelines(schema_data, connection)
+    finally:
+        connector.close()
+
+    schema_json = generate_schema_json(
+        connection.id, connection.name, connection.db_type, schema_data,
+    )
+    schema_path = save_schema_file(schema_key_for(connection), schema_json)
+
+    connection.schema_json_path = schema_path
+    connection.schema_generated_at = datetime.utcnow()
+    # table_count: datasets (e.g. BigQuery) count top-level schemas, others tables.
+    reg = get_connector_registration(connection.db_type)
+    if reg and "dataset_count" in (reg.card_meta_items or []):
+        connection.table_count = len(schema_data.get("schemas", {}))
+    else:
+        connection.table_count = len(schema_data.get("table_names", []))
+    db.commit()
+    return schema_json
 
 
 def _profiles_have_stats(table_profiles: dict) -> bool:

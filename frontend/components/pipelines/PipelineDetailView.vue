@@ -36,7 +36,7 @@
             <UiBadge v-if="!pipeline.enabled" variant="warning" size="sm">Disabled</UiBadge>
           </div>
           <p class="mt-1 text-sm text-gray-500 dark:text-neutral-400">
-            Pipeline ID: <code class="font-mono text-xs">{{ pipeline.id }}</code>
+            Pipeline ID: <code class="font-mono text-sm">{{ pipeline.id }}</code>
           </p>
         </div>
 
@@ -55,36 +55,36 @@
         <h2 class="text-sm font-medium text-gray-700 dark:text-neutral-300 mb-3">Pipeline Details</h2>
         <dl class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
           <div>
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Source Connection</dt>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Source Connection</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 flex items-center gap-1">
               <Database class="h-3.5 w-3.5 text-gray-400" />
               Connection #{{ pipeline.source_connection_id }}
             </dd>
           </div>
           <div>
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Target Table</dt>
-            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-xs">{{ pipeline.target_table }}</dd>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Target Table</dt>
+            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-sm">{{ pipeline.target_table }}</dd>
           </div>
           <div>
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Mode</dt>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Mode</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 capitalize">{{ pipeline.mode }}</dd>
           </div>
           <div v-if="pipeline.incremental_key">
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Incremental Key</dt>
-            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-xs">{{ pipeline.incremental_key }}</dd>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Incremental Key</dt>
+            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-sm">{{ pipeline.incremental_key }}</dd>
           </div>
           <div>
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Schedule</dt>
-            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-xs">
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Schedule</dt>
+            <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 font-mono text-sm">
               {{ pipeline.cron || 'Manual only' }}
             </dd>
           </div>
           <div v-if="pipeline.last_run_at">
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Last Run</dt>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Last Run</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100">{{ formatDate(pipeline.last_run_at) }}</dd>
           </div>
           <div v-if="pipeline.next_run_at">
-            <dt class="text-xs text-gray-500 dark:text-neutral-400">Next Run</dt>
+            <dt class="text-sm text-gray-500 dark:text-neutral-400">Next Run</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100">{{ formatDate(pipeline.next_run_at) }}</dd>
           </div>
         </dl>
@@ -108,7 +108,7 @@
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-base font-medium text-gray-900 dark:text-neutral-100">Run History</h2>
           <button
-            class="text-xs text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-100"
+            class="text-sm text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-100"
             @click="loadRuns"
           >
             Refresh
@@ -138,7 +138,7 @@
                 <UiBadge :variant="runStatusVariant(run.status)" size="sm" :dot="true">
                   {{ run.status }}
                 </UiBadge>
-                <span class="text-xs text-gray-500 dark:text-neutral-400">
+                <span class="text-sm text-gray-500 dark:text-neutral-400">
                   {{ formatDate(run.started_at) }}
                 </span>
                 <UiBadge variant="default" size="sm">{{ run.triggered_by }}</UiBadge>
@@ -146,13 +146,13 @@
 
               <div
                 v-if="run.error_message"
-                class="mt-1.5 text-xs text-red-600 dark:text-red-400 font-mono truncate"
+                class="mt-1.5 text-sm text-red-600 dark:text-red-400 font-mono truncate"
               >
                 {{ run.error_message }}
               </div>
             </div>
 
-            <div class="shrink-0 text-right text-xs text-gray-500 dark:text-neutral-400">
+            <div class="shrink-0 text-right text-sm text-gray-500 dark:text-neutral-400">
               <div v-if="run.rows_written !== null">
                 {{ run.rows_written.toLocaleString() }} rows
               </div>

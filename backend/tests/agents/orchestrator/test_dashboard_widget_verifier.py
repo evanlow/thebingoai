@@ -1,7 +1,7 @@
 """Unit tests for dashboard widget post-verifier.
 
 Covers duplicate-metric detection across canonical window labels,
-KPI count cap, and non-window parentheticals.
+total widget count cap, and non-window parentheticals.
 """
 from backend.agents.orchestrator.dashboard_widget_verifier import (
     verify_dashboard_widgets,
@@ -59,7 +59,7 @@ def test_duplicate_30d_and_last_30_days_flagged():
     assert any("Duplicate KPI metric 'Spend'" in v for v in violations), violations
 
 
-def test_five_distinct_kpis_flags_count_not_dup():
+def test_five_distinct_kpis_no_violation():
     widgets = [
         _kpi("Spend"),
         _kpi("Impressions"),
@@ -68,8 +68,7 @@ def test_five_distinct_kpis_flags_count_not_dup():
         _kpi("CPC"),
     ]
     violations = verify_dashboard_widgets(widgets)
-    assert any("KPI count = 5" in v for v in violations), violations
-    assert not any("Duplicate KPI metric" in v for v in violations), violations
+    assert violations == [], violations
 
 
 def test_four_distinct_kpis_no_violation():

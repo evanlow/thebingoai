@@ -22,7 +22,7 @@
           <UiBadge :variant="runStatusVariant(run.status)" size="sm" :dot="true">
             {{ run.status }}
           </UiBadge>
-          <span class="text-xs text-gray-500 dark:text-neutral-400">
+          <span class="text-sm text-gray-500 dark:text-neutral-400">
             {{ formatDate(run.started_at) }}
           </span>
           <UiBadge variant="default" size="sm">{{ run.triggered_by }}</UiBadge>
@@ -30,13 +30,13 @@
 
         <div
           v-if="run.error_message"
-          class="mt-1.5 text-xs text-red-600 dark:text-red-400 font-mono truncate"
+          class="mt-1.5 text-sm text-red-600 dark:text-red-400 font-mono truncate"
         >
           {{ run.error_message }}
         </div>
       </div>
 
-      <div class="shrink-0 text-right text-xs text-gray-500 dark:text-neutral-400">
+      <div class="shrink-0 text-right text-sm text-gray-500 dark:text-neutral-400">
         <div v-if="run.rows_written !== null && run.rows_written !== undefined">
           {{ run.rows_written.toLocaleString() }} rows
         </div>

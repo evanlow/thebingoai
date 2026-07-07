@@ -19,7 +19,6 @@ from backend.connectors.factory import (
     get_connector_for_connection,
 )
 from backend.services.schema_discovery import (
-    discover_schema, generate_schema_json, save_schema_file,
     refresh_schema, delete_schema_file, load_schema_file, schema_key_for,
 )
 from backend.config import settings
@@ -303,48 +302,15 @@ async def create_connection(
                     connection.id, exc_info=True,
                 )
 
-    # Auto-discover schema for all connector types except BigQuery (legacy —
-    # opted out because projects often have hundreds of datasets). BigQuery GA4
-    # is single-project and runs discovery so the dashboard agent gets context.
+    # Schema discovery + profiling run in the background job (not here) so the
+    # create request returns immediately even for connections with very many
+    # tables — discovery used to read every table inline and could time out.
+    # BigQuery (plain) is the exception: no traditional discovery.
     if request.db_type != "bigquery":
-        try:
-            with get_connector(
-                db_type=request.db_type,
-                host=request.host,
-                port=request.port,
-                database=request.database,
-                username=request.username,
-                password=request.password,
-                ssl_enabled=request.ssl_enabled,
-                ssl_ca_cert=request.ssl_ca_cert
-            ) as connector:
-                schema_data = discover_schema(connector)
-                # Inject materialised pipeline tables (e.g. bigquery_ga4 dedup
-                # view) so dashboard/briefing agents see flat columns rather
-                # than just raw source schema. No-op for other db_types.
-                from backend.services.schema_discovery import augment_schema_with_pipelines
-                schema_data = augment_schema_with_pipelines(schema_data, connection)
-                schema_json = generate_schema_json(
-                    connection.id,
-                    connection.name,
-                    connection.db_type,
-                    schema_data
-                )
-                schema_path = save_schema_file(schema_key_for(connection), schema_json)
-
-                connection.schema_json_path = schema_path
-                connection.schema_generated_at = datetime.utcnow()
-                connection.table_count = _schema_item_count(connection.db_type, schema_data)
-                db.commit()
-                db.refresh(connection)
-
-            from backend.tasks.profiling_tasks import profile_connection
-            connection.profiling_status = ProfilingStatus.PENDING.value
-            db.commit()
-            profile_connection.delay(connection.id)
-
-        except Exception as e:
-            logger.error("Schema discovery failed for connection %s: %s", connection.id, e, exc_info=True)
+        from backend.tasks.profiling_tasks import profile_connection
+        connection.profiling_status = ProfilingStatus.PENDING.value
+        db.commit()
+        profile_connection.delay(connection.id)
     else:
         # GA4 / BigQuery: no traditional schema discovery.  Clear the profiling
         # status so the UI doesn't show a stuck spinner on the connection card.

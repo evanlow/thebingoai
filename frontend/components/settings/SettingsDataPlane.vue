@@ -9,7 +9,7 @@
 
     <!-- Scrolling body -->
     <div class="flex-1 overflow-y-auto px-7 py-6 space-y-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400 max-w-2xl">
+      <p class="text-base text-gray-500 dark:text-neutral-400 max-w-2xl">
         Configure where Bingo stores materialized dashboard data.
         Choose <strong>Local Filesystem</strong> for self-hosted or dev, or
         <strong>Google Cloud Project</strong> for cloud production.
@@ -35,7 +35,7 @@
               <span class="text-sm font-medium text-gray-900">{{ planeLabel(plane.type) }}</span>
               <UiBadge v-if="plane.is_default" variant="info" size="sm">Default</UiBadge>
             </div>
-            <p class="mt-1 text-xs text-gray-500">{{ planeSummary(plane) }}</p>
+            <p class="mt-1 text-sm text-gray-500">{{ planeSummary(plane) }}</p>
           </div>
           <div class="flex gap-2 shrink-0 ml-4">
             <UiButton
@@ -99,7 +99,7 @@
           </UiButton>
         </div>
 
-        <p v-if="saveError" class="mt-2 text-xs text-red-600">{{ saveError }}</p>
+        <p v-if="saveError" class="mt-2 text-sm text-red-600">{{ saveError }}</p>
       </div>
     </template>
     </div>

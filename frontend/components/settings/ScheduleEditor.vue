@@ -9,7 +9,7 @@
           :key="preset.value"
           type="button"
           @click="selectPreset(preset.value)"
-          class="px-3 py-1 text-xs rounded-full border transition-colors"
+          class="px-3 py-1 text-sm rounded-full border transition-colors"
           :class="selectedPreset === preset.value
             ? 'bg-blue-600 border-blue-600 text-white'
             : 'border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:border-blue-300 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400'"
@@ -19,7 +19,7 @@
         <button
           type="button"
           @click="selectPreset(null)"
-          class="px-3 py-1 text-xs rounded-full border transition-colors"
+          class="px-3 py-1 text-sm rounded-full border transition-colors"
           :class="selectedPreset === null
             ? 'bg-blue-600 border-blue-600 text-white'
             : 'border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:border-blue-300 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400'"
@@ -38,7 +38,7 @@
           :key="day.value"
           type="button"
           @click="toggleDay(day.value)"
-          class="h-8 w-8 rounded-full text-xs font-medium transition-colors border"
+          class="h-8 w-8 rounded-full text-sm font-medium transition-colors border"
           :class="selectedDays.has(day.value)
             ? 'bg-blue-600 border-blue-600 text-white'
             : 'border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:border-blue-300 hover:text-blue-600'"
@@ -68,7 +68,7 @@
           <option :value="30">30</option>
           <option :value="45">45</option>
         </select>
-        <span class="text-xs text-gray-400 dark:text-neutral-500">{{ browserTz }}</span>
+        <span class="text-sm text-gray-400 dark:text-neutral-500">{{ browserTz }}</span>
       </div>
     </div>
 
@@ -81,7 +81,7 @@
         placeholder="e.g. 0 9 * * 1-5"
         class="w-full rounded-lg border border-gray-300 dark:border-neutral-600 dark:bg-neutral-700 dark:text-white px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
       />
-      <p class="text-xs text-gray-400 dark:text-neutral-500 mt-1">Standard 5-field cron: minute hour day month weekday</p>
+      <p class="text-sm text-gray-400 dark:text-neutral-500 mt-1">Standard 5-field cron: minute hour day month weekday</p>
     </div>
 
     <!-- Actions -->

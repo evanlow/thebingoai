@@ -1,9 +1,9 @@
 <template>
   <div class="space-y-2">
     <!-- Chart mapping -->
-    <template v-if="mapping.type === 'chart' && (mapping.labelColumn || mapping.datasetColumns.length > 0 || mapping.xMetricColumn)">
-      <div class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
-      <table class="w-full text-xs">
+    <template v-if="mapping.type === 'chart' && (mapping.labelColumn || (mapping.datasetColumns?.length ?? 0) > 0 || mapping.xMetricColumn)">
+      <div class="text-sm font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
+      <table class="w-full text-sm">
         <tbody class="divide-y divide-gray-100">
           <tr v-if="mapping.xMetricColumn">
             <td class="py-1 pr-3 text-gray-500 w-24">X Metric</td>
@@ -17,7 +17,7 @@
             <td class="py-1 pr-3 text-gray-500 w-24">Dimension</td>
             <td class="py-1 font-mono text-gray-800">{{ mapping.labelColumn }}</td>
           </tr>
-          <tr v-for="ds in mapping.datasetColumns" :key="ds.column">
+          <tr v-for="ds in (mapping.datasetColumns || [])" :key="ds.column">
             <td class="py-1 pr-3 text-gray-500">Metric "{{ ds.label || ds.column }}"</td>
             <td class="py-1 font-mono text-gray-800">{{ ds.column }}<span v-if="ds.aggregation && ds.aggregation !== 'none'" class="ml-1 text-gray-400">({{ ds.aggregation }})</span></td>
           </tr>
@@ -27,8 +27,8 @@
 
     <!-- KPI mapping -->
     <template v-else-if="mapping.type === 'kpi' && mapping.valueColumn">
-      <div class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
-      <table class="w-full text-xs">
+      <div class="text-sm font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
+      <table class="w-full text-sm">
         <tbody class="divide-y divide-gray-100">
           <tr>
             <td class="py-1 pr-3 text-gray-500 w-32">Main value</td>
@@ -38,22 +38,14 @@
             <td class="py-1 pr-3 text-gray-500">Trend value</td>
             <td class="py-1 font-mono text-gray-800">{{ mapping.trendValueColumn }}</td>
           </tr>
-          <tr v-if="mapping.sparklineXColumn">
-            <td class="py-1 pr-3 text-gray-500">Sparkline X</td>
-            <td class="py-1 font-mono text-gray-800">{{ mapping.sparklineXColumn }}</td>
-          </tr>
-          <tr v-if="mapping.sparklineYColumn">
-            <td class="py-1 pr-3 text-gray-500">Sparkline Y</td>
-            <td class="py-1 font-mono text-gray-800">{{ mapping.sparklineYColumn }}</td>
-          </tr>
         </tbody>
       </table>
     </template>
 
     <!-- Table mapping -->
-    <template v-else-if="mapping.type === 'table' && mapping.columnConfig.length > 0">
-      <div class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
-      <table class="w-full text-xs">
+    <template v-else-if="mapping.type === 'table' && (mapping.columnConfig?.length ?? 0) > 0">
+      <div class="text-sm font-medium text-gray-500 uppercase tracking-wide">Column Mapping</div>
+      <table class="w-full text-sm">
         <thead>
           <tr class="text-gray-400">
             <th class="pb-1 pr-3 text-left font-normal w-32">SQL Column</th>

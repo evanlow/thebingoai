@@ -6,9 +6,13 @@ and the orchestrator, which all duplicated:
 1. The "find the last AI message without tool calls" pattern.
 2. The mesh-vs-inline branch (AgentRuntime path vs direct create_react_agent path).
 """
+import logging
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
+
+logger = logging.getLogger(__name__)
 
 
 def extract_final_answer(messages: list) -> Optional[str]:
@@ -89,6 +93,7 @@ async def run_inline_react(
         kwargs["pre_model_hook"] = pre_model_hook
 
     agent = create_react_agent(**kwargs)
+    _t0 = time.perf_counter()
     result = await agent.ainvoke(
         {"messages": [HumanMessage(content=message)]},
         config={
@@ -99,5 +104,10 @@ async def run_inline_react(
                 user_id=user_id,
             ),
         },
+    )
+    logger.info(
+        "[LATENCY][%s] LLM ainvoke total: %dms",
+        agent_type or "sub_agent",
+        int((time.perf_counter() - _t0) * 1000),
     )
     return result.get("messages", [])

@@ -343,7 +343,7 @@ const handleFileChange = async (e: Event) => {
   margin-bottom: 6px;
 }
 .composer-file-errors p {
-  font-size: 11px;
+  font-size: round(11px * var(--fs-mult), 1px);
   color: var(--bad);
   margin: 0;
 }
@@ -368,7 +368,7 @@ const handleFileChange = async (e: Event) => {
   max-height: 200px;
   overflow-y: auto;
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: round(17px * var(--fs-mult), 1px);
   color: var(--ink-0);
   line-height: 1.5;
   outline: none;
@@ -407,7 +407,7 @@ const handleFileChange = async (e: Event) => {
   background: var(--ink-0);
   color: var(--paper-0);
   border: 1px solid var(--ink-0);
-  font-size: 13px;
+  font-size: round(13px * var(--fs-mult), 1px);
   font-weight: 500;
   font-family: var(--font-sans);
   cursor: pointer;

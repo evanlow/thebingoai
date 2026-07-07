@@ -129,6 +129,14 @@ class TestRowWidthNormalization:
         normalize_dashboard_layout(widgets)
         assert [_pos(widgets, f"k{i}")["w"] for i in (1, 2, 3)] == [4, 4, 4]
 
+    def test_five_kpis_one_row_full_width(self):
+        widgets = [_w(f"k{i}", "kpi", 0, 0, 3, 2) for i in range(1, 6)]
+        normalize_dashboard_layout(widgets)
+        ws = [_pos(widgets, f"k{i}")["w"] for i in range(1, 6)]
+        assert ws == [3, 3, 2, 2, 2]  # divmod(12, 5) → fills the row exactly
+        assert sum(ws) == 12
+        assert all(_pos(widgets, f"k{i}")["y"] == 0 for i in range(1, 6))
+
 
 class TestPairUp:
     def test_two_stacked_lone_charts_merge_side_by_side(self):

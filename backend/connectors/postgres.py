@@ -46,6 +46,22 @@ class PostgresConnector(BaseConnector):
                 kwargs['sslmode'] = 'require'
         return kwargs
 
+    def _get_row_count(self, cursor, schema: str, table_name: str) -> int:
+        """Use pg_class.reltuples (planner estimate, no scan). Falls back to an
+        exact COUNT(*) when the table was never analyzed (reltuples <= 0)."""
+        try:
+            cursor.execute(
+                "SELECT reltuples::bigint AS count FROM pg_class WHERE oid = %s::regclass",
+                (f'"{schema}"."{table_name}"',),
+            )
+            row = cursor.fetchone()
+            est = (row['count'] if isinstance(row, dict) else row[0]) if row else None
+            if est is not None and est > 0:
+                return int(est)
+        except Exception:
+            pass
+        return super()._get_row_count(cursor, schema, table_name)
+
     def _foreign_key_query(self, schema: str, table: str) -> tuple:
         """
         PostgreSQL FK query using constraint_column_usage.

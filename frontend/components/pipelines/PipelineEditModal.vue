@@ -69,7 +69,7 @@
             Incremental
           </button>
         </div>
-        <p class="mt-1.5 text-xs text-gray-500 dark:text-neutral-500">
+        <p class="mt-1.5 text-sm text-gray-500 dark:text-neutral-500">
           <template v-if="form.mode === 'full'">Replaces all rows on each run.</template>
           <template v-else>Appends only new/changed rows using the incremental key.</template>
         </p>
@@ -107,7 +107,7 @@
         <p v-if="formErrors.extraction_config" class="mt-1.5 text-sm text-red-600">
           {{ formErrors.extraction_config }}
         </p>
-        <p v-else class="mt-1.5 text-xs text-gray-500 dark:text-neutral-500">
+        <p v-else class="mt-1.5 text-sm text-gray-500 dark:text-neutral-500">
           Connector-specific extraction options as JSON.
         </p>
       </div>

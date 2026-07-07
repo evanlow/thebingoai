@@ -9,8 +9,8 @@
 
     <!-- Scrolling body -->
     <div class="flex-1 overflow-y-auto px-7 py-6 space-y-6">
-      <p class="text-sm text-gray-500 dark:text-neutral-400">
-        Provider keys are read from the server's <code class="text-xs px-1 py-0.5 rounded bg-gray-100 dark:bg-neutral-800">.env</code> file. Contact your administrator to add or change keys.
+      <p class="text-base text-gray-500 dark:text-neutral-400">
+        Provider keys are read from the server's <code class="text-sm px-1 py-0.5 rounded bg-gray-100 dark:bg-neutral-800">.env</code> file. Contact your administrator to add or change keys.
       </p>
 
     <div class="rounded-xl border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-700">
@@ -21,17 +21,17 @@
       >
         <div class="min-w-0">
           <p class="text-sm font-medium text-gray-900 dark:text-white">{{ displayName(name) }}</p>
-          <p class="text-xs text-gray-400 dark:text-neutral-500 font-mono truncate">{{ info.base_url }}</p>
+          <p class="text-sm text-gray-400 dark:text-neutral-500 font-mono truncate">{{ info.base_url }}</p>
         </div>
         <span
           v-if="info.configured"
-          class="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400"
+          class="shrink-0 inline-flex items-center gap-1.5 text-sm font-medium text-green-600 dark:text-green-400"
         >
           <span class="h-1.5 w-1.5 rounded-full bg-green-500" />
           Configured
         </span>
-        <span v-else class="shrink-0 text-xs text-gray-400 dark:text-neutral-500">
-          Not configured — set <code class="text-xs px-1 py-0.5 rounded bg-gray-100 dark:bg-neutral-800">{{ envVarName(name) }}</code> in .env
+        <span v-else class="shrink-0 text-sm text-gray-400 dark:text-neutral-500">
+          Not configured — set <code class="text-sm px-1 py-0.5 rounded bg-gray-100 dark:bg-neutral-800">{{ envVarName(name) }}</code> in .env
         </span>
       </div>
     </div>

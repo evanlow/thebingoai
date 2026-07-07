@@ -1,3 +1,5 @@
+import time
+
 from langchain_core.messages import HumanMessage, AIMessage
 from backend.embedder.openai import embed_text
 from backend.vectordb.qdrant import query_vectors
@@ -23,14 +25,18 @@ async def retrieve_context(state: ConversationState) -> ConversationState:
     logger.info(f"Retrieving context for: {question[:50]}...")
 
     # Embed the question
+    _t0 = time.perf_counter()
     query_embedding = await embed_text(question)
+    logger.info("[LATENCY][rag] embed: %dms", int((time.perf_counter() - _t0) * 1000))
 
     # Search vectors
+    _t1 = time.perf_counter()
     results = await query_vectors(
         query_embedding=query_embedding,
         namespace=namespace,
         top_k=top_k
     )
+    logger.info("[LATENCY][rag] vector_search: %dms results=%d", int((time.perf_counter() - _t1) * 1000), len(results))
 
     # Extract context and sources
     context = []
@@ -67,12 +73,15 @@ async def retrieve_context(state: ConversationState) -> ConversationState:
     }
 
 
-async def generate_response(state: ConversationState) -> ConversationState:
+async def generate_response(state: ConversationState, config=None) -> ConversationState:
     """
     Generate answer using LLM with retrieved context.
 
     Node: generate_response
     """
+    from langchain_core.messages import SystemMessage
+    from langchain_core.runnables import RunnableConfig
+
     question = state["question"]
     context = state["context"]
     provider = state["provider"]
@@ -80,6 +89,7 @@ async def generate_response(state: ConversationState) -> ConversationState:
     temperature = state.get("temperature", settings.default_llm_temperature)
     messages = list(state["messages"])
 
+    _rag_gen_t0 = time.perf_counter()
     logger.info(f"Generating answer with {provider}")
 
     # Build context string
@@ -92,25 +102,31 @@ async def generate_response(state: ConversationState) -> ConversationState:
     else:
         system_content = NO_CONTEXT_PROMPT
 
-    # Get LLM provider
-    llm = get_provider(provider, model)
+    # Use get_langchain_llm() so LangGraph propagates parent callbacks (e.g. Langfuse)
+    # into the LLM call. llm.chat() bypasses LangChain's callback chain entirely.
+    lc_llm = get_provider(provider, model).get_langchain_llm(temperature=temperature)
 
-    # Build messages for LLM
-    llm_messages = [
-        {"role": "system", "content": system_content},
-        {"role": "user", "content": question}
-    ]
+    # Build LangChain messages
+    lc_messages = [SystemMessage(content=system_content)]
 
     # Include recent conversation history for context
     history_limit = settings.rag_conversation_history_messages
     for msg in messages[-history_limit:]:
-        if isinstance(msg, HumanMessage):
-            llm_messages.insert(-1, {"role": "user", "content": msg.content})
-        elif isinstance(msg, AIMessage):
-            llm_messages.insert(-1, {"role": "assistant", "content": msg.content})
+        lc_messages.append(msg)
 
-    # Generate response
-    answer = await llm.chat(llm_messages, temperature=temperature)
+    lc_messages.append(HumanMessage(content=question))
+
+    # Invoke via LangChain runnable so config callbacks propagate
+    result = await lc_llm.ainvoke(lc_messages, config=config or RunnableConfig())
+    answer = result.content
+    _usage = getattr(result, "usage_metadata", None)
+    logger.info(
+        "[LATENCY][rag] llm_gen: %dms model=%s tokens_in=%s tokens_out=%s",
+        int((time.perf_counter() - _rag_gen_t0) * 1000),
+        provider,
+        _usage.get("input_tokens") if isinstance(_usage, dict) else getattr(_usage, "input_tokens", "?"),
+        _usage.get("output_tokens") if isinstance(_usage, dict) else getattr(_usage, "output_tokens", "?"),
+    )
 
     # Add to message history
     new_messages = [

@@ -228,6 +228,36 @@ async def set_analysis_schedule(
     }
 
 
+@router.get("/{dashboard_id}/analysis-schedule")
+async def get_analysis_schedule(
+    dashboard_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the recurring AI analysis job for a dashboard, or null if none."""
+    from backend.models.heartbeat_job import HeartbeatJob
+
+    dashboard = _get_dashboard_or_404(dashboard_id, current_user.id, db)
+    job_name = f"{_ANALYSIS_JOB_PREFIX}{dashboard.title}"
+
+    job = db.query(HeartbeatJob).filter(
+        HeartbeatJob.user_id == current_user.id,
+        HeartbeatJob.name == job_name,
+    ).first()
+
+    if not job:
+        return None
+
+    return {
+        "dashboard_id": dashboard_id,
+        "job_id": job.id,
+        "schedule_type": job.schedule_type,
+        "schedule_value": job.schedule_value,
+        "next_run_at": job.next_run_at.isoformat() if job.next_run_at else None,
+        "is_active": job.is_active,
+    }
+
+
 @router.delete("/{dashboard_id}/analysis-schedule", status_code=204)
 async def remove_analysis_schedule(
     dashboard_id: int,

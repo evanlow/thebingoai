@@ -7,7 +7,7 @@
           <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
         </svg>
       </span>
-      <span class="text-[10px] font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Answered</span>
+      <span class="text-sm font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Answered</span>
     </div>
     <div class="space-y-1">
       <div
@@ -16,7 +16,7 @@
         class="flex gap-2 text-sm"
         :class="idx < parsedAnswers.length - 1 ? 'border-b border-green-100 pb-1.5 dark:border-green-800/30' : ''"
       >
-        <span class="shrink-0 text-[11px] uppercase tracking-wide text-gray-500 min-w-[80px] pt-0.5 dark:text-neutral-400">{{ pair.label }}</span>
+        <span class="shrink-0 text-sm uppercase tracking-wide text-gray-500 min-w-[80px] pt-0.5 dark:text-neutral-400">{{ pair.label }}</span>
         <span class="font-medium text-gray-900 dark:text-neutral-100">{{ pair.value }}</span>
       </div>
     </div>
@@ -33,7 +33,7 @@
           <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
       </span>
-      <span class="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-400">Questions</span>
+      <span class="text-sm font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-400">Questions</span>
     </div>
 
     <!-- Question list with dividers -->
@@ -43,7 +43,7 @@
         <div class="mb-1.5">
           <span
             v-if="q.header"
-            class="inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-600 mr-2 dark:bg-indigo-900/50 dark:text-indigo-400"
+            class="inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-sm font-semibold uppercase tracking-wide text-indigo-600 mr-2 dark:bg-indigo-900/50 dark:text-indigo-400"
           >
             {{ q.header }}
           </span>
@@ -72,7 +72,7 @@
             <p
               v-if="option.description"
               :class="[
-                'mt-0.5 text-xs',
+                'mt-0.5 text-sm',
                 isSelected(qIdx, option.label) ? 'text-gray-300 dark:text-indigo-200' : 'text-gray-500 dark:text-neutral-400'
               ]"
             >

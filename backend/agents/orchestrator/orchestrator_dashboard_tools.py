@@ -188,6 +188,19 @@ async def _do_update_dashboard(
     from backend.models.database_connection import DatabaseConnection
     from backend.models.dashboard import Dashboard
 
+    # ponytail: a turn that just ingested an uploaded dataset is a CREATE turn —
+    # refuse to overwrite a pre-existing dashboard the LLM found via list_dashboards.
+    # Ceiling: this also blocks "upload + add to existing dashboard X" in one turn;
+    # do that as a follow-up turn. Worth it to guarantee no silent overwrite.
+    if getattr(context, "dataset_created_this_turn", False):
+        return json.dumps({
+            "success": False,
+            "message": (
+                "A dataset was just uploaded in this turn — use create_dashboard to "
+                "make a NEW dashboard. Do not update an existing one."
+            ),
+        })
+
     # Refresh available connections and load existing dashboard in one session
     db = db_session_factory()
     try:

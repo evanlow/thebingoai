@@ -23,6 +23,22 @@ export default {
         mono: ['JetBrains Mono', 'monospace'],
         display: ['Instrument Serif', 'serif']
       },
+      // Font-size tokens reference --fs-* vars so the Text size preference
+      // (font-sm/font-lg classes on <html>, see assets/css/main.css) can swap
+      // whole-px scales at runtime. Line-heights kept at Tailwind defaults so
+      // the Medium/default size renders identically to before.
+      fontSize: {
+        xs:    ['var(--fs-xs)',   { lineHeight: '1rem'    }],
+        sm:    ['var(--fs-sm)',   { lineHeight: '1.25rem' }],
+        base:  ['var(--fs-base)', { lineHeight: '1.5rem'  }],
+        lg:    ['var(--fs-lg)',   { lineHeight: '1.75rem' }],
+        xl:    ['var(--fs-xl)',   { lineHeight: '1.75rem' }],
+        '2xl': ['var(--fs-2xl)',  { lineHeight: '2rem'    }],
+        '3xl': ['var(--fs-3xl)',  { lineHeight: '2.25rem' }],
+        '4xl': ['var(--fs-4xl)',  { lineHeight: '2.5rem'  }],
+        '5xl': ['var(--fs-5xl)',  { lineHeight: '1'       }],
+        '6xl': ['var(--fs-6xl)',  { lineHeight: '1'       }],
+      },
       spacing: {
         'sidebar': '220px',
         'upload-panel': '300px'

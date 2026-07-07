@@ -8,7 +8,7 @@
         placeholder="/data/data_plane"
         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-      <p class="mt-1 text-xs text-gray-500">Docker volume path or local directory for Parquet files.</p>
+      <p class="mt-1 text-sm text-gray-500">Docker volume path or local directory for Parquet files.</p>
     </div>
   </div>
 </template>

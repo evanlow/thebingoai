@@ -3,7 +3,7 @@
     <button
       type="button"
       :disabled="disabled"
-      class="h-6 w-10 rounded border border-gray-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 overflow-hidden"
+      class="h-6 w-10 rounded border border-gray-200 dark:border-neutral-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 overflow-hidden"
       :style="swatchStyle"
       @click="open = !open"
     >
@@ -20,20 +20,20 @@
 
     <div
       v-if="open"
-      class="absolute right-0 top-7 z-50 w-64 rounded-lg border border-gray-200 bg-white p-3 shadow-xl"
+      class="absolute right-0 top-7 z-50 w-64 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-3 shadow-xl"
     >
       <!-- Header: Reset / Transparent -->
-      <div class="flex items-center justify-between pb-2 border-b border-gray-100">
+      <div class="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-neutral-700">
         <button
           type="button"
-          class="flex items-center gap-1 text-[11px] text-gray-600 hover:text-indigo-600"
+          class="flex items-center gap-1 text-sm text-gray-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
           @click="select(undefined)"
         >
           <RotateCcw class="h-3 w-3" /> Reset
         </button>
         <button
           type="button"
-          class="flex items-center gap-1 text-[11px] text-gray-600 hover:text-indigo-600"
+          class="flex items-center gap-1 text-sm text-gray-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
           @click="select('transparent')"
         >
           <Ban class="h-3 w-3" /> Transparent
@@ -56,12 +56,12 @@
       </div>
 
       <!-- Custom color -->
-      <div class="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
-        <span class="text-[11px] text-gray-500 uppercase tracking-wide">Custom</span>
+      <div class="mt-3 pt-2 border-t border-gray-100 dark:border-neutral-700 flex items-center justify-between gap-2">
+        <span class="text-sm text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Custom</span>
         <input
           type="color"
           :value="modelValue && modelValue !== 'transparent' ? modelValue : '#6366f1'"
-          class="h-6 w-10 rounded border border-gray-200 cursor-pointer p-0.5"
+          class="h-6 w-10 rounded border border-gray-200 dark:border-neutral-600 cursor-pointer p-0.5"
           @input="select(($event.target as HTMLInputElement).value)"
         />
       </div>
