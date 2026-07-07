@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # LLM Provider-specific settings
     openai_default_model: str = "gpt-4o"
-    anthropic_default_model: str = "claude-sonnet-4-20250514"
+    anthropic_default_model: str = "claude-sonnet-4-6"
     anthropic_default_max_tokens: int = 4096
     ollama_default_model: str = "llama3.2"
     ollama_request_timeout: float = 120.0

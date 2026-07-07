@@ -1194,6 +1194,7 @@ async def stream_orchestrator(
 
         profile = _load_profile_if_missing(profile, context.user_id, db_session_factory, "stream_orchestrator")
         logger.info("stream_orchestrator: profile = %s", "LOADED" if profile else "NONE")
+        _prompt_t0 = time.time()
         prompt = await _render_orchestrator_prompt(
             profile, user_question, context,
             custom_agents, user_skills, skill_suggestions,
@@ -1201,6 +1202,7 @@ async def stream_orchestrator(
             db_session_factory, "stream_orchestrator",
             mentions=mentions,
         )
+        logger.info("[LATENCY][orchestrator] prompt_render: %dms", int((time.time() - _prompt_t0) * 1000))
         orchestrator = _create_orchestrator_agent(
             tools, prompt, llm_provider,
             temperature=temperature, max_tokens=max_tokens,
@@ -1220,6 +1222,7 @@ async def stream_orchestrator(
         step_start_times: Dict[str, float] = {}
         reasoning_buffer = []
         active_stream_run_id = None
+        _ttft_logged = False
 
         async for event in orchestrator.astream_events(
             {"messages": messages},
@@ -1331,6 +1334,12 @@ async def stream_orchestrator(
                             for block in content
                         )
                     if content:
+                        if not _ttft_logged:
+                            logger.info(
+                                "[LATENCY][orchestrator] TTFT: %dms",
+                                int((time.time() - _stream_t0) * 1000),
+                            )
+                            _ttft_logged = True
                         reasoning_buffer.append(content)
                         # Feed the reasoning panel live. The chat bubble stays empty
                         # until after the Layer-4 judge; we emit one token event
@@ -1361,6 +1370,24 @@ async def stream_orchestrator(
             and s["content"]["result"].get("success")
             for s in collected_steps
         )
+        tool_results = [s for s in collected_steps if s.get("step_type") == "tool_result"]
+        tool_result_count = len(tool_results)
+
+        def _tool_result_succeeded(step: Dict[str, Any]) -> bool:
+            result = step.get("content", {}).get("result")
+            if not isinstance(result, dict):
+                return False
+            if result.get("error"):
+                return False
+            return bool(result.get("success", True))
+
+        # Any successful tool call (data_agent rows, dashboard build, memory
+        # search, etc.) means the agent did real work — skip the retry. The
+        # judge still runs for highlighting and approval, but we don't
+        # re-invoke the full orchestrator pipeline. Retries are only useful
+        # for pure-prose failures where no tool actually succeeded.
+        any_tool_ran = any(_tool_result_succeeded(s) for s in tool_results)
+
         retry_succeeded: Optional[bool] = None
         judge_metadata: Optional[Dict[str, Any]] = None
         highlighted_text: Optional[str] = None
@@ -1369,8 +1396,15 @@ async def stream_orchestrator(
             yield {"type": "judge_status", "content": {"state": "approved"}}
         if settings.judge_enabled and final_answer_text and not dashboard_created:
             yield {"type": "judge_status", "content": {"state": "refining"}}
-            verdict = await judge_response(user_question, final_answer_text)
-            if not verdict.resolved:
+            verdict = await judge_response(user_question, final_answer_text, tool_result_count=tool_result_count)
+            if not verdict.resolved and any_tool_ran:
+                logger.info(
+                    "Layer-4 judge unresolved but %d tool(s) ran — skipping retry: %s",
+                    tool_result_count, verdict.reason,
+                )
+                highlighted_text = None
+                yield {"type": "judge_status", "content": {"state": "approved"}}
+            elif not verdict.resolved:
                 logger.warning("Layer-4 judge says unresolved: %s", verdict.reason)
                 final_answer_text, retry_succeeded, judge_metadata, retry_steps = await _run_judge_retry(
                     user_question, final_answer_text, verdict, orchestrator, messages,
@@ -1416,9 +1450,10 @@ async def stream_orchestrator(
 
         _stream_total_ms = int((time.time() - _stream_t0) * 1000)
         logger.info(
-            "[LATENCY][orchestrator] stream total: %dms steps=%d",
+            "[LATENCY][orchestrator] stream total: %dms steps=%d ttft_logged=%s",
             _stream_total_ms,
             len(collected_steps),
+            _ttft_logged,
         )
         yield {
             "type": "done",
