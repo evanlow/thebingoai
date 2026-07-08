@@ -20,10 +20,27 @@ import {
   type ChartType as ChartJsType,
   type ChartOptions as ChartJsOptions,
   type ChartDataset,
+  type Plugin,
 } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import annotationPlugin from 'chartjs-plugin-annotation'
 import { pieOuterLabelsPlugin } from './pieOuterLabels'
+
+// Adds a gap below a top-positioned legend so datalabels drawn at the top of
+// full-height bars don't collide with the legend row. Canvas padding can't do
+// this (it shifts the legend too). Reads chart.options.plugins.legendSpacing.gap.
+const legendSpacingPlugin: Plugin = {
+  id: 'legendSpacing',
+  beforeInit(chart: any) {
+    const legend = chart.legend
+    if (!legend) return
+    const originalFit = legend.fit
+    legend.fit = function () {
+      originalFit.call(this)
+      this.height += chart.options?.plugins?.legendSpacing?.gap ?? 0
+    }
+  },
+}
 import 'chartjs-adapter-date-fns'
 import type { Ref } from 'vue'
 import type { ChartConfig, ChartType, DatasetConfig, ChartLineStyle, ChartFontFamily, ChartFontSize } from '~/types/chart'
@@ -50,7 +67,8 @@ Chart.register(
   Filler,
   ChartDataLabels,
   annotationPlugin,
-  pieOuterLabelsPlugin
+  pieOuterLabelsPlugin,
+  legendSpacingPlugin
 )
 
 const DEFAULT_PALETTE = [
@@ -443,13 +461,18 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     return String(formatValue(value))
   }
 
+  const showLegend = opts.showLegend ?? !(isScatter && config.data.datasets.length <= 1)
+  const legendOnTop = showLegend && (opts.legendPosition ?? 'top') === 'top'
+
   const options: ChartJsOptions = {
     responsive: opts.responsive ?? true,
     maintainAspectRatio: opts.maintainAspectRatio ?? false,
     animation: enableAnimation ? undefined : false,
     layout: {
       // Pie/doughnut: reserve horizontal room so external slice labels + leader
-      // lines aren't clipped. Others: pad for top/right datalabels.
+      // lines aren't clipped. Others: pad for top/right datalabels. (Legend↔label
+      // clearance is handled by the legendSpacing plugin, not canvas padding —
+      // padding shifts the legend too, so it can't separate them.)
       padding: isPieOrDoughnut
         ? (sliceMode !== 'none' ? { left: 72, right: 72, top: 16, bottom: 16 } : 0)
         : isHorizontal
@@ -460,7 +483,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       legend: {
         // GDS parity: ungrouped scatter/bubble shows no legend pill; a
         // Dimension (multiple datasets) brings the legend back.
-        display: opts.showLegend ?? !(isScatter && config.data.datasets.length <= 1),
+        display: showLegend,
         position: opts.legendPosition ?? 'top',
         align: (opts.legendAlignment ?? 'center') as any,
         labels: {
@@ -510,6 +533,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       annotation: {
         annotations: buildAnnotations(config),
       },
+      legendSpacing: { gap: legendOnTop && anyDataLabels && !isPieOrDoughnut ? 20 : 0 },
       pieOuterLabels: isPieOrDoughnut
         ? {
             display: sliceMode !== 'none',
