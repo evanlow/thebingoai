@@ -65,7 +65,11 @@ const DEFAULT_PALETTE = [
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolveChartJsType(type: ChartType): ChartJsType {
-  return type === 'area' ? 'line' : (type as ChartJsType)
+  if (type === 'area') return 'line'
+  // Bubble renders through the scatter controller — point size comes from the
+  // scriptable sqrt-scaled radius, not Chart.js's raw-pixel `r` handling.
+  if (type === 'bubble') return 'scatter'
+  return type as ChartJsType
 }
 
 function getLineDash(style?: ChartLineStyle): number[] {
@@ -168,7 +172,34 @@ export function applyDefaultColors(
 ): ChartDataset[] {
   const isPieOrDoughnut = type === 'pie' || type === 'doughnut'
   const isLineOrArea = type === 'line' || type === 'area'
-  const isScatter = type === 'scatter'
+  const isScatter = type === 'scatter' || type === 'bubble'
+
+  // Bubble sizing: one GLOBAL scale across all datasets (Data Studio parity).
+  // With a Dimension each dataset holds few points — a per-dataset scale would
+  // collapse (min == max) and render every bubble at the floor size.
+  let scaleRadius: ((ctx: any) => number) | null = null
+  if (isScatter) {
+    let rMin = Infinity
+    let rMax = -Infinity
+    for (const ds of datasets) {
+      for (const p of (ds.data as any[]) ?? []) {
+        const r = p && typeof p === 'object' ? Number((p as any).r) : NaN
+        if (Number.isFinite(r)) {
+          if (r < rMin) rMin = r
+          if (r > rMax) rMax = r
+        }
+      }
+    }
+    if (rMin !== Infinity) {
+      const sMin = Math.sqrt(Math.max(rMin, 0))
+      const span = Math.sqrt(Math.max(rMax, 0)) - sMin || 1
+      scaleRadius = (ctx: any) => {
+        const r = Number(ctx?.raw?.r)
+        if (!Number.isFinite(r)) return 3
+        return 4 + ((Math.sqrt(Math.max(r, 0)) - sMin) / span) * 16
+      }
+    }
+  }
 
   return datasets.map((ds, i) => {
     const color = DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]
@@ -212,6 +243,12 @@ export function applyDefaultColors(
       fill: useFill ? true : ds.fill,
       tension,
       pointRadius,
+    }
+
+    // Bubble chart: points carrying `r` get the shared global-scale radius.
+    if (scaleRadius && (ds.data as any[]).some(p => p && typeof p === 'object' && Number.isFinite(Number((p as any).r)))) {
+      processed.pointRadius = scaleRadius
+      processed.pointHoverRadius = scaleRadius
     }
 
     if (resolvedType) processed.type = resolvedType
@@ -331,7 +368,7 @@ function isStackedActive(val: any): boolean {
 function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): ChartJsOptions {
   const opts = config.options ?? {}
   const isPieOrDoughnut = config.type === 'pie' || config.type === 'doughnut'
-  const isScatter = config.type === 'scatter'
+  const isScatter = config.type === 'scatter' || config.type === 'bubble'
   const isHorizontal = !isPieOrDoughnut && !isScatter && opts.indexAxis === 'y'
   const colors = getChartColors()
   const stackedActive = isStackedActive(opts.stacked)
@@ -372,7 +409,9 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       if (isScatter) {
         const xf = formatValue(ctx.parsed?.x)
         const yf = formatValue(ctx.parsed?.y)
-        return `${label}: (${xf}, ${yf})`
+        const rRaw = Number(ctx.raw?.r)
+        const size = Number.isFinite(rRaw) ? `, size: ${formatValue(rRaw)}` : ''
+        return `${label}: (${xf}, ${yf})${size}`
       }
       const rawVal = isHorizontal ? ctx.parsed?.x : ctx.parsed?.y
       const formatted = formatValue(rawVal)
@@ -392,7 +431,9 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     },
     plugins: {
       legend: {
-        display: opts.showLegend ?? true,
+        // GDS parity: ungrouped scatter/bubble shows no legend pill; a
+        // Dimension (multiple datasets) brings the legend back.
+        display: opts.showLegend ?? !(isScatter && config.data.datasets.length <= 1),
         position: opts.legendPosition ?? 'top',
         align: (opts.legendAlignment ?? 'center') as any,
         labels: {

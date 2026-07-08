@@ -364,6 +364,33 @@ def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
                     ),
                 })
 
+            # Boundedness guard for scatter/bubble. Raw-row scatter SQL without
+            # GROUP BY/aggregates and without LIMIT can return the whole table —
+            # slow and unreadable (discrete metrics render as solid bands).
+            if chart_type in ("scatter", "bubble"):
+                _sc_sql = widget["dataSource"].get("sql") or ""
+                _sc_map = widget["dataSource"].get("mapping") or {}
+                _sc_has_agg = bool(
+                    _sc_map.get("xAggregation") not in (None, "none")
+                    or _sc_map.get("yAggregation") not in (None, "none")
+                )
+                if (not _is_aggregated_sql(_sc_sql) and not _sc_has_agg
+                        and "limit" not in _sc_sql.lower()):
+                    violations.append({
+                        "widget_id": wid,
+                        "code": "scatter_not_bounded",
+                        "message": (
+                            f"Chart '{cfg_title_for(wcfg, wid)}' (type={chart_type}) "
+                            "has no GROUP BY/aggregate and no LIMIT — the SQL will "
+                            "return every raw row."
+                        ),
+                        "fix_hint": (
+                            "Preferred: one point per entity — GROUP BY a dimension "
+                            "and aggregate both metrics (AVG/SUM). Otherwise add "
+                            "LIMIT 1000 for a raw-row sample."
+                        ),
+                    })
+
     for rule_msg in verify_dashboard_widgets(widgets):
         violations.append({
             "widget_id": None,
@@ -704,6 +731,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
         # specific widgets and retry — no first-error-only opacity.
         violations = _verify_widgets(widgets, data_context)
         if violations:
+            logger.warning(
+                "create_dashboard rejected: %s",
+                "; ".join(f"{v.get('widget_id')}:{v.get('code')}" for v in violations),
+            )
             return json.dumps({
                 "success": False,
                 "violations": violations,
@@ -871,6 +902,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
         # so updates can't bypass the KPI / structural rules.
         violations = _verify_widgets(widgets, data_context)
         if violations:
+            logger.warning(
+                "update_dashboard rejected: %s",
+                "; ".join(f"{v.get('widget_id')}:{v.get('code')}" for v in violations),
+            )
             return json.dumps({
                 "success": False,
                 "violations": violations,

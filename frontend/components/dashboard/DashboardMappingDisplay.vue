@@ -17,7 +17,7 @@
             <td class="py-1 pr-3 text-gray-500 w-24">Dimension</td>
             <td class="py-1 font-mono text-gray-800">{{ mapping.labelColumn }}</td>
           </tr>
-          <tr v-for="ds in (mapping.datasetColumns || [])" :key="ds.column">
+          <tr v-for="ds in mapping.datasetColumns" :key="ds.column">
             <td class="py-1 pr-3 text-gray-500">Metric "{{ ds.label || ds.column }}"</td>
             <td class="py-1 font-mono text-gray-800">{{ ds.column }}<span v-if="ds.aggregation && ds.aggregation !== 'none'" class="ml-1 text-gray-400">({{ ds.aggregation }})</span></td>
           </tr>

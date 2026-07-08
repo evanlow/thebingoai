@@ -248,6 +248,7 @@ export interface ChartDataSourceMapping {
   xAggregation?: ChartAggregation
   yMetricColumn?: string
   yAggregation?: ChartAggregation
+  sizeMetricColumn?: string         // bubble chart: point size scales with this metric
   // Datetime drill-down: bucket the labelColumn (timestamp) before grouping
   dateGranularity?: ChartDateGranularity
   // Series breakdown: split the first metric into one series per distinct value

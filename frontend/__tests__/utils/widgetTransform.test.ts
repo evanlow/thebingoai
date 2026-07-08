@@ -439,3 +439,53 @@ describe('transformWidgetData — dispatch', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// Scatter: dimension grouping + bubble size metric
+// ---------------------------------------------------------------------------
+describe('transformWidgetData — scatter grouping & bubbles', () => {
+  const scatterResult = makeResult(
+    ['price', 'score', 'room_type', 'reviews'],
+    [
+      [100, 4.5, 'Private', 10],
+      [200, 3.0, 'Entire', 25],
+      [150, 5.0, 'Private', 5],
+    ],
+  )
+
+  it('groups points into one dataset per labelColumn value', () => {
+    const out = transformWidgetData(scatterResult, {
+      type: 'chart', xMetricColumn: 'price', yMetricColumn: 'score', labelColumn: 'room_type',
+    })
+    const byLabel = Object.fromEntries(out.data.datasets.map((d: any) => [d.label, d.data]))
+    expect(Object.keys(byLabel).sort()).toEqual(['Entire', 'Private'])
+    expect(byLabel['Private']).toEqual([{ x: 100, y: 4.5 }, { x: 150, y: 5.0 }])
+    expect(byLabel['Entire']).toEqual([{ x: 200, y: 3.0 }])
+  })
+
+  it('adds r per point when sizeMetricColumn set', () => {
+    const out = transformWidgetData(scatterResult, {
+      type: 'chart', xMetricColumn: 'price', yMetricColumn: 'score', sizeMetricColumn: 'reviews',
+    })
+    expect(out.data.datasets[0].data[0]).toEqual({ x: 100, y: 4.5, r: 10 })
+    expect(out.data.datasets[0].data[1]).toEqual({ x: 200, y: 3.0, r: 25 })
+  })
+
+  it('single dataset named "y vs x" when no labelColumn', () => {
+    const out = transformWidgetData(scatterResult, {
+      type: 'chart', xMetricColumn: 'price', yMetricColumn: 'score',
+    })
+    expect(out.data.datasets).toHaveLength(1)
+    expect(out.data.datasets[0].label).toBe('score vs price')
+    expect(out.data.datasets[0].data).toHaveLength(3)
+  })
+
+  it('downsamples to 1000 points max per series', () => {
+    const big = makeResult(['x', 'y'], Array.from({ length: 5000 }, (_, i) => [i, i * 2]))
+    const out = transformWidgetData(big, {
+      type: 'chart', xMetricColumn: 'x', yMetricColumn: 'y',
+    })
+    expect(out.data.datasets[0].data).toHaveLength(1000)
+    expect(out.data.datasets[0].data[0]).toEqual({ x: 0, y: 0 })
+  })
+})

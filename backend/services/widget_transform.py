@@ -221,6 +221,10 @@ def _transform_timeline(result: QueryResult, mapping: Dict[str, Any]) -> Dict[st
     return {"data": {"rows": rows_out}}
 
 
+# Data Studio caps scatter/bubble charts at 1000 points; mirror that.
+_MAX_SCATTER_POINTS = 1000
+
+
 def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any]:
     """Transform QueryResult into chart widget config data.
 
@@ -253,19 +257,26 @@ def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
 
     empty: Dict[str, Any] = {"data": {"labels": [], "datasets": []}}
 
+    # Ungrouped scatter/bubble series name — meaningful in tooltips ("y vs x").
+    xy_label = f"{y_metric_col} vs {x_metric_col}" if x_metric_col and y_metric_col else "Scatter"
+
     # Guard: no rows → return empty structure preserving dataset labels
     if not result.rows:
         if x_metric_col and y_metric_col:
-            return {"data": {"labels": [], "datasets": [{"label": "Scatter", "data": []}]}}
+            return {"data": {"labels": [], "datasets": [{"label": xy_label, "data": []}]}}
         return {"data": {"labels": [], "datasets": [
             {"label": ds.get("label") or ds["column"], "data": []} for ds in dataset_cols
         ]}}
 
     # ── SCATTER: dedicated x+y metric columns → {x, y} point objects ─────────
+    # Optional: labelColumn groups points into one dataset (color) per value;
+    # sizeMetricColumn adds `r` per point (bubble chart). Both raw-path only.
     if x_metric_col and y_metric_col:
         x_idx = _find_column(x_metric_col, result.columns, "xMetricColumn")
         y_idx = _find_column(y_metric_col, result.columns, "yMetricColumn")
         y_agg = mapping.get("yAggregation") or "none"
+        size_col = mapping.get("sizeMetricColumn")
+        size_idx = _find_column(size_col, result.columns, "sizeMetricColumn") if size_col else None
 
         if y_agg and y_agg != "none":
             # Group by X value, aggregate Y per group
@@ -282,12 +293,32 @@ def transform_chart(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, A
                 {"x": x, "y": _aggregate_values(x_groups[x], y_agg)}
                 for x in order
             ]
-        else:
-            points = [
-                {"x": _to_json_safe(row[x_idx]), "y": _to_json_safe(row[y_idx])}
-                for row in result.rows
-            ]
-        return {"data": {"labels": [], "datasets": [{"label": "Scatter", "data": points}]}}
+            return {"data": {"labels": [], "datasets": [{"label": xy_label, "data": points}]}}
+
+        def _point(row: Any) -> Dict[str, Any]:
+            p = {"x": _to_json_safe(row[x_idx]), "y": _to_json_safe(row[y_idx])}
+            if size_idx is not None:
+                p["r"] = _to_json_safe(row[size_idx])
+            return p
+
+        def _cap(pts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            # Data Studio parity: max 1000 points per series — even downsample.
+            if len(pts) <= _MAX_SCATTER_POINTS:
+                return pts
+            step = -(-len(pts) // _MAX_SCATTER_POINTS)  # ceil division
+            return pts[::step]
+
+        if label_col:
+            group_idx = _find_column(label_col, result.columns, "labelColumn")
+            groups: Dict[str, List[Dict[str, Any]]] = {}
+            for row in result.rows:
+                groups.setdefault(str(_to_json_safe(row[group_idx])), []).append(_point(row))
+            return {"data": {"labels": [], "datasets": [
+                {"label": gk, "data": _cap(gpts)} for gk, gpts in groups.items()
+            ]}}
+
+        points = _cap([_point(row) for row in result.rows])
+        return {"data": {"labels": [], "datasets": [{"label": xy_label, "data": points}]}}
 
     # ── STANDARD: dimension + metric columns ──────────────────────────────────
     if not label_col:

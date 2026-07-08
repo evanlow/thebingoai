@@ -25,7 +25,7 @@ Phase 2 — Design (informed by context):
      metric, you MUST include exactly one pivot_table in Section 4 (metric by A × B).
      Skip only when the data is genuinely one-dimensional.
 5. Select metrics and choose chart types based on the data context. Explore the FULL
-   chart palette (bar, line, area, pie, doughnut, scatter, funnel, timeline) — do not
+   chart palette (bar, line, area, pie, doughnut, scatter, bubble, funnel, timeline) — do not
    default to only the common few. Match each chart type to a data shape that supports it:
    - Use cardinality from context to pick chart types (< 8 → pie, 8-20 → horizontal bar, > 20 → top-N)
    - Date dimensions in the context include `min` and `max` values (the actual data range). Use these to:
@@ -123,13 +123,17 @@ consecutive charts share the row equally (6+6).
 | Timing pattern (best hour/weekday)  | bar              | mapping `dateGranularity: "hour_of_day"` | w=6 or w=8                  |
 | Part-of-whole (< 8 categories)      | pie or doughnut  | `showValues: true`                       | w=4 or w=6 (**NEVER w=12**) |
 | Correlation (x vs y)                | scatter          | `showLegend: true` for grouped scatter   | w=6 or w=8                  |
+| 3-metric comparison (x, y + size)   | bubble           | required `sizeMetricColumn`              | w=6 or w=8                  |
 | Sequential stages / conversion      | funnel           | `funnelLabelMode: "numberPercentage"`    | w=4 or w=6                  |
 | Events/phases with start+end dates  | timeline         | `timelineColorBy: "row"`                 | w=8 or w=12                 |
 
-Scatter chart rules:
-- `labelColumn`: grouping column (e.g. category/team) — one dataset per unique value
-- `datasetColumns`: exactly 2 entries with `(X)` and `(Y)` label suffixes, e.g. `[{"column": "ts", "label": "TS (X)"}, {"column": "bpm", "label": "BPM (Y)"}]`
-- Set `"chartType": "scatter"` (the top-level param) so the backend produces `{x, y}` point data
+Scatter / bubble chart rules:
+- Mapping: `xMetricColumn` + `yMetricColumn` (numeric SQL columns); optional `labelColumn` groups/colors points
+- Bubble = scatter with a **required** `sizeMetricColumn` (use when a meaningful third size metric exists — volume, count, spend); set `"chartType": "bubble"`
+- Set `"chartType": "scatter"` (or `"bubble"`) as the top-level param so the backend produces `{x, y}` point data
+- **One point per entity, not per raw row** (Data Studio practice): GROUP BY a dimension and aggregate both metrics, e.g. `SELECT neighbourhood, AVG(price) AS avg_price, AVG(rating) AS avg_rating ... GROUP BY neighbourhood`
+- Raw-row scatter only when the result is small — always add `LIMIT 1000`
+- Never scatter a low-cardinality metric (ratings 1-5, booleans, small counts) against a continuous one on raw rows — it renders as solid bands; aggregate per entity instead
 
 Rules:
 - Use **at least 2-3 different chart types** per dashboard
@@ -140,7 +144,10 @@ Rules:
 
 ### Widget Configuration
 
-Before configuring widgets, use the widget specs from `get_widget_spec("all")` already called in Phase 2 — do NOT call it again per widget type.
+Before configuring widgets, call `get_widget_spec(widget_type)` to get the complete
+field definitions, mapping structure, SQL patterns, and best practices.
+
+Available types: kpi, chart, table, pivot_table, filter, text.
 
 Emit LEAN widgets: a flat object `{"type": <type>, ...params}` per widget. Do NOT
 output position, the `widget`/`config` envelope, or a `mapping` object — the backend
@@ -186,8 +193,7 @@ Efficiency tips for updates:
 """
 
 
-DASHBOARD_AGENT_MESH_PROMPT = (
-    """You are an expert dashboard creation agent operating in a peer-to-peer agent mesh.
+DASHBOARD_AGENT_MESH_PROMPT = """You are an expert dashboard creation agent operating in a peer-to-peer agent mesh.
 You design dashboards by coordinating with the data agent for schema exploration and SQL validation.
 
 ## Workflow (Peer Agent Mode)
@@ -209,12 +215,9 @@ Phase 3 — Design:
 Phase 4 — Create:
 9. Call `create_dashboard` with the complete widget configuration
 
+""" + DASHBOARD_AGENT_SYSTEM_PROMPT.split("## Data Profiling Workflow", 1)[0] + """
 ## Dashboard Design Principles
-"""
-    + DASHBOARD_AGENT_SYSTEM_PROMPT.split("## Dashboard Design Principles", 1)[1]
-    if "## Dashboard Design Principles" in DASHBOARD_AGENT_SYSTEM_PROMPT
-    else DASHBOARD_AGENT_SYSTEM_PROMPT
-)
+""" + DASHBOARD_AGENT_SYSTEM_PROMPT.split("## Dashboard Design Principles", 1)[1] if "## Dashboard Design Principles" in DASHBOARD_AGENT_SYSTEM_PROMPT else DASHBOARD_AGENT_SYSTEM_PROMPT
 
 
 def build_dashboard_agent_prompt(
