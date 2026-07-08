@@ -230,9 +230,9 @@
           <textarea
             v-model="localSql"
             :readonly="!editMode"
-            class="relative w-full h-48 px-3 py-2 pr-8 font-mono text-sm leading-relaxed resize-none bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="relative w-full h-48 px-3 py-2 pr-8 font-mono text-sm leading-relaxed resize-none bg-transparent caret-black dark:caret-white text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :class="editMode ? '' : 'cursor-default'"
-            :style="{ color: highlightedSql ? 'transparent' : undefined, caretColor: 'black' }"
+            :style="{ color: highlightedSql ? 'transparent' : undefined }"
             spellcheck="false"
             @blur="onSqlBlur()"
             @scroll="syncSqlScroll"
@@ -393,7 +393,7 @@ function updateHighlight() {
   }
   const html = highlighter.codeToHtml(localSql.value, {
     lang: 'sql',
-    theme: 'github-light',
+    themes: { light: 'github-light', dark: 'github-dark' },
   })
   const match = html.match(/<code[^>]*>([\s\S]*)<\/code>/)
   highlightedSql.value = match ? match[1] : html
@@ -738,5 +738,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
+}
+/* Shiki dual-theme: spans carry the light color inline + a --shiki-dark var.
+   In dark mode, swap to the dark token color so SQL stays readable. */
+:global(.dark) .sql-highlight :deep(span) {
+  color: var(--shiki-dark) !important;
 }
 </style>

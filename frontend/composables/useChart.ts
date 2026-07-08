@@ -23,6 +23,7 @@ import {
 } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import annotationPlugin from 'chartjs-plugin-annotation'
+import { pieOuterLabelsPlugin } from './pieOuterLabels'
 import 'chartjs-adapter-date-fns'
 import type { Ref } from 'vue'
 import type { ChartConfig, ChartType, DatasetConfig, ChartLineStyle, ChartFontFamily, ChartFontSize } from '~/types/chart'
@@ -48,7 +49,8 @@ Chart.register(
   Title,
   Filler,
   ChartDataLabels,
-  annotationPlugin
+  annotationPlugin,
+  pieOuterLabelsPlugin
 )
 
 const DEFAULT_PALETTE = [
@@ -208,7 +210,7 @@ export function applyDefaultColors(
       return {
         ...ds,
         backgroundColor: ds.backgroundColor ?? DEFAULT_PALETTE,
-        borderColor: ds.borderColor ?? '#fff',
+        borderColor: ds.borderColor ?? getChartColors().sliceBorderColor,
         borderWidth: ds.borderWidth ?? 2,
       } as ChartDataset
     }
@@ -308,6 +310,8 @@ function getChartColors() {
     gridColor: dark ? 'rgba(163,163,163,0.15)' : 'rgba(0,0,0,0.08)',
     legendColor: dark ? '#a3a3a3' : '#374151',
     datalabelColor: dark ? '#e5e5e5' : '#374151',
+    // Pie/doughnut slice seam: white in light mode, panel color (neutral-900) in dark.
+    sliceBorderColor: dark ? '#171717' : '#fff',
   }
 }
 
@@ -413,11 +417,30 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
         const size = Number.isFinite(rRaw) ? `, size: ${formatValue(rRaw)}` : ''
         return `${label}: (${xf}, ${yf})${size}`
       }
-      const rawVal = isHorizontal ? ctx.parsed?.x : ctx.parsed?.y
+      // Pie/doughnut set `ctx.parsed` to a scalar number (not an {x,y} object),
+      // so read it directly instead of `.y` (which would be undefined).
+      const rawVal = isPieOrDoughnut ? ctx.parsed
+        : (isHorizontal ? ctx.parsed?.x : ctx.parsed?.y)
       const formatted = formatValue(rawVal)
       const suffix = isPercentage ? '%' : ''
       return `${label}: ${formatted}${suffix}`
     },
+  }
+
+  // Pie/doughnut external slice labels (drawn outside the arc with leader lines
+  // by the pieOuterLabels plugin). Mode: none | value | percentage | label;
+  // default percentage, honoring legacy showValues → value.
+  const sliceMode = opts.sliceLabel ?? (opts.showValues ? 'value' : 'percentage')
+  const pieData = (config.data.datasets[0]?.data ?? []) as unknown[]
+  const pieTotal = pieData.reduce((s: number, v) => s + (typeof v === 'number' ? v : 0), 0)
+  const pieLabels = config.data.labels ?? []
+  const pieLabelFormatter = (value: number, index: number): string => {
+    if (sliceMode === 'label') return String(pieLabels[index] ?? '')
+    if (sliceMode === 'percentage') {
+      if (!pieTotal) return ''
+      return `${((value / pieTotal) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
+    }
+    return String(formatValue(value))
   }
 
   const options: ChartJsOptions = {
@@ -425,9 +448,13 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
     maintainAspectRatio: opts.maintainAspectRatio ?? false,
     animation: enableAnimation ? undefined : false,
     layout: {
-      padding: isHorizontal
-        ? { right: anyDataLabels ? 28 : 0 }
-        : { top: anyDataLabels ? 20 : 0 },
+      // Pie/doughnut: reserve horizontal room so external slice labels + leader
+      // lines aren't clipped. Others: pad for top/right datalabels.
+      padding: isPieOrDoughnut
+        ? (sliceMode !== 'none' ? { left: 72, right: 72, top: 16, bottom: 16 } : 0)
+        : isHorizontal
+          ? { right: anyDataLabels ? 28 : 0 }
+          : { top: anyDataLabels ? 20 : 0 },
     },
     plugins: {
       legend: {
@@ -459,31 +486,10 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
           size: getFontSizePx(opts.titleFontSize ?? opts.fontSize),
         },
       },
+      // Pie/doughnut labels are drawn OUTSIDE the arc by the pieOuterLabels
+      // plugin (below), so the inline datalabels plugin is off for them.
       datalabels: isPieOrDoughnut
-        ? (() => {
-            // Pie/doughnut slice label (Data Studio parity): none | value | percentage | label.
-            // Default to percentage; honor legacy showValues → value.
-            const mode = opts.sliceLabel ?? (opts.showValues ? 'value' : 'percentage')
-            return {
-              display: mode !== 'none',
-              color: '#fff',
-              font: { size: 11, weight: 'bold' as const },
-              anchor: 'center' as const,
-              align: 'center' as const,
-              formatter: (value: unknown, ctx: any) => {
-                if (mode === 'label') return ctx?.chart?.data?.labels?.[ctx.dataIndex] ?? ''
-                if (typeof value !== 'number') return value
-                if (mode === 'percentage') {
-                  const arr = (ctx?.dataset?.data ?? []) as unknown[]
-                  const total = arr.reduce((s: number, v) => s + (typeof v === 'number' ? v : 0), 0)
-                  if (!total) return ''
-                  return `${((value / total) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
-                }
-                // value
-                return formatValue(value)
-              },
-            }
-          })()
+        ? { display: false }
         : {
             display: opts.showValues ?? false,
             color: colors.datalabelColor,
@@ -504,6 +510,18 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       annotation: {
         annotations: buildAnnotations(config),
       },
+      pieOuterLabels: isPieOrDoughnut
+        ? {
+            display: sliceMode !== 'none',
+            color: colors.datalabelColor,
+            font: {
+              size: getFontSizePx(opts.fontSize),
+              weight: 'bold' as const,
+              family: getFontFamilyStr(opts.fontFamily),
+            },
+            formatter: pieLabelFormatter,
+          }
+        : { display: false },
     } as any,
   }
 
