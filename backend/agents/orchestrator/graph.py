@@ -1044,6 +1044,36 @@ def _build_dynamic_tools(
     return tools
 
 
+def _dashboard_tool_succeeded(messages: list) -> bool:
+    """True if create_dashboard/update_dashboard returned success this turn.
+
+    ToolMessages don't carry the tool name, so map tool_call_id -> name from the
+    preceding AIMessage tool_calls (same approach as the step collector above).
+    Used to skip the Layer-4 judge retry when the dashboard already exists —
+    without this the non-streaming retry re-invokes the orchestrator and builds a
+    duplicate dashboard. The streaming path guards the same way in
+    stream_orchestrator via collected_steps.
+    """
+    tool_name_by_id: dict = {}
+    for msg in messages:
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            for tc in msg.tool_calls:
+                tool_name_by_id[tc.get("id", "")] = tc.get("name")
+        elif isinstance(msg, ToolMessage):
+            name = tool_name_by_id.get(getattr(msg, "tool_call_id", ""))
+            if name not in ("create_dashboard", "update_dashboard"):
+                continue
+            raw = msg.content
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            if isinstance(raw, dict) and raw.get("success"):
+                return True
+    return False
+
+
 async def run_orchestrator(
     user_question: str,
     context: AgentContext,
@@ -1118,7 +1148,12 @@ async def run_orchestrator(
         retry_succeeded: Optional[bool] = None
         judge_metadata: Optional[Dict[str, Any]] = None
         highlighted_text: Optional[str] = None
-        if settings.judge_enabled and final_answer:
+        # Skip the judge retry when a dashboard tool already succeeded this turn.
+        # The judge sees only the final prose; if a created dashboard reads like a
+        # description it flags "unresolved" and the retry re-invokes the whole
+        # orchestrator, building a duplicate dashboard. Mirrors the streaming guard.
+        dashboard_created = _dashboard_tool_succeeded(result.get("messages", []))
+        if settings.judge_enabled and final_answer and not dashboard_created:
             verdict = await judge_response(user_question, final_answer)
             if not verdict.resolved:
                 logger.warning("Layer-4 judge says unresolved: %s", verdict.reason)
