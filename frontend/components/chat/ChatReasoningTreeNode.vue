@@ -71,7 +71,7 @@ const agentDotClass = computed(() => {
           class="w-1.5 h-1.5 rounded-full shrink-0"
         />
         <!-- Completed action: gray arrow -->
-        <span v-else class="text-gray-400 dark:text-neutral-500shrink-0 text-sm leading-none">›</span>
+        <span v-else class="text-gray-400 dark:text-neutral-500 shrink-0 text-sm leading-none">›</span>
 
         <!-- Label -->
         <span
@@ -91,14 +91,14 @@ const agentDotClass = computed(() => {
         <!-- Duration (inline, after label) -->
         <span
           v-if="node.duration"
-          class="text-gray-400 dark:text-neutral-500font-mono text-sm shrink-0"
+          class="text-gray-400 dark:text-neutral-500 font-mono text-sm shrink-0"
         >{{ node.duration }}</span>
       </div>
 
     </div>
 
     <!-- Detail line (formatted args) shown below the node row -->
-    <div v-if="node.detail" class="flex text-sm text-gray-400 dark:text-neutral-500py-0.5 min-w-0">
+    <div v-if="node.detail" class="flex text-sm text-gray-400 dark:text-neutral-500 py-0.5 min-w-0">
       <span
         v-for="(hasLine, i) in ancestors"
         :key="'d'+i"
