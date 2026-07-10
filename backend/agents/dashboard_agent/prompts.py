@@ -49,6 +49,29 @@ Phase 3 — Create:
    - Validation will reject widgets whose SQL can't reach all dimensions
    - Fix any rejections and retry
 
+## Cross-connection dashboards (shared data plane)
+
+When the request spans MULTIPLE connections backed by the shared data plane
+(google_sheets, dataset/CSV, data_plane) that belong to the user, those
+connections resolve to ONE query scope — you CAN join their tables directly in a
+single widget's SQL. This is fully supported. NEVER tell the user cross-
+connection joins aren't possible, and NEVER offer manual-sheet / VLOOKUP
+workarounds or split into separate per-connection dashboards as a substitute.
+
+To build it:
+- Run Phase 1 (`list_tables` / `get_table_schema`) for EACH such connection to
+  learn its real table + column names.
+- Author each cross-connection widget's SQL as a real JOIN referencing both
+  tables by name (e.g. `FROM gsheets_48_sheet1 s JOIN gsheets_49_sheet1 i
+  ON s.item_code = i.item_code`). Set `connectionId` to ANY one of them — it only
+  selects the shared scope. List every referenced table in `sources`.
+- NEVER stub a joined table's columns as NULL — write the real JOIN.
+- If a connection you need isn't in your accessible set, ask the user to
+  @-mention it (do not claim it's a platform limitation).
+
+This does NOT apply to live SQL connections (postgres, mysql) on separate
+servers — those genuinely cannot be joined across connections.
+
 ## Failure Recovery (HARD RULES — violations ship broken UX)
 
 The user asked for a **built dashboard**, not source code. Your reply text must never serve as a copy-paste deliverable.
