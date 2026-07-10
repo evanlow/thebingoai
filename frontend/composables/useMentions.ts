@@ -242,9 +242,21 @@ export const useMentions = () => {
     const filteredGroups = computed((): MentionGroup[] => {
       const q = mentionQuery.value.toLowerCase().trim()
       if (!q) return mentionGroups.value
-      return mentionGroups.value.filter(g =>
-        g.label.toLowerCase().includes(q) || g.subLabel.toLowerCase().includes(q)
-      )
+      const out: MentionGroup[] = []
+      for (const g of mentionGroups.value) {
+        // Group-level match (e.g. "Databases") keeps the whole group…
+        if (g.label.toLowerCase().includes(q) || g.subLabel.toLowerCase().includes(q)) {
+          out.push(g)
+          continue
+        }
+        // …otherwise match on the item names inside so typing a connection
+        // name ("Sales") surfaces its group instead of showing "0 matches".
+        const items = g.items.filter(i =>
+          i.displayName.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)
+        )
+        if (items.length) out.push({ ...g, items, count: items.length })
+      }
+      return out
     })
 
     const activeGroup = computed((): MentionGroup | null => {

@@ -99,6 +99,12 @@
                 <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
                 <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.host }}</span>
               </div>
+              <div v-else-if="connection.db_type === 'google_sheets'" class="flex items-center gap-1 mt-1">
+                <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
+                <!-- Sheets' `database` is the opaque spreadsheet id; show the
+                     user's connection name so cards are tellable apart. -->
+                <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.name }}</span>
+              </div>
               <div v-else-if="connection.database" class="flex items-center gap-1 mt-1">
                 <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
                 <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.database }}</span>
@@ -867,6 +873,7 @@ import connectorFacebookAds from '~/assets/icons/connector/facebook_ads.svg?raw'
 import connectorSqlite from '~/assets/icons/connector/sqlite.svg?raw'
 import connectorBigquery from '~/assets/icons/connector/bigquery.svg?raw'
 import connectorNotion from '~/assets/icons/connector/notion.svg?raw'
+import connectorGoogleSheets from '~/assets/icons/connector/google_sheets.svg?raw'
 
 function extractErrorMessage(err: any, fallback: string): string {
   const detail = err?.data?.detail
@@ -890,6 +897,7 @@ const connectorIcons: Record<string, string> = {
   sqlite:       connectorSqlite,
   bigquery_ga4: connectorBigquery,
   notion:       connectorNotion,
+  google_sheets: connectorGoogleSheets,
 }
 
 // Card top band colors keyed by connector type
@@ -904,6 +912,7 @@ const CARD_BAND: Record<string, string> = {
   dataset:      'bg-gray-100 dark:bg-neutral-400/60',
   facebook_ads: 'bg-blue-100 dark:bg-blue-500/70',
   notion:       'bg-gray-100 dark:bg-neutral-400/60',
+  google_sheets: 'bg-green-100 dark:bg-green-500/70',
 }
 
 // State
@@ -1646,6 +1655,11 @@ function validateForm(): boolean {
 
   // BigQuery (GA4): create form handled by plugin layer (GA4ConnectForm); skip generic validation.
   if (form.value.db_type === 'bigquery_ga4') {
+    return isValid
+  }
+
+  // Google Sheets: plugin connector with no host/port; creds via public URL or OAuth. Skip generic validation.
+  if (form.value.db_type === 'google_sheets') {
     return isValid
   }
 

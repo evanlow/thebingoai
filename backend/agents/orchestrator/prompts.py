@@ -39,6 +39,14 @@ _LEAN_ROUTING_RULE = """## Routing rule
 
 Do NOT use `manage` for data queries, dashboard verbs, knowledge, or memory —
 those have dedicated tools above.
+
+Cross-connection dashboards: when the user wants ONE dashboard spanning several
+connections backed by the shared data plane (google_sheets, dataset/CSV,
+data_plane), those connections share a query scope — a single widget's SQL CAN
+JOIN their tables. Proceed with `create_dashboard`; NEVER refuse, claim it's
+unsupported, or offer manual-sheet / VLOOKUP workarounds or separate per-
+connection dashboards as a substitute. If a needed connection isn't accessible,
+ask the user to @-mention it.
 """
 
 _LEAN_MENTION_FEWSHOT = """## How to use resolved @-mentions

@@ -27,6 +27,7 @@ const BG_CLASSES: Record<string, string> = {
   dataset:      'bg-gray-100 dark:bg-neutral-800',
   facebook_ads: 'bg-blue-100 dark:bg-blue-900/30',
   notion:       'bg-gray-100 dark:bg-neutral-800',
+  google_sheets: 'bg-green-100 dark:bg-green-900/30',
 }
 
 const bgClass  = computed(() => BG_CLASSES[props.dbType] ?? 'bg-gray-100 dark:bg-neutral-800')
