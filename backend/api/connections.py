@@ -7,6 +7,7 @@ from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection, ProfilingStatus
 from backend.models.team_membership import TeamMembership
 from backend.models.team_connection_policy import TeamConnectionPolicy
+from backend.schemas.semantics import SemanticLayerUpdate
 from backend.schemas.connection import (
     ConnectionCreate, ConnectionUpdate, ConnectionResponse,
     ConnectionTestResponse, SchemaRefreshResponse, ConnectorTypeResponse,
@@ -502,6 +503,51 @@ async def update_connection(
     db.refresh(connection)
 
     return connection
+
+
+@router.get("/{connection_id}/semantics")
+async def get_connection_semantics(
+    connection_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the connection's semantic layer (glossary/relationships/definitions).
+
+    Empty sections when none saved yet.
+    """
+    connection = _find_connection(db, connection_id, current_user)
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    from backend.services.semantic_layer import load_semantic_layer
+    layer = load_semantic_layer(db, connection.id)
+    return layer or {"glossary": {}, "relationships": [], "definitions": []}
+
+
+@router.put("/{connection_id}/semantics")
+async def update_connection_semantics(
+    connection_id: str,
+    request: SemanticLayerUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Section-level replace of the connection's semantic layer."""
+    connection = _find_connection(db, connection_id, current_user)
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    _governance_require_mutate_connection(current_user, connection)
+
+    from backend.services.semantic_layer import upsert_semantic_layer
+    layer = upsert_semantic_layer(
+        db,
+        connection.id,
+        glossary=request.glossary,
+        relationships=request.relationships,
+        definitions=request.definitions,
+    )
+    db.commit()
+    return layer
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

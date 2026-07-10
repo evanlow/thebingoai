@@ -322,7 +322,14 @@ def profile_chat_file(file_id: str):
             df = pd.read_excel(io.BytesIO(file_bytes))
 
         profile = profile_dataframe(df)
-        profile_text = profile.to_prompt_text("")
+        # Privacy: under metadata_only_llm, render profile without real values.
+        _pdb = SessionLocal()
+        try:
+            from backend.services.llm_privacy import metadata_only_for_user
+            _meta_only = metadata_only_for_user(_pdb, file_data.get("user_id"))
+        finally:
+            _pdb.close()
+        profile_text = profile.to_prompt_text("", include_values=not _meta_only)
 
         file_data["profile_text"] = profile_text
         file_data["profile_status"] = "ready"

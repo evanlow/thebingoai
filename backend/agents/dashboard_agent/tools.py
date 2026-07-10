@@ -112,7 +112,15 @@ def _build_dashboard_context_tool(context: AgentContext, db_session_factory: Cal
                     ),
                 })
 
-            conn_context = load_connection_context(db, connection_id)
+            # Enriched context overlays the semantic layer (glossary descriptions,
+            # display names, confirmed relationships, business definitions) onto the
+            # profiled context — survives re-profiling, edits win by precedence.
+            from backend.services.semantic_layer import load_enriched_context
+            conn_context = load_enriched_context(db, connection_id)
+            # Privacy: resolve the flag while the connection is attached; org_id
+            # is loaded so the value survives db.close().
+            from backend.services.llm_privacy import metadata_only_for_connection
+            _meta_only = metadata_only_for_connection(connection)
         finally:
             db.close()
 
@@ -234,13 +242,22 @@ def _build_dashboard_context_tool(context: AgentContext, db_session_factory: Cal
                 "sources": found_in_tables,
                 "type": col_data.get("type", "text"),
             }
+            # Semantic-layer meaning: surface human/confirmed description + display
+            # name so the agent labels and reasons in business terms.
+            if col_data.get("description"):
+                dim_output[dim_name]["description"] = col_data["description"]
+            if col_data.get("displayName"):
+                dim_output[dim_name]["displayName"] = col_data["displayName"]
             if col_data.get("cardinality") is not None:
                 dim_output[dim_name]["cardinality"] = col_data["cardinality"]
-            # Include actual date range so the AI can generate dateRangeSource SQL
-            if col_data.get("min") is not None:
-                dim_output[dim_name]["min"] = col_data["min"]
-            if col_data.get("max") is not None:
-                dim_output[dim_name]["max"] = col_data["max"]
+            # Include actual date range so the AI can generate dateRangeSource SQL.
+            # Privacy: under metadata_only_llm, min/max are real values — withhold
+            # them; the agent falls back to relative date ranges.
+            if not _meta_only:
+                if col_data.get("min") is not None:
+                    dim_output[dim_name]["min"] = col_data["min"]
+                if col_data.get("max") is not None:
+                    dim_output[dim_name]["max"] = col_data["max"]
 
         dashboard_context = {
             "sources": sources,
@@ -251,6 +268,15 @@ def _build_dashboard_context_tool(context: AgentContext, db_session_factory: Cal
             },
             "dimensions": dim_output,
         }
+
+        # Business definitions (named metrics/rules) — text + SQL, safe to send;
+        # scoped to the tables in play so large connections stay prompt-cheap.
+        definitions = [
+            d for d in (conn_context.get("definitions") or [])
+            if not d.get("tables") or set(d["tables"]) & set(table_names)
+        ]
+        if definitions:
+            dashboard_context["business_definitions"] = definitions
 
         return json.dumps({"success": True, "data_context": dashboard_context})
 

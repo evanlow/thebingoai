@@ -590,24 +590,29 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
             first_error_msg = str(e)
             logger.warning(f"Widget '{widget_id}': SQL execution failed, attempting LLM fix: {first_error_msg}")
 
-        # Gather sample data from referenced tables for better fix context
+        # Gather sample data from referenced tables for better fix context.
+        # Gather sample data from referenced tables for better fix context.
+        # Privacy: under metadata_only_llm, skip sampling entirely — the fix
+        # prompt keeps the error + schema + baseJoin, no real rows.
         sample_data = ""
-        try:
-            from backend.services.schema_utils import extract_table_names
-            tables = extract_table_names(sql)
-            for tbl in list(tables)[:2]:
-                try:
-                    sample_result = await asyncio.to_thread(
-                        _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
-                    )
-                    sample_data += f"\nTable '{tbl}' sample:\n"
-                    sample_data += f"  Columns: {sample_result.columns}\n"
-                    for srow in sample_result.rows[:3]:
-                        sample_data += f"  {list(srow)}\n"
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        from backend.services.llm_privacy import metadata_only_for_connection
+        if not metadata_only_for_connection(connection):
+            try:
+                from backend.services.schema_utils import extract_table_names
+                tables = extract_table_names(sql)
+                for tbl in list(tables)[:2]:
+                    try:
+                        sample_result = await asyncio.to_thread(
+                            _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
+                        )
+                        sample_data += f"\nTable '{tbl}' sample:\n"
+                        sample_data += f"  Columns: {sample_result.columns}\n"
+                        for srow in sample_result.rows[:3]:
+                            sample_data += f"  {list(srow)}\n"
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         # Attempt LLM-powered SQL fix with sample data + baseJoin context
         fixed_sql = await _attempt_sql_fix(

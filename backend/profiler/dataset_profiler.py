@@ -62,8 +62,14 @@ class DatasetProfile:
     profiled_columns: int = 0
     memory_mb: float = 0.0
 
-    def to_prompt_text(self, filename: str) -> str:
-        """Render the full profile as structured text for LLM injection."""
+    def to_prompt_text(self, filename: str, include_values: bool = True) -> str:
+        """Render the full profile as structured text for LLM injection.
+
+        ``include_values=False`` (metadata_only_llm) omits real data values —
+        the sample rows, categorical value counts/mode, numeric
+        min/median/quantiles/max, and datetime ranges — while keeping derived
+        stats (counts, null%, unique, mean/std/skew/outliers, correlations).
+        """
         lines: list[str] = []
 
         lines.append(f"=== Dataset Profile: {filename} ===")
@@ -94,8 +100,10 @@ class DatasetProfile:
             lines.append(f"  {null_info}")
 
             if col.dtype == "numeric":
-                lines.append(f"  Mean: {_fmtf(col.mean)} | Median: {_fmtf(col.median)} | Std: {_fmtf(col.std)}")
-                lines.append(f"  Min: {_fmtf(col.min_val)} | Q25: {_fmtf(col.q25)} | Q75: {_fmtf(col.q75)} | Max: {_fmtf(col.max_val)}")
+                # Mean/Std are derived; Median/Min/Q25/Q75/Max are real values.
+                lines.append(f"  Mean: {_fmtf(col.mean)} | Std: {_fmtf(col.std)}")
+                if include_values:
+                    lines.append(f"  Min: {_fmtf(col.min_val)} | Q25: {_fmtf(col.q25)} | Median: {_fmtf(col.median)} | Q75: {_fmtf(col.q75)} | Max: {_fmtf(col.max_val)}")
                 extra = []
                 if col.skewness is not None:
                     extra.append(f"Skewness: {col.skewness:.2f}")
@@ -105,15 +113,15 @@ class DatasetProfile:
                     lines.append(f"  {' | '.join(extra)}")
 
             elif col.dtype == "categorical":
-                if col.mode_value is not None:
+                if include_values and col.mode_value is not None:
                     lines.append(f"  Mode: {col.mode_value}")
-                if col.value_counts:
+                if include_values and col.value_counts:
                     lines.append("  Value counts:")
                     for val, count, pct in col.value_counts:
                         lines.append(f"    {val}: {_fmt(count)} ({pct:.1f}%)")
 
             elif col.dtype == "datetime":
-                if col.min_date and col.max_date:
+                if include_values and col.min_date and col.max_date:
                     span = f" (span: {_fmt(col.date_span_days)} days)" if col.date_span_days is not None else ""
                     lines.append(f"  Range: {col.min_date} to {col.max_date}{span}")
 
@@ -130,8 +138,8 @@ class DatasetProfile:
                 lines.append(f"  {col_a} ~ {col_b}: {r:.2f}")
             lines.append("")
 
-        # Sample rows
-        if self.sample_text:
+        # Sample rows — real data, omitted under metadata_only_llm
+        if include_values and self.sample_text:
             lines.append(f"## Sample Data ({settings.profile_sample_rows} rows)")
             lines.append(self.sample_text)
 
