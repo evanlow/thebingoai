@@ -14,7 +14,7 @@
       <template v-else-if="!store.currentDashboard">
 
         <div class="flex flex-1 flex-col overflow-y-auto px-3 md:px-6 pt-4 pb-6">
-          <div v-if="store.loading" class="flex items-center justify-center py-16 text-sm text-gray-400">
+          <div v-if="store.loading" class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-neutral-500">
             Loading dashboards...
           </div>
 
@@ -216,18 +216,18 @@
         size="sm"
       >
         <div class="space-y-4">
-          <p class="text-sm text-gray-600">
-            This will permanently delete <span class="font-medium text-gray-900">{{ store.currentDashboard?.title }}</span> and all its widgets. This action cannot be undone.
+          <p class="text-sm text-gray-600 dark:text-neutral-400">
+            This will permanently delete <span class="font-medium text-gray-900 dark:text-neutral-100">{{ store.currentDashboard?.title }}</span> and all its widgets. This action cannot be undone.
           </p>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">
+            <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
               Type <span class="font-semibold">{{ store.currentDashboard?.title }}</span> to confirm
             </label>
             <input
               v-model="deleteConfirmText"
               type="text"
               placeholder="Dashboard name"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+              class="w-full rounded-lg border border-gray-300 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
             />
           </div>
         </div>

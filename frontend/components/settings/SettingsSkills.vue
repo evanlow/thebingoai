@@ -109,13 +109,13 @@
         </div>
 
         <!-- Bottom bar: view + toggle + delete -->
-        <div class="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+        <div class="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-neutral-800">
           <div class="flex items-center gap-1.5">
             <button
               type="button"
               title="View skill details"
               @click="openDetailDialog(skill)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
             >
               <component :is="Eye" class="h-4 w-4" />
             </button>
@@ -125,7 +125,7 @@
               :title="skill.is_active ? 'Deactivate skill' : 'Activate skill'"
               @click="handleToggle(skill)"
               class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
-              :class="skill.is_active ? 'bg-violet-600' : 'bg-gray-200'"
+              :class="skill.is_active ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
             >
               <span
                 class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
@@ -138,7 +138,7 @@
             type="button"
             title="Delete skill"
             @click="openDeleteDialog(skill)"
-            class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+            class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-colors"
           >
             <component :is="Trash2" class="h-4 w-4" />
           </button>
@@ -165,7 +165,7 @@
           {{ previewingSuggestion.suggested_description }}
         </p>
         <div v-if="previewingSuggestion.pattern_summary">
-          <p class="text-sm font-medium text-gray-500 mb-1">Detected pattern</p>
+          <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Detected pattern</p>
           <p class="text-sm text-gray-700 dark:text-neutral-300 italic">{{ previewingSuggestion.pattern_summary }}</p>
         </div>
       </div>
@@ -199,29 +199,29 @@
           <UiBadge :variant="skillTypeBadgeVariant(skillDetail.skill_type)" size="sm">
             {{ skillTypeLabel(skillDetail.skill_type) }}
           </UiBadge>
-          <span v-if="skillDetail.version > 1" class="text-sm text-gray-400">v{{ skillDetail.version }}</span>
+          <span v-if="skillDetail.version > 1" class="text-sm text-gray-400 dark:text-neutral-500">v{{ skillDetail.version }}</span>
         </div>
 
         <!-- Description -->
         <div>
-          <p class="text-sm text-gray-600">{{ skillDetail.description }}</p>
+          <p class="text-sm text-gray-600 dark:text-neutral-400">{{ skillDetail.description }}</p>
         </div>
 
         <!-- Activation hint -->
         <div v-if="skillDetail.activation_hint">
-          <p class="text-sm font-medium text-gray-500 mb-1">Activation hint</p>
-          <p class="text-sm text-gray-700 italic">{{ skillDetail.activation_hint }}</p>
+          <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Activation hint</p>
+          <p class="text-sm text-gray-700 dark:text-neutral-300 italic">{{ skillDetail.activation_hint }}</p>
         </div>
 
         <!-- Instructions preview -->
         <div v-if="skillDetail.instructions">
-          <p class="text-sm font-medium text-gray-500 mb-1">Instructions</p>
-          <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{{ instructionsPreview(skillDetail.instructions) }}</div>
+          <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Instructions</p>
+          <div class="rounded-md bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 p-3 text-sm text-gray-700 dark:text-neutral-300 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{{ instructionsPreview(skillDetail.instructions) }}</div>
         </div>
 
         <!-- Code preview -->
         <div v-if="skillDetail.has_code">
-          <p class="text-sm font-medium text-gray-500 mb-1">Code</p>
+          <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Code</p>
           <div class="rounded-md bg-gray-900 p-3 text-sm text-green-400 font-mono max-h-32 overflow-y-auto">
             <span class="text-gray-400">async def run(): ...</span>
           </div>
@@ -229,20 +229,20 @@
 
         <!-- Prompt template preview -->
         <div v-if="skillDetail.prompt_template">
-          <p class="text-sm font-medium text-gray-500 mb-1">Prompt template</p>
-          <div class="rounded-md bg-blue-50 border border-blue-100 p-3 text-sm text-gray-700 max-h-32 overflow-y-auto">{{ skillDetail.prompt_template }}</div>
+          <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Prompt template</p>
+          <div class="rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 p-3 text-sm text-gray-700 dark:text-neutral-300 max-h-32 overflow-y-auto">{{ skillDetail.prompt_template }}</div>
         </div>
 
         <!-- References -->
         <div v-if="skillDetail.references.length > 0">
-          <p class="text-sm font-medium text-gray-500 mb-1">References ({{ skillDetail.references.length }})</p>
+          <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">References ({{ skillDetail.references.length }})</p>
           <div class="flex flex-col gap-1">
             <div
               v-for="ref in skillDetail.references"
               :key="ref.id"
-              class="flex items-center gap-2 text-sm text-gray-700 px-2 py-1.5 rounded bg-gray-50 border border-gray-100"
+              class="flex items-center gap-2 text-sm text-gray-700 dark:text-neutral-300 px-2 py-1.5 rounded bg-gray-50 dark:bg-neutral-800 border border-gray-100 dark:border-neutral-800"
             >
-              <component :is="FileText" class="h-3.5 w-3.5 text-gray-400 shrink-0" />
+              <component :is="FileText" class="h-3.5 w-3.5 text-gray-400 dark:text-neutral-500 shrink-0" />
               {{ ref.title }}
             </div>
           </div>
@@ -250,11 +250,11 @@
 
         <!-- Parameters schema -->
         <div v-if="skillDetail.parameters_schema">
-          <p class="text-sm font-medium text-gray-500 mb-1">Parameters</p>
-          <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700 font-mono">
+          <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Parameters</p>
+          <div class="rounded-md bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 p-3 text-sm text-gray-700 dark:text-neutral-300 font-mono">
             <div v-for="(type, name) in skillDetail.parameters_schema" :key="name" class="flex gap-2">
               <span class="text-blue-600">{{ name }}</span>
-              <span class="text-gray-400">{{ type }}</span>
+              <span class="text-gray-400 dark:text-neutral-500">{{ type }}</span>
             </div>
           </div>
         </div>
@@ -271,7 +271,7 @@
       title="Delete Skill"
       size="sm"
     >
-      <p class="text-sm text-gray-600">
+      <p class="text-sm text-gray-600 dark:text-neutral-400">
         Are you sure you want to delete <strong>{{ deletingSkill?.name }}</strong>?
         This action cannot be undone.
       </p>

@@ -25,7 +25,7 @@
           :disabled="savingSettings"
           @click="toggleMemoryEnabled"
           class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50"
-          :class="memoryEnabled ? 'bg-violet-600' : 'bg-gray-200'"
+          :class="memoryEnabled ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
         >
           <span
             class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
@@ -104,7 +104,7 @@
             :title="entry.is_active ? 'Deactivate' : 'Activate'"
             @click="toggleEntry(entry)"
             class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
-            :class="entry.is_active ? 'bg-violet-600' : 'bg-gray-200'"
+            :class="entry.is_active ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
           >
             <span
               class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
@@ -124,7 +124,7 @@
               type="button"
               title="Edit"
               @click="openEditDialog(entry)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
             >
               <Pencil class="h-4 w-4" />
             </button>
@@ -132,14 +132,14 @@
               type="button"
               title="Delete"
               @click="openDeleteEntryDialog(entry)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-colors"
             >
               <Trash2 class="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <p v-if="entries.length >= 50" class="text-sm text-gray-400 text-center pt-1">
+        <p v-if="entries.length >= 50" class="text-sm text-gray-400 dark:text-neutral-500 text-center pt-1">
           Memory limit reached (50 entries). Delete some to add more.
         </p>
       </div>
@@ -190,7 +190,7 @@
       title="Delete Memory"
       size="sm"
     >
-      <p class="text-sm text-gray-600">
+      <p class="text-sm text-gray-600 dark:text-neutral-400">
         Are you sure you want to delete this memory? This action cannot be undone.
       </p>
       <template #footer>
@@ -205,7 +205,7 @@
       title="Delete Conversation Memories"
       size="sm"
     >
-      <p class="text-sm text-gray-600">
+      <p class="text-sm text-gray-600 dark:text-neutral-400">
         This will permanently delete all daily conversation memories. This action cannot be undone.
       </p>
       <template #footer>

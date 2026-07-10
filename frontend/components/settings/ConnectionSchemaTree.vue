@@ -39,12 +39,12 @@
   <template v-else>
     <!-- Search -->
     <div class="relative shrink-0">
-      <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
+      <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400 dark:text-neutral-500" />
       <input
         v-model="schemaSearch"
         type="text"
         placeholder="Filter tables..."
-        class="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+        class="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
       />
     </div>
 
@@ -95,13 +95,13 @@
       </div>
 
       <!-- Relationships -->
-      <div v-if="schema.relationships.length > 0" class="border-t border-gray-100 pt-3 mt-2">
-        <h4 class="text-sm font-medium text-gray-500 mb-2 uppercase tracking-wide">Relationships</h4>
+      <div v-if="schema.relationships.length > 0" class="border-t border-gray-100 dark:border-neutral-800 pt-3 mt-2">
+        <h4 class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-2 uppercase tracking-wide">Relationships</h4>
         <div class="space-y-1">
           <div
             v-for="rel in schema.relationships"
             :key="`${rel.from}-${rel.to}`"
-            class="flex items-center gap-1.5 text-sm text-gray-500"
+            class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-neutral-400"
           >
             <Link2 class="h-3 w-3 shrink-0" />
             <span class="font-mono truncate">{{ rel.from }}</span>

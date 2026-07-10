@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="relative w-full overflow-hidden rounded-t-lg bg-gray-50" style="height: 96px;">
+  <div ref="containerRef" class="relative w-full overflow-hidden rounded-t-lg bg-gray-50 dark:bg-neutral-800" style="height: 96px;">
     <template v-if="widgets.length > 0 && containerWidth > 0">
       <div
         v-for="(widget, i) in widgets"

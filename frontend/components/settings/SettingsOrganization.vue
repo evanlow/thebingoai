@@ -31,19 +31,19 @@
       <!-- Org info card -->
       <UiCard class="p-5 mb-6 max-w-sm">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
-            <Building2 class="h-5 w-5 text-gray-600" />
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+            <Building2 class="h-5 w-5 text-gray-600 dark:text-neutral-400" />
           </div>
           <div>
-            <p class="font-medium text-gray-900">{{ org.name }}</p>
-            <p class="text-sm text-gray-400">{{ teams.length }} team{{ teams.length !== 1 ? 's' : '' }}</p>
+            <p class="font-medium text-gray-900 dark:text-neutral-100">{{ org.name }}</p>
+            <p class="text-sm text-gray-400 dark:text-neutral-500">{{ teams.length }} team{{ teams.length !== 1 ? 's' : '' }}</p>
           </div>
         </div>
       </UiCard>
 
       <!-- Teams section -->
       <div class="mb-4 flex items-center justify-between">
-        <h3 class="text-base font-medium text-gray-900">Teams</h3>
+        <h3 class="text-base font-medium text-gray-900 dark:text-neutral-100">Teams</h3>
         <UiButton size="sm" @click="showCreateDialog = true">
           <Plus class="h-3.5 w-3.5" />
           Create Team
@@ -59,17 +59,17 @@
         >
           <div class="flex flex-col h-full">
             <div class="flex items-center gap-2">
-              <Users class="h-4 w-4 text-gray-400 shrink-0" />
-              <p class="text-sm font-medium text-gray-900 truncate">{{ team.name }}</p>
+              <Users class="h-4 w-4 text-gray-400 dark:text-neutral-500 shrink-0" />
+              <p class="text-sm font-medium text-gray-900 dark:text-neutral-100 truncate">{{ team.name }}</p>
             </div>
-            <p class="mt-auto text-sm text-gray-400">ID: {{ team.id.slice(0, 8) }}…</p>
+            <p class="mt-auto text-sm text-gray-400 dark:text-neutral-500">ID: {{ team.id.slice(0, 8) }}…</p>
           </div>
         </UiCard>
 
         <!-- Empty state in grid -->
         <div
           v-if="teams.length === 0"
-          class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg w-48 h-32 text-gray-400"
+          class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-neutral-600 rounded-lg w-48 h-32 text-gray-400 dark:text-neutral-500"
         >
           <Users class="h-5 w-5" />
           <span class="text-sm">No teams yet</span>

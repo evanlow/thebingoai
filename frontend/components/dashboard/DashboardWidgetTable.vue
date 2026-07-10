@@ -8,7 +8,7 @@
     </div>
 
     <!-- Empty state: all columns are metrics with no dimensions -->
-    <div v-if="isEmptyState" class="flex h-full items-center justify-center p-10 text-sm text-gray-400 text-center">
+    <div v-if="isEmptyState" class="flex h-full items-center justify-center p-10 text-sm text-gray-400 dark:text-neutral-500 text-center">
       Add at least one Dimension column to display grouped data.
     </div>
 

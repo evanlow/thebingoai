@@ -28,8 +28,8 @@
           class="w-64"
         />
         <div v-else class="flex items-center gap-2">
-          <Users class="h-4 w-4 text-gray-400" />
-          <span class="text-sm font-medium text-gray-900">{{ teams[0]?.name }}</span>
+          <Users class="h-4 w-4 text-gray-400 dark:text-neutral-500" />
+          <span class="text-sm font-medium text-gray-900 dark:text-neutral-100">{{ teams[0]?.name }}</span>
         </div>
 
         <UiButton size="sm" class="ml-auto" @click="showAddDialog = true">
@@ -58,15 +58,15 @@
         <div
           v-for="member in members"
           :key="member.id"
-          class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3"
+          class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-neutral-700 px-4 py-3"
         >
           <div class="flex items-center gap-3">
-            <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-sm font-medium text-gray-600">
+            <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800 text-sm font-medium text-gray-600 dark:text-neutral-300">
               {{ member.user_email[0].toUpperCase() }}
             </div>
             <div>
-              <p class="text-sm text-gray-900">{{ member.user_email }}</p>
-              <p class="text-sm text-gray-400">ID: {{ member.user_id.slice(0, 8) }}…</p>
+              <p class="text-sm text-gray-900 dark:text-neutral-100">{{ member.user_email }}</p>
+              <p class="text-sm text-gray-400 dark:text-neutral-500">ID: {{ member.user_id.slice(0, 8) }}…</p>
             </div>
           </div>
 
@@ -82,7 +82,7 @@
             />
             <button
               @click="openRemoveDialog(member)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-colors"
               title="Remove member"
             >
               <Trash2 class="h-4 w-4" />
@@ -123,7 +123,7 @@
 
     <!-- Remove Confirmation Dialog -->
     <UiDialog v-model:open="showRemoveDialog" title="Remove Member" size="sm">
-      <p class="text-sm text-gray-600">
+      <p class="text-sm text-gray-600 dark:text-neutral-400">
         Remove <strong>{{ removingMember?.user_email }}</strong> from this team?
         This action cannot be undone.
       </p>

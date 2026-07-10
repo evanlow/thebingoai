@@ -2,7 +2,7 @@
   <div class="min-h-screen flex items-center justify-center p-6">
     <div class="w-full max-w-md rounded-xl border border-[var(--line)] p-6 text-center">
       <h1 class="text-xl font-medium mb-2">Workspace invitation</h1>
-      <p v-if="state === 'working'" class="text-sm text-gray-500">Accepting your invitation…</p>
+      <p v-if="state === 'working'" class="text-sm text-gray-500 dark:text-neutral-400">Accepting your invitation…</p>
       <template v-else-if="state === 'success'">
         <p class="text-sm text-green-600 mb-4">You've joined as a viewer.</p>
         <button class="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm" @click="goToWorkspace">Open workspace</button>

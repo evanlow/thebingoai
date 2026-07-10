@@ -57,7 +57,7 @@
           <div>
             <dt class="text-sm text-gray-500 dark:text-neutral-400">Source Connection</dt>
             <dd class="mt-0.5 text-gray-900 dark:text-neutral-100 flex items-center gap-1">
-              <Database class="h-3.5 w-3.5 text-gray-400" />
+              <Database class="h-3.5 w-3.5 text-gray-400 dark:text-neutral-500" />
               Connection #{{ pipeline.source_connection_id }}
             </dd>
           </div>

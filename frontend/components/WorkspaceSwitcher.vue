@@ -17,7 +17,7 @@
         :class="w.org_id === store.activeOrgId ? 'bg-gray-50 dark:bg-neutral-700' : ''"
       >
         <span class="truncate">{{ w.org_name || w.org_id.slice(0, 8) }}</span>
-        <span class="text-sm text-gray-400">{{ w.is_home ? 'home' : w.role }}</span>
+        <span class="text-sm text-gray-400 dark:text-neutral-500">{{ w.is_home ? 'home' : w.role }}</span>
       </button>
     </div>
   </div>

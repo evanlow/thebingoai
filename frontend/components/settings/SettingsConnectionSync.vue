@@ -16,7 +16,7 @@
     </div>
 
     <!-- Loading existing -->
-    <div v-if="loading" class="flex items-center gap-2 text-sm text-gray-400">
+    <div v-if="loading" class="flex items-center gap-2 text-sm text-gray-400 dark:text-neutral-500">
       <Loader2 class="h-4 w-4 animate-spin" /> Loading…
     </div>
 
@@ -28,7 +28,7 @@
       <div class="text-sm text-gray-900 dark:text-neutral-100 font-medium">{{ pipeline.name }}</div>
       <dl class="text-sm text-gray-600 dark:text-neutral-400 space-y-1">
         <div class="flex justify-between"><dt>Tables</dt><dd class="font-mono">{{ tableCountLabel }}</dd></div>
-        <div class="flex justify-between"><dt>Schedule</dt><dd class="font-mono">{{ (isNewModel ? activeSchedule?.cron : pipeline.cron) ?? 'manual only' }} <span class="text-gray-400">{{ isNewModel ? activeSchedule?.timezone : pipeline.timezone }}</span></dd></div>
+        <div class="flex justify-between"><dt>Schedule</dt><dd class="font-mono">{{ (isNewModel ? activeSchedule?.cron : pipeline.cron) ?? 'manual only' }} <span class="text-gray-400 dark:text-neutral-500">{{ isNewModel ? activeSchedule?.timezone : pipeline.timezone }}</span></dd></div>
         <div class="flex justify-between"><dt>Last run</dt><dd>{{ pipeline.last_run_at ? formatRelative(pipeline.last_run_at) : '—' }}<template v-if="pipeline.last_run_status"> · {{ pipeline.last_run_status }}</template><template v-if="!effectiveEnabled"> · disabled</template></dd></div>
         <div class="flex justify-between"><dt>Next run</dt><dd>{{ pipeline.next_run_at ? formatRelative(pipeline.next_run_at) : '—' }}</dd></div>
       </dl>
@@ -110,7 +110,7 @@
         >
           <option v-for="t in availableTables" :key="t" :value="t">{{ t }}</option>
         </select>
-        <p class="text-sm text-gray-400 mt-0.5">
+        <p class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5">
           Hold ⌘/Ctrl to select multiple.
           <template v-if="!availableTables.length">Refresh the connection schema first.</template>
         </p>

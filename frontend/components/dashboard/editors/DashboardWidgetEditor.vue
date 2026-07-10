@@ -232,7 +232,7 @@
             :readonly="!editMode"
             class="relative w-full h-48 px-3 py-2 pr-8 font-mono text-sm leading-relaxed resize-none bg-transparent caret-black dark:caret-white text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :class="editMode ? '' : 'cursor-default'"
-            :style="{ color: highlightedSql ? 'transparent' : undefined }"
+            :style="{ color: highlightedSql ? 'transparent' : undefined, caretColor: colorMode.value === 'dark' ? 'white' : 'black' }"
             spellcheck="false"
             @blur="onSqlBlur()"
             @scroll="syncSqlScroll"
@@ -377,6 +377,7 @@ const orgTables = ref<{ name: string; writer?: string; connectionId?: number }[]
 const selectedOrgTable = ref<string>('')
 
 // SQL syntax highlighting
+const colorMode = useColorMode()
 const sqlHighlightRef = ref<HTMLElement | null>(null)
 const highlightedSql = ref('')
 let highlighter: any = null
