@@ -230,7 +230,7 @@
           <textarea
             v-model="localSql"
             :readonly="!editMode"
-            class="relative w-full h-48 px-3 py-2 pr-8 font-mono text-sm leading-relaxed resize-none bg-transparent caret-black dark:caret-white text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+            class="sql-editor-textarea relative w-full h-48 px-3 py-2 pr-8 font-mono text-sm leading-relaxed resize-none bg-transparent caret-black dark:caret-white text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
             :class="editMode ? '' : 'cursor-default'"
             :style="{ color: highlightedSql ? 'transparent' : undefined, caretColor: colorMode.value === 'dark' ? 'white' : 'black' }"
             spellcheck="false"
@@ -735,6 +735,20 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
 <style scoped>
+/* Overlay and textarea must wrap identically, or the caret drifts from its line
+   the further you scroll (heights diverge when one breaks a long token and the
+   other doesn't). Pin the same wrap metrics on both layers. */
+.sql-highlight,
+.sql-editor-textarea {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 2;
+  /* Reserve equal scrollbar gutter on both layers. Without this the textarea's
+     scrollbar eats content width, so it wraps narrower than the overlay and the
+     caret drifts further from its line the more you scroll. */
+  scrollbar-gutter: stable;
+}
 .sql-highlight :deep(span) {
   font-family: inherit;
   font-size: inherit;
