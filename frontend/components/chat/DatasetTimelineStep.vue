@@ -66,7 +66,7 @@ const iconClasses = computed(() => {
     case 'completed': return 'bg-emerald-500'
     case 'active': return 'border-2 border-amber-400'
     case 'failed': return 'bg-red-500'
-    default: return 'border-2 border-gray-200'
+    default: return 'border-2 border-gray-200 dark:border-neutral-700'
   }
 })
 
@@ -94,7 +94,7 @@ const connectorClasses = computed(() => {
   if (props.status === 'completed' && props.nextStatus === 'failed') {
     return 'bg-gradient-to-b from-emerald-500 to-red-500'
   }
-  return 'bg-gray-200'
+  return 'bg-gray-200 dark:bg-neutral-700'
 })
 
 const formattedTime = computed(() => {

@@ -1,7 +1,7 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50">
-    <div class="max-w-md w-full p-8 bg-white rounded-lg shadow-md text-center">
-      <p class="text-gray-600">Signing you in...</p>
+  <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-neutral-950">
+    <div class="max-w-md w-full p-8 bg-white dark:bg-neutral-900 rounded-lg shadow-md text-center">
+      <p class="text-gray-600 dark:text-neutral-400">Signing you in...</p>
     </div>
   </div>
 </template>

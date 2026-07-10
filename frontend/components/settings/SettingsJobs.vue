@@ -11,13 +11,13 @@
     <div class="flex-1 overflow-y-auto px-7 py-6">
 
     <!-- Tab bar -->
-    <div class="flex items-center justify-between mb-6 border-b border-gray-200">
+    <div class="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-neutral-700">
       <div class="flex gap-0">
         <button
           type="button"
           @click="activeTab = 'jobs'"
           class="px-4 py-2 text-base font-medium border-b-2 -mb-px transition-colors"
-          :class="activeTab === 'jobs' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+          :class="activeTab === 'jobs' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200'"
         >
           Jobs
         </button>
@@ -25,7 +25,7 @@
           type="button"
           @click="activeTab = 'pipelines'"
           class="px-4 py-2 text-base font-medium border-b-2 -mb-px transition-colors"
-          :class="activeTab === 'pipelines' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+          :class="activeTab === 'pipelines' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200'"
         >
           Dashboard Pipelines
         </button>
@@ -67,7 +67,7 @@
             :title="job.is_active ? 'Deactivate job' : 'Activate job'"
             @click="handleToggle(job)"
             class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
-            :class="job.is_active ? 'bg-violet-600' : 'bg-gray-200'"
+            :class="job.is_active ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
           >
             <span
               class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
@@ -83,7 +83,7 @@
                 class="shrink-0 text-sm font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
                 :class="job.kind === 'briefing'
                   ? 'bg-violet-100 text-violet-700'
-                  : 'bg-gray-100 text-gray-600'"
+                  : 'bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300'"
               >
                 {{ job.kind === 'briefing' ? 'Briefing' : 'Job' }}
               </span>
@@ -94,12 +94,12 @@
                 class="shrink-0 text-sm px-2 py-0.5 rounded-full font-mono transition-colors"
                 :class="expandedJobId === job.id
                   ? 'bg-blue-100 text-blue-700'
-                  : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'"
+                  : 'bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-blue-50 hover:text-blue-600'"
               >
                 {{ job.cron_expression }}
               </button>
             </div>
-            <p class="text-sm text-gray-400 mt-0.5">
+            <p class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5">
               <span v-if="job.last_run_at">Last run: {{ formatRelative(job.last_run_at) }} · </span>
               <span v-if="job.next_run_at && job.is_active">Next: {{ formatRelative(job.next_run_at) }}</span>
               <span v-else-if="!job.is_active" class="text-gray-300">Inactive</span>
@@ -108,14 +108,14 @@
 
           <!-- Actions -->
           <div class="flex items-center gap-1 shrink-0">
-            <span v-if="jobRunCount(job) !== null" class="text-sm text-gray-400 px-1.5">
+            <span v-if="jobRunCount(job) !== null" class="text-sm text-gray-400 dark:text-neutral-500 px-1.5">
               Runs · {{ jobRunCount(job) }}
             </span>
             <button
               type="button"
               :title="job.kind === 'briefing' ? 'Generate briefing now' : 'Run now'"
               @click="handleTrigger(job)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 transition-colors"
             >
               <component :is="Play" class="h-4 w-4" />
             </button>
@@ -123,7 +123,7 @@
               type="button"
               title="View run history"
               @click="openRunHistory(job)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-700 dark:hover:text-neutral-300 transition-colors"
             >
               <component :is="History" class="h-4 w-4" />
             </button>
@@ -131,7 +131,7 @@
               type="button"
               title="Edit name"
               @click="openEditDialog(job)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-700 dark:hover:text-neutral-300 transition-colors"
             >
               <component :is="Pencil" class="h-4 w-4" />
             </button>
@@ -139,7 +139,7 @@
               type="button"
               title="Delete job"
               @click="openDeleteDialog(job)"
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+              class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-colors"
             >
               <component :is="Trash2" class="h-4 w-4" />
             </button>
@@ -262,11 +262,11 @@
         <div
           v-for="run in runs"
           :key="run.id"
-          class="rounded-lg border border-gray-200 overflow-hidden"
+          class="rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden"
         >
           <!-- Run header -->
           <div
-            class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+            class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
             @click="toggleRunExpand(run.id)"
           >
             <span
@@ -279,16 +279,16 @@
             >
               {{ run.status }}
             </span>
-            <span class="text-sm text-gray-700 flex-1">{{ formatDate(run.started_at) }}</span>
-            <span v-if="run.duration_ms" class="text-sm text-gray-400">{{ run.duration_ms }}ms</span>
-            <component :is="ChevronDown" class="h-4 w-4 text-gray-400 transition-transform" :class="{ 'rotate-180': expandedRuns.has(run.id) }" />
+            <span class="text-sm text-gray-700 dark:text-neutral-300 flex-1">{{ formatDate(run.started_at) }}</span>
+            <span v-if="run.duration_ms" class="text-sm text-gray-400 dark:text-neutral-500">{{ run.duration_ms }}ms</span>
+            <component :is="ChevronDown" class="h-4 w-4 text-gray-400 dark:text-neutral-500 transition-transform" :class="{ 'rotate-180': expandedRuns.has(run.id) }" />
           </div>
 
           <!-- Run details (expanded) -->
-          <div v-if="expandedRuns.has(run.id)" class="border-t border-gray-100 px-4 py-3 space-y-3 bg-gray-50">
+          <div v-if="expandedRuns.has(run.id)" class="border-t border-gray-100 dark:border-neutral-800 px-4 py-3 space-y-3 bg-gray-50 dark:bg-neutral-800">
             <div v-if="run.response">
-              <p class="text-sm font-medium text-gray-500 mb-1">Response</p>
-              <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ run.response }}</p>
+              <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Response</p>
+              <p class="text-sm text-gray-700 dark:text-neutral-300 whitespace-pre-wrap">{{ run.response }}</p>
             </div>
             <div v-if="run.error">
               <p class="text-sm font-medium text-red-500 mb-1">Error</p>
@@ -325,7 +325,7 @@
 
     <!-- Delete Confirmation Dialog -->
     <UiDialog v-model:open="showDeleteDialog" title="Delete Job" size="sm">
-      <p class="text-sm text-gray-600">
+      <p class="text-sm text-gray-600 dark:text-neutral-400">
         Are you sure you want to delete <strong>{{ deletingJob?.name }}</strong>?
         All run history will also be deleted. This action cannot be undone.
       </p>
@@ -338,7 +338,7 @@
     <!-- ── Dashboard Pipelines ──────────────────────────────────────────── -->
     <div v-if="activeTab === 'pipelines'">
       <div class="mb-4">
-        <p class="text-sm text-gray-500">Scheduled refresh pipelines that keep dashboard widgets up-to-date automatically.</p>
+        <p class="text-sm text-gray-500 dark:text-neutral-400">Scheduled refresh pipelines that keep dashboard widgets up-to-date automatically.</p>
       </div>
 
       <div v-if="dashboardsLoading" class="space-y-3">
@@ -358,7 +358,7 @@
           v-for="dashboard in scheduledDashboards"
           :key="dashboard.id"
           class="rounded-lg border transition-colors"
-          :class="expandedDashboardId === dashboard.id ? 'border-violet-200 bg-white' : 'border-gray-200'"
+          :class="expandedDashboardId === dashboard.id ? 'border-violet-200 bg-white dark:bg-neutral-800' : 'border-gray-200 dark:border-neutral-700'"
         >
           <div class="flex items-center gap-3 px-4 py-3">
             <!-- Active toggle -->
@@ -367,7 +367,7 @@
               :title="dashboard.schedule_active ? 'Deactivate pipeline' : 'Activate pipeline'"
               @click="handleDashboardToggle(dashboard)"
               class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
-              :class="dashboard.schedule_active ? 'bg-violet-600' : 'bg-gray-200'"
+              :class="dashboard.schedule_active ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
             >
               <span
                 class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
@@ -378,7 +378,7 @@
             <!-- Dashboard info -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <p class="text-sm font-medium text-gray-900 truncate">{{ dashboard.title }}</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-neutral-100 truncate">{{ dashboard.title }}</p>
                 <button
                   type="button"
                   :title="expandedDashboardId === dashboard.id ? 'Close schedule editor' : 'Edit schedule'"
@@ -390,9 +390,9 @@
                 >
                   {{ dashboard.cron_expression }}
                 </button>
-                <span class="shrink-0 text-sm bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Dashboard</span>
+                <span class="shrink-0 text-sm bg-gray-100 dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 px-2 py-0.5 rounded-full">Dashboard</span>
               </div>
-              <p class="text-sm text-gray-400 mt-0.5">
+              <p class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5">
                 <span v-if="dashboard.last_run_at">Last: {{ formatRelative(dashboard.last_run_at) }} · </span>
                 <span v-if="dashboard.next_run_at && dashboard.schedule_active">Next: {{ formatRelative(dashboard.next_run_at) }}</span>
                 <span v-else-if="!dashboard.schedule_active" class="text-gray-300">Inactive</span>
@@ -408,7 +408,7 @@
                 class="rounded-lg p-1.5 transition-colors"
                 :class="expandedDashboardId === dashboard.id
                   ? 'text-violet-600 bg-violet-50'
-                  : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'"
+                  : 'text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-700 dark:hover:text-neutral-300'"
               >
                 <component :is="Pencil" class="h-4 w-4" />
               </button>
@@ -416,7 +416,7 @@
                 type="button"
                 title="View run history"
                 @click="openDashboardRunHistory(dashboard)"
-                class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-700 dark:hover:text-neutral-300 transition-colors"
               >
                 <component :is="History" class="h-4 w-4" />
               </button>
@@ -424,7 +424,7 @@
                 type="button"
                 title="Trigger now"
                 @click="handleDashboardTrigger(dashboard)"
-                class="rounded-lg p-1.5 text-gray-400 hover:bg-violet-50 hover:text-violet-600 transition-colors"
+                class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-violet-50 dark:hover:bg-violet-950/40 hover:text-violet-600 transition-colors"
               >
                 <component :is="Play" class="h-4 w-4" />
               </button>
@@ -432,7 +432,7 @@
                 type="button"
                 title="Remove schedule"
                 @click="handleDashboardRemoveSchedule(dashboard)"
-                class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                class="rounded-lg p-1.5 text-gray-400 dark:text-neutral-500 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-colors"
               >
                 <component :is="Trash2" class="h-4 w-4" />
               </button>
@@ -474,10 +474,10 @@
         <div
           v-for="run in dashboardRuns"
           :key="run.id"
-          class="rounded-lg border border-gray-200 overflow-hidden"
+          class="rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden"
         >
           <div
-            class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+            class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
             @click="toggleRunExpand(run.id)"
           >
             <span
@@ -491,26 +491,26 @@
             >
               {{ run.status }}
             </span>
-            <span class="text-sm text-gray-700 flex-1">{{ formatDate(run.started_at) }}</span>
-            <span v-if="run.widgets_total" class="text-sm text-gray-500">
+            <span class="text-sm text-gray-700 dark:text-neutral-300 flex-1">{{ formatDate(run.started_at) }}</span>
+            <span v-if="run.widgets_total" class="text-sm text-gray-500 dark:text-neutral-400">
               {{ run.widgets_succeeded }}/{{ run.widgets_total }} widgets
             </span>
-            <span v-if="run.duration_ms" class="text-sm text-gray-400">{{ run.duration_ms }}ms</span>
-            <component :is="ChevronDown" class="h-4 w-4 text-gray-400 transition-transform" :class="{ 'rotate-180': expandedRuns.has(run.id) }" />
+            <span v-if="run.duration_ms" class="text-sm text-gray-400 dark:text-neutral-500">{{ run.duration_ms }}ms</span>
+            <component :is="ChevronDown" class="h-4 w-4 text-gray-400 dark:text-neutral-500 transition-transform" :class="{ 'rotate-180': expandedRuns.has(run.id) }" />
           </div>
-          <div v-if="expandedRuns.has(run.id)" class="border-t border-gray-100 px-4 py-3 space-y-3 bg-gray-50">
+          <div v-if="expandedRuns.has(run.id)" class="border-t border-gray-100 dark:border-neutral-800 px-4 py-3 space-y-3 bg-gray-50 dark:bg-neutral-800">
             <div v-if="run.error">
               <p class="text-sm font-medium text-red-500 mb-1">Error</p>
               <p class="text-sm text-red-600 font-mono">{{ run.error }}</p>
             </div>
             <div v-if="run.widget_errors && Object.keys(run.widget_errors).length">
-              <p class="text-sm font-medium text-gray-500 mb-1">Widget errors</p>
+              <p class="text-sm font-medium text-gray-500 dark:text-neutral-400 mb-1">Widget errors</p>
               <div v-for="(errMsg, widgetId) in run.widget_errors" :key="widgetId" class="text-sm text-red-600 font-mono">
-                <span class="text-gray-500">{{ widgetId }}:</span> {{ errMsg }}
+                <span class="text-gray-500 dark:text-neutral-400">{{ widgetId }}:</span> {{ errMsg }}
               </div>
             </div>
             <div v-if="!run.error && (!run.widget_errors || !Object.keys(run.widget_errors).length)">
-              <p class="text-sm text-gray-400">All widgets refreshed successfully.</p>
+              <p class="text-sm text-gray-400 dark:text-neutral-500">All widgets refreshed successfully.</p>
             </div>
           </div>
         </div>

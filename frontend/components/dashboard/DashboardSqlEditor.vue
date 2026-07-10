@@ -4,13 +4,13 @@
     <div class="relative flex flex-col w-full max-w-7xl h-[85vh] bg-white dark:bg-neutral-900 rounded-xl shadow-2xl overflow-hidden">
 
       <!-- Header -->
-      <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-neutral-700">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-neutral-800">
         <div>
           <h2 class="text-sm font-semibold text-gray-900 dark:text-neutral-100">SQL Query</h2>
           <p class="text-sm text-gray-400 dark:text-neutral-500 mt-0.5">{{ widgetTitle }}</p>
         </div>
         <button
-          class="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-700 dark:hover:text-neutral-200 transition-colors"
+          class="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 dark:text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-700 dark:hover:text-neutral-300 transition-colors"
           @click="emit('close')"
         >
           <X class="h-4 w-4" />
@@ -25,7 +25,7 @@
           <!-- Left: SQL editor -->
           <div class="flex-1 flex flex-col gap-1.5 min-h-0">
             <label class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide flex-shrink-0">Query</label>
-            <div class="relative flex-1 min-h-0 rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden" :class="editMode ? 'bg-white dark:bg-neutral-900' : 'bg-gray-50 dark:bg-neutral-800'">
+            <div class="relative flex-1 min-h-0 rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden" :class="editMode ? 'bg-white dark:bg-neutral-900' : 'bg-gray-50 dark:bg-neutral-900'">
               <!-- Highlighted code overlay -->
               <div
                 ref="highlightRef"
@@ -39,7 +39,7 @@
                 :readonly="!editMode"
                 class="relative w-full h-full px-3 py-2.5 font-mono text-sm leading-relaxed resize-none bg-transparent caret-black dark:caret-white text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
                 :class="editMode ? '' : 'cursor-default'"
-                :style="{ color: highlightedSql ? 'transparent' : undefined }"
+                :style="{ color: highlightedSql ? 'transparent' : undefined, caretColor: colorMode.value === 'dark' ? 'white' : 'black' }"
                 spellcheck="false"
                 @scroll="syncScroll"
               />
@@ -61,7 +61,7 @@
             <span class="flex-1">{{ previewError }}</span>
             <button
               v-if="editMode && widget.dataSource"
-              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-sm font-medium bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/30 disabled:opacity-40"
+              class="flex-shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-sm font-medium bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 disabled:opacity-40"
               :disabled="suggestLoading"
               @click="suggestFix()"
             >
@@ -78,7 +78,7 @@
         </div>
         <div v-else-if="previewRows.length > 0" class="space-y-1.5">
           <div class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Preview ({{ previewRows.length }} rows)</div>
-          <div class="overflow-x-auto rounded-lg border border-gray-100 dark:border-neutral-700">
+          <div class="overflow-x-auto rounded-lg border border-gray-100 dark:border-neutral-800">
             <table class="w-full text-sm">
               <thead class="bg-gray-50 dark:bg-neutral-800">
                 <tr>
@@ -100,9 +100,9 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800">
+      <div class="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800">
         <button
-          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-200 hover:bg-gray-200 dark:hover:bg-neutral-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           :disabled="testLoading"
           @click="testQuery()"
         >
@@ -119,7 +119,7 @@
           Save
         </button>
         <button
-          class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-neutral-400 hover:text-gray-800 dark:hover:text-neutral-100 transition-colors"
+          class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-neutral-400 hover:text-gray-800 dark:hover:text-neutral-200 transition-colors"
           @click="emit('close')"
         >
           Close
@@ -171,6 +171,7 @@ const suggestLoading = ref(false)
 const suggestion = ref<{ suggested_sql: string; explanation: string } | null>(null)
 
 // SQL syntax highlighting
+const colorMode = useColorMode()
 const highlightRef = ref<HTMLElement | null>(null)
 const highlightedSql = ref('')
 const highlighterReady = ref(false)
@@ -297,8 +298,10 @@ function save() {
   font-size: inherit;
   line-height: inherit;
 }
-/* Shiki dual-theme: swap to the dark token color in dark mode. */
-:global(.dark) .sql-highlight :deep(span) {
+/* Shiki dual-theme: swap to the dark token color in dark mode.
+   Whole selector must sit inside :global() — the scoped compiler drops
+   everything after a leading :global(). */
+:global(.dark .sql-highlight span) {
   color: var(--shiki-dark) !important;
 }
 </style>

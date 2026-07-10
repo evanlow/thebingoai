@@ -74,8 +74,8 @@
         :is="activePluginTab.component"
       />
       <div v-else class="p-6">
-        <h2 class="settings-h1 text-3xl text-gray-900 mb-4">{{ currentSectionName }}</h2>
-        <p class="text-gray-500">This section is under construction.</p>
+        <h2 class="settings-h1 text-3xl text-gray-900 dark:text-neutral-100 mb-4">{{ currentSectionName }}</h2>
+        <p class="text-gray-500 dark:text-neutral-400">This section is under construction.</p>
       </div>
     </div>
   </div>

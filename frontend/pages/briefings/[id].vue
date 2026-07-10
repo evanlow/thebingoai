@@ -2,25 +2,25 @@
   <div class="h-full overflow-y-auto bg-white dark:bg-neutral-900">
     <!-- Loading skeleton -->
     <div v-if="loading" class="max-w-3xl mx-auto px-6 py-10 space-y-4">
-      <div class="h-3 w-40 bg-neutral-200 rounded animate-pulse" />
-      <div class="h-10 w-3/4 bg-neutral-200 rounded animate-pulse" />
-      <div class="h-4 w-full bg-neutral-100 rounded animate-pulse" />
-      <div class="h-4 w-5/6 bg-neutral-100 rounded animate-pulse" />
+      <div class="h-3 w-40 bg-neutral-200 dark:bg-neutral-700 rounded animate-pulse" />
+      <div class="h-10 w-3/4 bg-neutral-200 dark:bg-neutral-700 rounded animate-pulse" />
+      <div class="h-4 w-full bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+      <div class="h-4 w-5/6 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
     </div>
 
     <!-- API error / not found (briefing is null) -->
     <div v-else-if="!briefing && error" class="max-w-3xl mx-auto px-6 py-10">
-      <div class="rounded-lg border border-rose-200 bg-rose-50 p-6">
-        <h2 class="text-lg font-semibold text-rose-900 mb-2">Could not load briefing</h2>
-        <p class="text-sm text-rose-700">{{ error }}</p>
+      <div class="rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-6">
+        <h2 class="text-lg font-semibold text-rose-900 dark:text-rose-200 mb-2">Could not load briefing</h2>
+        <p class="text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       </div>
     </div>
 
     <!-- Failed (briefing exists but status is failed) -->
     <div v-else-if="briefing.status === 'failed'" class="max-w-3xl mx-auto px-6 py-10">
-      <div class="rounded-lg border border-rose-200 bg-rose-50 p-6">
-        <h2 class="text-lg font-semibold text-rose-900 mb-2">Briefing failed</h2>
-        <p class="text-sm text-rose-700 mb-4">{{ briefing.error || 'Unknown error.' }}</p>
+      <div class="rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-6">
+        <h2 class="text-lg font-semibold text-rose-900 dark:text-rose-200 mb-2">Briefing failed</h2>
+        <p class="text-sm text-rose-700 dark:text-rose-300 mb-4">{{ briefing.error || 'Unknown error.' }}</p>
         <button class="px-3 py-1.5 rounded bg-rose-600 text-white text-sm" @click="retry">Retry</button>
       </div>
     </div>
@@ -87,7 +87,7 @@
           :class="{ 'border-l border-neutral-200 dark:border-neutral-700': i > 0 }"
         >
           <div class="text-sm uppercase tracking-wide text-neutral-500">{{ k.label }}</div>
-          <div class="text-2xl font-semibold mt-1">{{ k.value }}</div>
+          <div class="text-2xl font-semibold mt-1 text-neutral-900 dark:text-neutral-100">{{ k.value }}</div>
           <div v-if="k.delta_vs_prev" class="text-sm mt-1" :class="deltaClass(k.delta_direction)">
             {{ k.delta_vs_prev }}
           </div>
