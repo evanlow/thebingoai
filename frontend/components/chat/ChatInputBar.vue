@@ -387,6 +387,7 @@ const handleMentionSelect = (item: MentionItem) => {
   pill.contentEditable = 'false'
   pill.dataset.mention = item.name
   pill.dataset.mentionType = meta.typeClass
+  pill.title = `@${item.displayName ?? item.name}`
   pill.innerHTML = `${icon}<span style="vertical-align:1px">@${item.displayName ?? item.name}</span>`
 
   // Split text node: [before@][pill][space+after]

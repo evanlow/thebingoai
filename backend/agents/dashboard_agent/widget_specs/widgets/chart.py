@@ -14,7 +14,7 @@ class ChartWidget(BaseWidget):
     default_position = {"w": 6, "h": 5, "minW": 3, "minH": 3}
     params_doc = (
         "## Chart params\n"
-        "- `chartType`* (bar|line|pie|doughnut|area|scatter|funnel|timeline)\n"
+        "- `chartType`* (bar|line|pie|doughnut|area|scatter|bubble|funnel|timeline)\n"
         "- `title` (string), `description` (string)\n"
         "- `options` (object): stacked, indexAxis, xAxisMode, showValues, showLegend,\n"
         "  legendPosition, showGrid, sortBy, sortDirection, referenceLines, sliceLabel, ...\n"
@@ -26,7 +26,8 @@ class ChartWidget(BaseWidget):
         "- `datasetColumns` (array of {column, label, aggregation?, seriesType?, yAxisID?, ...}); funnel = one entry = stage value\n"
         "- `dateGranularity` (string): bucket a timestamp labelColumn (year|quarter|month|week|day|hour|hour_of_day|day_of_week|month_of_year)\n"
         "- `breakdownColumn` (string): split the first metric into one series per distinct value\n"
-        "- scatter: `xMetricColumn`, `yMetricColumn`, `xAggregation`, `yAggregation`\n"
+        "- scatter: `xMetricColumn`, `yMetricColumn`, `xAggregation`, `yAggregation`; optional `labelColumn` groups/colors points per value\n"
+        "- bubble: same as scatter plus **required** `sizeMetricColumn` — point size scales with that metric\n"
         "- timeline: `startColumn`* (date), `endColumn`* (date), `barLabelColumn` (optional per-bar label), `tooltipColumn` (optional)\n"
         "- `connectionId`* (int), `sql`* (string), `sources` (string[])\n"
     )
@@ -34,7 +35,7 @@ class ChartWidget(BaseWidget):
     _CONFIG_KEYS = ("title", "description", "options", "animation")
     _MAPPING_KEYS = ("labelColumn", "datasetColumns", "dateGranularity",
                      "breakdownColumn", "xMetricColumn",
-                     "yMetricColumn", "xAggregation", "yAggregation",
+                     "yMetricColumn", "xAggregation", "yAggregation", "sizeMetricColumn",
                      "startColumn", "endColumn", "barLabelColumn", "tooltipColumn")
 
     def _config(self, params: dict) -> dict:

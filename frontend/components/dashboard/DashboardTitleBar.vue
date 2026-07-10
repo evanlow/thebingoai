@@ -81,7 +81,7 @@
           </button>
           <button v-if="!ws.isViewer" class="hdr-btn hdr-btn--filled" @click="emit('toggle-edit')">
             <Eye class="h-3.5 w-3.5" />
-            <span class="hidden sm:inline">Done</span>
+            <span class="hidden sm:inline">View</span>
           </button>
         </template>
       </div>

@@ -9,45 +9,45 @@
     </div>
 
     <div v-else class="flex-1 overflow-auto" :class="fontClass">
-      <table class="w-full border-collapse text-left text-gray-700 dark:text-neutral-300"
-        :class="(editMode || hasColWidths) ? 'table-fixed' : ''" :style="tableStyle">
+      <table class="table-fixed border-collapse text-left text-gray-700 dark:text-neutral-300"
+        :style="tableStyle">
         <colgroup>
-          <col :style="pivotColWidth('rowHeader') != null ? { width: pivotColWidth('rowHeader') + 'px' } : undefined" />
+          <col :style="{ width: pivotColWidth('rowHeader') + 'px' }" />
           <template v-for="(combo, ci) in columnCombos" :key="'cg'+ci">
             <col v-for="(v, vi) in values" :key="'cg'+ci+'-'+vi"
-              :style="pivotColWidth(valueKey(v)) != null ? { width: pivotColWidth(valueKey(v)) + 'px' } : undefined" />
+              :style="{ width: pivotColWidth(valueKey(v)) + 'px' }" />
           </template>
-          <col v-if="showTotalCol" />
+          <col v-if="showTotalCol" :style="{ width: totalColWidth + 'px' }" />
         </colgroup>
         <thead>
           <!-- Column-dimension group header (only when column dimensions exist) -->
           <tr v-if="colDims.length">
-            <th :rowspan="2" class="relative sticky left-0 z-10 px-2 py-1.5 font-semibold text-gray-500 dark:text-neutral-400 align-bottom"
+            <th :rowspan="2" class="relative sticky left-0 z-10 px-2 py-1.5 font-semibold text-gray-500 dark:text-neutral-400 align-bottom whitespace-nowrap overflow-hidden text-ellipsis"
               :style="headerCellStyle">{{ rowHeaderLabel }}
               <div v-if="editMode" class="absolute top-0 right-0 z-20 h-full w-1.5 cursor-col-resize hover:bg-indigo-300/60"
                 @mousedown.stop.prevent="startPivotResize($event, 'rowHeader')" @click.stop /></th>
             <th v-for="(combo, ci) in columnCombos" :key="'g'+ci" :colspan="values.length"
-              class="px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-neutral-400 border-l" :style="headerCellStyle">
+              class="px-2 py-1.5 text-center font-semibold text-gray-500 dark:text-neutral-400 border-l whitespace-nowrap overflow-hidden text-ellipsis" :style="headerCellStyle">
               {{ combo.map(String).join(' / ') }}
             </th>
-            <th v-if="showTotalCol" :rowspan="2" class="px-2 py-1.5 text-right font-semibold text-gray-700 dark:text-neutral-200 border-l align-bottom"
+            <th v-if="showTotalCol" :rowspan="2" class="px-2 py-1.5 text-right font-semibold text-gray-700 dark:text-neutral-200 border-l align-bottom whitespace-nowrap overflow-hidden text-ellipsis"
               :style="headerCellStyle">{{ config.grandTotalLabel || 'Total' }}</th>
           </tr>
           <tr>
-            <th v-if="!colDims.length" class="relative sticky left-0 z-10 px-2 py-1.5 font-semibold text-gray-500 dark:text-neutral-400"
+            <th v-if="!colDims.length" class="relative sticky left-0 z-10 px-2 py-1.5 font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap overflow-hidden text-ellipsis"
               :style="headerCellStyle">{{ rowHeaderLabel }}
               <div v-if="editMode" class="absolute top-0 right-0 z-20 h-full w-1.5 cursor-col-resize hover:bg-indigo-300/60"
                 @mousedown.stop.prevent="startPivotResize($event, 'rowHeader')" @click.stop /></th>
             <template v-for="(combo, ci) in columnCombos" :key="'m'+ci">
               <th v-for="(v, vi) in values" :key="'m'+ci+'-'+vi"
-                class="relative px-2 py-1.5 text-right font-semibold text-gray-500 dark:text-neutral-400"
+                class="relative px-2 py-1.5 text-right font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap overflow-hidden text-ellipsis"
                 :class="{ 'border-l': vi === 0 && colDims.length }" :style="headerCellStyle">
                 {{ v.label || v.column }}
                 <div v-if="editMode" class="absolute top-0 right-0 z-20 h-full w-1.5 cursor-col-resize hover:bg-indigo-300/60"
                   @mousedown.stop.prevent="startPivotResize($event, valueKey(v))" @click.stop />
               </th>
             </template>
-            <th v-if="showTotalCol && !colDims.length" class="px-2 py-1.5 text-right font-semibold text-gray-700 dark:text-neutral-200 border-l"
+            <th v-if="showTotalCol && !colDims.length" class="px-2 py-1.5 text-right font-semibold text-gray-700 dark:text-neutral-200 border-l whitespace-nowrap overflow-hidden text-ellipsis"
               :style="headerCellStyle">{{ config.grandTotalLabel || 'Total' }}</th>
           </tr>
         </thead>
@@ -114,21 +114,42 @@ const store = useDashboardStore()
 // Widths keyed by 'rowHeader' for the left label column, and by the value
 // column key for data columns (one width applies across every column-combo).
 const MIN_COL_W = 48
+const DEFAULT_MIN_COL_W = 96
 const liveWidths = ref<Record<string, number>>({})
 
 function valueKey(v: PivotValue): string {
   return v.column ?? v.label ?? ''
 }
 
-const hasColWidths = computed(() => Object.keys(props.config.columnWidths ?? {}).length > 0)
-
-function pivotColWidth(key: string): number | undefined {
-  return liveWidths.value[key] ?? props.config.columnWidths?.[key]
+// Default width fits the header label on one line: ~7.5px/char + padding slack.
+function estimateColWidth(label: string): number {
+  return Math.max(DEFAULT_MIN_COL_W, Math.round(label.length * 7.5) + 48)
 }
+
+function pivotHeaderLabel(key: string): string {
+  if (key === 'rowHeader') return rowHeaderLabel.value
+  const v = values.value.find(v => valueKey(v) === key)
+  return v ? (v.label || v.column || '') : key
+}
+
+function pivotColWidth(key: string): number {
+  return liveWidths.value[key] ?? props.config.columnWidths?.[key] ?? estimateColWidth(pivotHeaderLabel(key))
+}
+
+const totalColWidth = computed(() => estimateColWidth(props.config.grandTotalLabel || 'Total'))
+
+const totalWidth = computed(() => {
+  let w = pivotColWidth('rowHeader')
+  for (const _combo of columnCombos.value) {
+    for (const v of values.value) w += pivotColWidth(valueKey(v))
+  }
+  if (showTotalCol.value) w += totalColWidth.value
+  return w
+})
 
 function startPivotResize(e: MouseEvent, key: string) {
   const startX = e.clientX
-  const startW = props.config.columnWidths?.[key] ?? (e.target as HTMLElement).closest('th')?.offsetWidth ?? 120
+  const startW = (e.target as HTMLElement).closest('th')?.offsetWidth ?? pivotColWidth(key)
   const onMove = (ev: MouseEvent) => {
     liveWidths.value = { ...liveWidths.value, [key]: Math.max(MIN_COL_W, startW + ev.clientX - startX) }
   }
@@ -328,7 +349,7 @@ const cellBorder = computed(() => props.config.cellBorderColor || (isDark.value 
 const headerCellStyle = computed(() => ({ background: headerBg.value, borderColor: cellBorder.value, borderBottom: `1px solid ${cellBorder.value}` }))
 const cellBorderStyle = computed(() => ({ borderColor: cellBorder.value }))
 const grandTotalRowStyle = computed(() => ({ background: headerBg.value, borderColor: cellBorder.value }))
-const tableStyle = computed(() => (props.config.horizontalScrolling ? { minWidth: 'max-content' } : {}))
+const tableStyle = computed(() => ({ width: totalWidth.value + 'px', minWidth: '100%' }))
 // Striped fallback: when stripedRows is on but no explicit odd/even color, use a light alt bg.
 function stripeBg(i: number): string | undefined {
   const odd = props.config.oddRowColor

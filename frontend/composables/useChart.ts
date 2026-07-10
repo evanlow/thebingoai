@@ -20,9 +20,27 @@ import {
   type ChartType as ChartJsType,
   type ChartOptions as ChartJsOptions,
   type ChartDataset,
+  type Plugin,
 } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import annotationPlugin from 'chartjs-plugin-annotation'
+import { pieOuterLabelsPlugin } from './pieOuterLabels'
+
+// Adds a gap below a top-positioned legend so datalabels drawn at the top of
+// full-height bars don't collide with the legend row. Canvas padding can't do
+// this (it shifts the legend too). Reads chart.options.plugins.legendSpacing.gap.
+const legendSpacingPlugin: Plugin = {
+  id: 'legendSpacing',
+  beforeInit(chart: any) {
+    const legend = chart.legend
+    if (!legend) return
+    const originalFit = legend.fit
+    legend.fit = function () {
+      originalFit.call(this)
+      this.height += chart.options?.plugins?.legendSpacing?.gap ?? 0
+    }
+  },
+}
 import 'chartjs-adapter-date-fns'
 import type { Ref } from 'vue'
 import type { ChartConfig, ChartType, DatasetConfig, ChartLineStyle, ChartFontFamily, ChartFontSize } from '~/types/chart'
@@ -48,7 +66,9 @@ Chart.register(
   Title,
   Filler,
   ChartDataLabels,
-  annotationPlugin
+  annotationPlugin,
+  pieOuterLabelsPlugin,
+  legendSpacingPlugin
 )
 
 const DEFAULT_PALETTE = [
@@ -65,7 +85,11 @@ const DEFAULT_PALETTE = [
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolveChartJsType(type: ChartType): ChartJsType {
-  return type === 'area' ? 'line' : (type as ChartJsType)
+  if (type === 'area') return 'line'
+  // Bubble renders through the scatter controller — point size comes from the
+  // scriptable sqrt-scaled radius, not Chart.js's raw-pixel `r` handling.
+  if (type === 'bubble') return 'scatter'
+  return type as ChartJsType
 }
 
 function getLineDash(style?: ChartLineStyle): number[] {
@@ -168,7 +192,34 @@ export function applyDefaultColors(
 ): ChartDataset[] {
   const isPieOrDoughnut = type === 'pie' || type === 'doughnut'
   const isLineOrArea = type === 'line' || type === 'area'
-  const isScatter = type === 'scatter'
+  const isScatter = type === 'scatter' || type === 'bubble'
+
+  // Bubble sizing: one GLOBAL scale across all datasets (Data Studio parity).
+  // With a Dimension each dataset holds few points — a per-dataset scale would
+  // collapse (min == max) and render every bubble at the floor size.
+  let scaleRadius: ((ctx: any) => number) | null = null
+  if (isScatter) {
+    let rMin = Infinity
+    let rMax = -Infinity
+    for (const ds of datasets) {
+      for (const p of (ds.data as any[]) ?? []) {
+        const r = p && typeof p === 'object' ? Number((p as any).r) : NaN
+        if (Number.isFinite(r)) {
+          if (r < rMin) rMin = r
+          if (r > rMax) rMax = r
+        }
+      }
+    }
+    if (rMin !== Infinity) {
+      const sMin = Math.sqrt(Math.max(rMin, 0))
+      const span = Math.sqrt(Math.max(rMax, 0)) - sMin || 1
+      scaleRadius = (ctx: any) => {
+        const r = Number(ctx?.raw?.r)
+        if (!Number.isFinite(r)) return 3
+        return 4 + ((Math.sqrt(Math.max(r, 0)) - sMin) / span) * 16
+      }
+    }
+  }
 
   return datasets.map((ds, i) => {
     const color = DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]
@@ -177,7 +228,7 @@ export function applyDefaultColors(
       return {
         ...ds,
         backgroundColor: ds.backgroundColor ?? DEFAULT_PALETTE,
-        borderColor: ds.borderColor ?? '#fff',
+        borderColor: ds.borderColor ?? getChartColors().sliceBorderColor,
         borderWidth: ds.borderWidth ?? 2,
       } as ChartDataset
     }
@@ -212,6 +263,12 @@ export function applyDefaultColors(
       fill: useFill ? true : ds.fill,
       tension,
       pointRadius,
+    }
+
+    // Bubble chart: points carrying `r` get the shared global-scale radius.
+    if (scaleRadius && (ds.data as any[]).some(p => p && typeof p === 'object' && Number.isFinite(Number((p as any).r)))) {
+      processed.pointRadius = scaleRadius
+      processed.pointHoverRadius = scaleRadius
     }
 
     if (resolvedType) processed.type = resolvedType
@@ -271,6 +328,8 @@ function getChartColors() {
     gridColor: dark ? 'rgba(163,163,163,0.15)' : 'rgba(0,0,0,0.08)',
     legendColor: dark ? '#a3a3a3' : '#374151',
     datalabelColor: dark ? '#e5e5e5' : '#374151',
+    // Pie/doughnut slice seam: white in light mode, panel color (neutral-900) in dark.
+    sliceBorderColor: dark ? '#171717' : '#fff',
   }
 }
 
@@ -331,7 +390,7 @@ function isStackedActive(val: any): boolean {
 function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): ChartJsOptions {
   const opts = config.options ?? {}
   const isPieOrDoughnut = config.type === 'pie' || config.type === 'doughnut'
-  const isScatter = config.type === 'scatter'
+  const isScatter = config.type === 'scatter' || config.type === 'bubble'
   const isHorizontal = !isPieOrDoughnut && !isScatter && opts.indexAxis === 'y'
   const colors = getChartColors()
   const stackedActive = isStackedActive(opts.stacked)
@@ -372,27 +431,59 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       if (isScatter) {
         const xf = formatValue(ctx.parsed?.x)
         const yf = formatValue(ctx.parsed?.y)
-        return `${label}: (${xf}, ${yf})`
+        const rRaw = Number(ctx.raw?.r)
+        const size = Number.isFinite(rRaw) ? `, size: ${formatValue(rRaw)}` : ''
+        return `${label}: (${xf}, ${yf})${size}`
       }
-      const rawVal = isHorizontal ? ctx.parsed?.x : ctx.parsed?.y
+      // Pie/doughnut set `ctx.parsed` to a scalar number (not an {x,y} object),
+      // so read it directly instead of `.y` (which would be undefined).
+      const rawVal = isPieOrDoughnut ? ctx.parsed
+        : (isHorizontal ? ctx.parsed?.x : ctx.parsed?.y)
       const formatted = formatValue(rawVal)
       const suffix = isPercentage ? '%' : ''
       return `${label}: ${formatted}${suffix}`
     },
   }
 
+  // Pie/doughnut external slice labels (drawn outside the arc with leader lines
+  // by the pieOuterLabels plugin). Mode: none | value | percentage | label;
+  // default percentage, honoring legacy showValues → value.
+  const sliceMode = opts.sliceLabel ?? (opts.showValues ? 'value' : 'percentage')
+  const pieData = (config.data.datasets[0]?.data ?? []) as unknown[]
+  const pieTotal = pieData.reduce((s: number, v) => s + (typeof v === 'number' ? v : 0), 0)
+  const pieLabels = config.data.labels ?? []
+  const pieLabelFormatter = (value: number, index: number): string => {
+    if (sliceMode === 'label') return String(pieLabels[index] ?? '')
+    if (sliceMode === 'percentage') {
+      if (!pieTotal) return ''
+      return `${((value / pieTotal) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
+    }
+    return String(formatValue(value))
+  }
+
+  const showLegend = opts.showLegend ?? !(isScatter && config.data.datasets.length <= 1)
+  const legendOnTop = showLegend && (opts.legendPosition ?? 'top') === 'top'
+
   const options: ChartJsOptions = {
     responsive: opts.responsive ?? true,
     maintainAspectRatio: opts.maintainAspectRatio ?? false,
     animation: enableAnimation ? undefined : false,
     layout: {
-      padding: isHorizontal
-        ? { right: anyDataLabels ? 28 : 0 }
-        : { top: anyDataLabels ? 20 : 0 },
+      // Pie/doughnut: reserve horizontal room so external slice labels + leader
+      // lines aren't clipped. Others: pad for top/right datalabels. (Legend↔label
+      // clearance is handled by the legendSpacing plugin, not canvas padding —
+      // padding shifts the legend too, so it can't separate them.)
+      padding: isPieOrDoughnut
+        ? (sliceMode !== 'none' ? { left: 72, right: 72, top: 16, bottom: 16 } : 0)
+        : isHorizontal
+          ? { right: anyDataLabels ? 28 : 0 }
+          : { top: anyDataLabels ? 20 : 0 },
     },
     plugins: {
       legend: {
-        display: opts.showLegend ?? true,
+        // GDS parity: ungrouped scatter/bubble shows no legend pill; a
+        // Dimension (multiple datasets) brings the legend back.
+        display: showLegend,
         position: opts.legendPosition ?? 'top',
         align: (opts.legendAlignment ?? 'center') as any,
         labels: {
@@ -418,31 +509,10 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
           size: getFontSizePx(opts.titleFontSize ?? opts.fontSize),
         },
       },
+      // Pie/doughnut labels are drawn OUTSIDE the arc by the pieOuterLabels
+      // plugin (below), so the inline datalabels plugin is off for them.
       datalabels: isPieOrDoughnut
-        ? (() => {
-            // Pie/doughnut slice label (Data Studio parity): none | value | percentage | label.
-            // Default to percentage; honor legacy showValues → value.
-            const mode = opts.sliceLabel ?? (opts.showValues ? 'value' : 'percentage')
-            return {
-              display: mode !== 'none',
-              color: '#fff',
-              font: { size: 11, weight: 'bold' as const },
-              anchor: 'center' as const,
-              align: 'center' as const,
-              formatter: (value: unknown, ctx: any) => {
-                if (mode === 'label') return ctx?.chart?.data?.labels?.[ctx.dataIndex] ?? ''
-                if (typeof value !== 'number') return value
-                if (mode === 'percentage') {
-                  const arr = (ctx?.dataset?.data ?? []) as unknown[]
-                  const total = arr.reduce((s: number, v) => s + (typeof v === 'number' ? v : 0), 0)
-                  if (!total) return ''
-                  return `${((value / total) * 100).toFixed(opts.decimalPlaces ?? 1)}%`
-                }
-                // value
-                return formatValue(value)
-              },
-            }
-          })()
+        ? { display: false }
         : {
             display: opts.showValues ?? false,
             color: colors.datalabelColor,
@@ -463,6 +533,19 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       annotation: {
         annotations: buildAnnotations(config),
       },
+      legendSpacing: { gap: legendOnTop && anyDataLabels && !isPieOrDoughnut ? 20 : 0 },
+      pieOuterLabels: isPieOrDoughnut
+        ? {
+            display: sliceMode !== 'none',
+            color: colors.datalabelColor,
+            font: {
+              size: getFontSizePx(opts.fontSize),
+              weight: 'bold' as const,
+              family: getFontFamilyStr(opts.fontFamily),
+            },
+            formatter: pieLabelFormatter,
+          }
+        : { display: false },
     } as any,
   }
 

@@ -12,6 +12,7 @@ CHART_GUIDANCE = """### Chart Type Selection
 | Trend over time | line or area | `xAxisMode: "date"` | w=6, w=8, or w=12 |
 | Part-of-whole < 8 | pie or doughnut | `showValues: true` | w=4 or w=6 (NEVER w=12) |
 | Correlation (x vs y) | scatter | `showLegend: true` for grouped scatter | w=6 or w=8 |
+| 3-metric comparison (x, y + size) | bubble | size metric = volume/count/spend | w=6 or w=8 |
 | Multiple metrics, mixed types | line (combo) | `seriesType` per dataset | w=8 or w=12 |
 | Sequential stages / conversion drop-off | funnel | `funnelLabelMode: "numberPercentage"` | w=4 or w=6 |
 | Events/phases with start + end dates | timeline | `timelineColorBy: "row"` | w=8 or w=12 |
@@ -160,10 +161,23 @@ Use one datasetColumn per series. Set `options.stacked: "standard"` (not `true`)
 Same SQL as above; set `options.stacked: "percentage"`.
 
 **Scatter (correlation) with xMetricColumn/yMetricColumn — PREFERRED:**
+
+Query strategy (Data Studio practice — plot entities, not raw rows):
+- **Check profiled column types first**: numeric-looking TEXT columns must be cast *inside*
+  the aggregate — `AVG(SAFE_CAST(col AS FLOAT64))` — or BigQuery rejects `AVG(STRING)`.
+- **Default: one point per entity.** GROUP BY a dimension, aggregate both metrics:
+  `SELECT neighbourhood, AVG(price) AS avg_price, AVG(rating) AS avg_rating FROM listings GROUP BY neighbourhood`
+- Raw-row scatter only when the result is genuinely small — always add `LIMIT 1000`.
+- Never pair a low-cardinality metric (ratings 1-5, booleans) with a continuous one on raw
+  rows — every x exists at every discrete y, so the chart renders as solid horizontal bands.
+  Aggregate per entity instead.
+- The renderer downsamples anything beyond 1000 points per series.
+
 ```sql
 SELECT metric_x, metric_y
 FROM orders
 WHERE metric_x IS NOT NULL AND metric_y IS NOT NULL
+LIMIT 1000
 ```
 Mapping:
 ```json
@@ -184,17 +198,33 @@ Mapping:
  "yMetricColumn": "avg_conversion"}
 ```
 
-**Scatter (legacy fallback — only if grouping by a dimension is needed):**
+Optional scatter extra (works with the preferred xMetricColumn/yMetricColumn path):
+- `labelColumn`: dimension that groups/colors points — one dataset per unique value (select the column in the SQL too)
+
+**Bubble (3-metric comparison: x, y + size) — `chartType: "bubble"`:**
+Use when a meaningful third metric sizes each point (volume, count, spend). Same rules as
+scatter (one point per entity, aggregate per dimension, 1000-point cap) plus a **required**
+`sizeMetricColumn`.
 ```sql
-SELECT o.metric_x, o.metric_y, o.category
-FROM orders o
-LEFT JOIN payments p ON o.id = p.order_id
-WHERE o.metric_x IS NOT NULL AND o.metric_y IS NOT NULL
+SELECT neighbourhood,
+       AVG(price)  AS avg_price,
+       AVG(rating) AS avg_rating,
+       COUNT(*)    AS listings
+FROM listings
+GROUP BY neighbourhood
 ```
-Scatter mapping rules for legacy path:
-- `labelColumn`: the grouping column (e.g. category/team) — points are grouped into one dataset per unique value
-- `datasetColumns`: exactly 2 entries — label them with `(X)` and `(Y)` suffixes so the backend maps axes correctly
-- `chartType`: **must** be set to `"scatter"` in the mapping
+Mapping:
+```json
+{"type": "chart",
+ "chartType": "bubble",
+ "xMetricColumn": "avg_price",
+ "yMetricColumn": "avg_rating",
+ "sizeMetricColumn": "listings",
+ "labelColumn": "neighbourhood"}
+```
+
+**Scatter (legacy fallback — do not use for new widgets):**
+- `labelColumn` + `datasetColumns` with exactly 2 entries labeled with `(X)` and `(Y)` suffixes; `chartType` must be `"scatter"`.
 
 Mapping: `{"type": "chart", "chartType": "scatter", "labelColumn": "category", "datasetColumns": [{"column": "metric_x", "label": "Metric X (X)"}, {"column": "metric_y", "label": "Metric Y (Y)"}]}`
 
@@ -220,6 +250,7 @@ When the stages live in a raw events table, GROUP BY the stage and rank in SQL
 **Timeline (events/phases with start + end dates):**
 Use when each row has BOTH a start date and an end date (campaigns, projects, tasks).
 Returns raw rows — one per event, NO GROUP BY. Needs `startColumn` + `endColumn`.
+Keep it readable: one bar per row, so add `LIMIT 200` (or filter to the relevant window).
 ```sql
 SELECT campaign_name, channel, start_date, end_date
 FROM marketing_campaigns

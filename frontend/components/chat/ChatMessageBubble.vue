@@ -296,7 +296,7 @@ const renderMentions = (text: string): string => {
     }
 
     // Standard pill — use dark-bubble variant so it reads on ink-0 background
-    return `<span class="mention-pill mention-pill--${typeClass} mention-pill--dark">${icon}@${displayName}</span>`
+    return `<span class="mention-pill mention-pill--${typeClass} mention-pill--dark" title="@${displayName}">${icon}<span class="mention-pill__label">@${displayName}</span></span>`
   })
 }
 
