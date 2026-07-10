@@ -533,7 +533,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       annotation: {
         annotations: buildAnnotations(config),
       },
-      legendSpacing: { gap: legendOnTop && anyDataLabels && !isPieOrDoughnut ? 20 : 0 },
+      legendSpacing: { gap: legendOnTop ? 20 : 0 },
       pieOuterLabels: isPieOrDoughnut
         ? {
             display: sliceMode !== 'none',

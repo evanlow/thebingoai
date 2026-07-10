@@ -525,7 +525,7 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
         return {"value": None}
 
     # Aggregate value across all rows
-    aggregation = mapping.get("aggregation", "first")
+    aggregation = mapping.get("aggregation", "sum")
     all_numeric = [
         v for v in (_to_json_safe(row[value_idx]) for row in result.rows)
         if isinstance(v, (int, float))

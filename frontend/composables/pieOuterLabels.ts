@@ -124,15 +124,10 @@ export const pieOuterLabelsPlugin: Plugin = {
       })
     })
 
-    // Inside labels: uniform white with a thin dark outline so they read
-    // consistently on any slice fill (light or dark) without per-slice color.
+    // Inside labels: plain fill (no outline) to match other charts' datalabels.
     ctx.textAlign = 'center'
-    ctx.lineJoin = 'round'
-    ctx.lineWidth = 3
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)'
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = themeColor
     for (const it of inside) {
-      ctx.strokeText(it.text, it.x, it.y)
       ctx.fillText(it.text, it.x, it.y)
     }
 
