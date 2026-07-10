@@ -216,6 +216,7 @@ const handleMentionSelect = (item: MentionItem) => {
   const pill = document.createElement('span')
   pill.className = `mention-inline-pill mention-inline-pill--${meta.typeClass}`
   pill.contentEditable = 'false'; pill.dataset.mention = item.name; pill.dataset.mentionType = meta.typeClass
+  pill.title = `@${item.displayName ?? item.name}`
   pill.innerHTML = `${PILL_ICONS[meta.typeClass] ?? PILL_ICONS.dataset}<span style="vertical-align:1px">@${item.displayName ?? item.name}</span>`
   const beforeNode = document.createTextNode(beforeAt)
   const afterNode = document.createTextNode(' ' + afterQuery)

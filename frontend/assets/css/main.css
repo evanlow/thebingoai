@@ -265,8 +265,16 @@ html.font-lg .mention-pc           { font-size: 14px; }
   cursor: default;
   white-space: nowrap;
   line-height: 1.5;
+  max-width: 100%;
   /* Force atomic treatment — browser won't place cursor inside */
   -webkit-user-modify: read-only;
+}
+/* Truncate the label so a long mention never overflows the composer */
+.mention-inline-pill > span {
+  min-width: 0; /* let the flex item shrink below its content width */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Violet / dataset / default */
@@ -372,6 +380,14 @@ html.font-lg .mention-pc           { font-size: 14px; }
   vertical-align: 1px;
   white-space: nowrap;
   border: 1px solid;
+  max-width: 100%;
+}
+/* Truncate the label so a long mention never overflows the message bubble */
+.mention-pill__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Type variants — in regular (light) context */
@@ -432,11 +448,15 @@ html.font-lg .mention-pc           { font-size: 14px; }
   vertical-align: 1px;
   white-space: nowrap;
   border: 1px solid;
+  max-width: 100%;
 }
 .mention-pc__parent {
   padding: 1px 6px 1px 7px;
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mention-pc__sep {
   padding: 1px 0;
