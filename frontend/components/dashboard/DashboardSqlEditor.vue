@@ -298,8 +298,10 @@ function save() {
   font-size: inherit;
   line-height: inherit;
 }
-/* Shiki dual-theme: swap to the dark token color in dark mode. */
-:global(.dark) .sql-highlight :deep(span) {
+/* Shiki dual-theme: swap to the dark token color in dark mode.
+   Whole selector must sit inside :global() — the scoped compiler drops
+   everything after a leading :global(). */
+:global(.dark .sql-highlight span) {
   color: var(--shiki-dark) !important;
 }
 </style>

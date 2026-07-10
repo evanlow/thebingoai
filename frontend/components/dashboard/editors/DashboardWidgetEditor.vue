@@ -741,8 +741,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   line-height: inherit;
 }
 /* Shiki dual-theme: spans carry the light color inline + a --shiki-dark var.
-   In dark mode, swap to the dark token color so SQL stays readable. */
-:global(.dark) .sql-highlight :deep(span) {
+   In dark mode, swap to the dark token color so SQL stays readable.
+   Whole selector must sit inside :global() — the scoped compiler drops
+   everything after a leading :global(). */
+:global(.dark .sql-highlight span) {
   color: var(--shiki-dark) !important;
 }
 </style>
