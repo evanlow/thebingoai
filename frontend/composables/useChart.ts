@@ -516,7 +516,9 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
           // Pie/doughnut keeps the default per-slice color boxes.
           ...(isPieOrDoughnut ? {} : {
             usePointStyle: true,
-            pointStyleWidth: 28,
+            // Wide marker so dash patterns read as lines; scatter/bubble keep
+            // the default width — stretching turns their circles into ellipses.
+            ...(isScatter ? {} : { pointStyleWidth: 28 }),
             generateLabels: (chart: Chart) => {
               const items = Chart.defaults.plugins.legend.labels.generateLabels(chart)
               for (const item of items) {
