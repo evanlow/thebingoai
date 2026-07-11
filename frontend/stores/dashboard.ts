@@ -316,6 +316,26 @@ export const useDashboardStore = defineStore('dashboard', {
       trackEvent('widget_add', { widget_type: type })
     },
 
+    /** Add a section-header text widget at the bottom (full-width band anchor). */
+    addSection() {
+      const dashboard = this.currentDashboard
+      if (!dashboard) return
+
+      const maxY = dashboard.widgets.reduce((max, w) => {
+        return Math.max(max, w.position.y + w.position.h)
+      }, 0)
+
+      dashboard.widgets.push({
+        id: `widget-${Date.now()}`,
+        position: { x: 0, y: maxY, w: 12, h: 1, minW: 2, minH: 1 },
+        widget: {
+          type: 'text',
+          config: { content: '## New Section', isSection: true },
+        },
+      })
+      this.dirty = true
+    },
+
     removeWidget(widgetId: string) {
       const dashboard = this.currentDashboard
       if (!dashboard) return

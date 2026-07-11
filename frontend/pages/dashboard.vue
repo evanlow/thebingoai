@@ -181,7 +181,7 @@
 
         <!-- Grid + inline editor -->
         <div class="flex flex-1 overflow-hidden">
-          <div class="flex-1 overflow-y-auto p-4">
+          <div class="flex-1 overflow-y-auto p-4" data-dashboard-scroll>
             <DashboardGrid
               :widgets="store.currentWidgets"
               :edit-mode="store.editMode"
@@ -399,9 +399,10 @@ function handleShare() {
   toast.success('Link copied to clipboard')
 }
 
-function handleAddWidget(type: import('~/types/dashboard').WidgetType) {
+function handleAddWidget(type: import('~/types/dashboard').WidgetType | 'section') {
   if (!store.editMode) store.toggleEditMode()
-  store.addWidget(type)
+  if (type === 'section') store.addSection()
+  else store.addWidget(type)
 }
 
 // ── List view state ───────────────────────────────────────

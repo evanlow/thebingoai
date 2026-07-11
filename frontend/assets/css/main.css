@@ -42,6 +42,21 @@
   --warn: oklch(0.80 0.14 80);
   --bad:  oklch(0.60 0.18 25);
 
+  /* Dashboard section bands — mixed against paper-0 so every theme
+     (incl. .dark) gets a readable tint from one definition. */
+  --section-default:      color-mix(in oklch, var(--ink-2) 5%, var(--paper-0));
+  --section-default-line: color-mix(in oklch, var(--ink-2) 22%, var(--paper-0));
+  --section-violet:       color-mix(in oklch, #6E489D 7%, var(--paper-0));
+  --section-violet-line:  color-mix(in oklch, #6E489D 30%, var(--paper-0));
+  --section-blue:         color-mix(in oklch, #2f6fd0 7%, var(--paper-0));
+  --section-blue-line:    color-mix(in oklch, #2f6fd0 30%, var(--paper-0));
+  --section-green:        color-mix(in oklch, #2f8a5b 7%, var(--paper-0));
+  --section-green-line:   color-mix(in oklch, #2f8a5b 30%, var(--paper-0));
+  --section-amber:        color-mix(in oklch, #c07f1f 8%, var(--paper-0));
+  --section-amber-line:   color-mix(in oklch, #c07f1f 32%, var(--paper-0));
+  --section-rose:         color-mix(in oklch, #c2477c 7%, var(--paper-0));
+  --section-rose-line:    color-mix(in oklch, #c2477c 30%, var(--paper-0));
+
   /* Typography */
   --font-display: 'Fraunces', 'Cambria', Georgia, serif;
   --font-sans:    'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

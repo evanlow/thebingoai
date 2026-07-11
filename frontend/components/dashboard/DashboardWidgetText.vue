@@ -1,17 +1,33 @@
 <template>
   <div ref="wrapperRef" :class="[alignClass, editMode ? 'px-3 py-1 compact-text' : 'p-4']">
-    <UiMarkdownRenderer :content="config.content" />
+    <template v-if="isSection">
+      <div class="section-header" :class="{ 'justify-center': config.alignment === 'center', 'justify-end': config.alignment === 'right' }">
+        <span class="section-header-accent" :style="{ background: `var(--section-${config.sectionColor ?? 'default'}-line)` }" />
+        <span class="section-header-title">{{ headerTitle }}</span>
+      </div>
+      <UiMarkdownRenderer v-if="headerBody" :content="headerBody" />
+    </template>
+    <UiMarkdownRenderer v-else :content="config.content" />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { TextWidgetConfig } from '~/types/dashboard'
+import { sectionTitle } from '~/composables/useDashboardSections'
 
 const props = defineProps<{
   widgetId: string
   config: TextWidgetConfig
   editMode?: boolean
 }>()
+
+const isSection = computed(() =>
+  props.config.isSection ?? (props.config.content ?? '').trimStart().startsWith('#'),
+)
+const headerTitle = computed(() => sectionTitle(props.config.content))
+const headerBody = computed(() =>
+  (props.config.content ?? '').trimStart().split('\n').slice(1).join('\n').trim(),
+)
 
 const wrapperRef = ref<HTMLElement | null>(null)
 const resizeWidget = inject<(id: string, h: number) => void>('resizeWidget')
@@ -31,7 +47,7 @@ function autoResize() {
 }
 
 onMounted(() => nextTick(autoResize))
-watch(() => props.config.content, () => nextTick(autoResize))
+watch(() => [props.config.content, isSection.value], () => nextTick(autoResize))
 
 const alignClass = computed(() => {
   switch (props.config.alignment) {
@@ -49,5 +65,26 @@ const alignClass = computed(() => {
 .compact-text :deep(h4) {
   margin-top: 0;
   margin-bottom: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.section-header-accent {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.section-header-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-0);
 }
 </style>

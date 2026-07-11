@@ -195,6 +195,24 @@ export interface PivotTableWidgetConfig {
 export interface TextWidgetConfig {
   content: string
   alignment?: 'left' | 'center' | 'right'
+  /** Marks this text widget as a dashboard section header. When undefined,
+   *  headers are inferred from content starting with a markdown heading. */
+  isSection?: boolean
+  /** Section band color token — key of SECTION_COLORS. */
+  sectionColor?: SectionColor
+}
+
+/** Section band color tokens → CSS vars defined in assets/css/main.css. */
+export const SECTION_COLORS = ['default', 'violet', 'blue', 'green', 'amber', 'rose'] as const
+export type SectionColor = typeof SECTION_COLORS[number]
+
+/** True when a widget is a section-header text widget (explicit flag, or
+ *  markdown-heading heuristic for dashboards saved before the flag existed). */
+export function isSectionHeader(w: DashboardWidget): boolean {
+  if (w.widget.type !== 'text') return false
+  const config = w.widget.config as TextWidgetConfig
+  if (config.isSection !== undefined) return config.isSection
+  return (config.content ?? '').trimStart().startsWith('#')
 }
 
 // Filter widget

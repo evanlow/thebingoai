@@ -59,6 +59,15 @@
         Text
       </button>
 
+      <!-- Section -->
+      <button class="type-pill" @click="emit('add-widget', 'section')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="4" width="18" height="16" rx="2"/>
+          <line x1="6" y1="8" x2="14" y2="8" stroke-width="2.4"/>
+        </svg>
+        Section
+      </button>
+
       <!-- Filter -->
       <button class="type-pill" @click="emit('add-widget', 'filter')">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -82,7 +91,7 @@ defineProps<{
   widgetCount: number
 }>()
 
-const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
+const emit = defineEmits<{ 'add-widget': [type: WidgetType | 'section'] }>()
 </script>
 
 <style scoped>
