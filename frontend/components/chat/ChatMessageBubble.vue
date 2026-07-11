@@ -116,7 +116,7 @@
             <template #trigger>
               <button
                 :disabled="downloadingRef === f.result_ref"
-                class="ml-1 inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-0.5 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50 dark:border-neutral-600 dark:hover:border-neutral-500 dark:hover:bg-neutral-700"
+                class="ml-1 inline-flex items-center gap-1 rounded border border-black bg-black px-2 py-0.5 text-white hover:bg-gray-800 disabled:opacity-50 dark:border-white dark:bg-white dark:text-black dark:hover:bg-gray-100"
               >
                 Data Export
                 <ChevronDown class="h-3 w-3" />
