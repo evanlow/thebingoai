@@ -547,9 +547,9 @@ function onMappingUpdate(patch: Record<string, any>) {
     mapping: newMapping,
   })
   // Re-transform cached data so chart/sparkline updates instantly (no server round-trip).
-  // Preserves user-configured style/label/comparison fields by merging the existing
-  // config under the freshly transformed data; charts additionally merge per-series
-  // style edits by index (the transform rebuilds datasets from the mapping only).
+  // The transform rebuilds datasets from the mapping only, so user style edits must be
+  // re-applied: mergeRefreshedConfig RETURNS the style-preserving partial (it does not
+  // mutate its argument) — spread it last so it wins over the raw transform output.
   const type = ds.mapping.type
   if (
     (type === 'kpi' || type === 'chart' || type === 'pivot_table')
@@ -562,10 +562,10 @@ function onMappingUpdate(patch: Record<string, any>) {
       )
       const current = props.widget.widget
       const existingConfig = current.type === type ? (current.config as Record<string, any>) : {}
-      if (type === 'chart') mergeRefreshedConfig(props.widget, transformed)
+      const merged = mergeRefreshedConfig(props.widget, transformed)
       store.updateWidgetConfig(props.widget.id, {
         type,
-        config: { ...existingConfig, ...transformed } as any,
+        config: { ...existingConfig, ...transformed, ...merged } as any,
       })
       columnsError.value = null
     }).catch((err: any) => {
@@ -642,9 +642,11 @@ async function testQuery() {
       previewRows.value = response.source_rows ?? []
       const current = props.widget.widget
       const existingConfig = current.type === 'chart' ? (current.config as Record<string, any>) : {}
+      // Re-apply user style edits over the freshly transformed datasets
+      const merged = mergeRefreshedConfig(props.widget, config)
       store.updateWidgetConfig(props.widget.id, {
         type: 'chart',
-        config: { ...existingConfig, ...config } as any,
+        config: { ...existingConfig, ...config, ...merged } as any,
       })
     } else if (ds.mapping.type === 'kpi') {
       // Use raw SQL columns and rows so the user sees all available data

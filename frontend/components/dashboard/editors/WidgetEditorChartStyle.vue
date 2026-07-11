@@ -158,15 +158,27 @@
     <!-- 2. Series -->
     <StyleSection v-if="isStandardChart" title="Series" body-class="space-y-3">
       <p v-if="!localDatasets.length" class="text-sm text-gray-400 dark:text-neutral-500">No datasets yet. Connect a data source first.</p>
-      <div v-for="(ds, i) in localDatasets" :key="i" class="rounded-lg border border-gray-100 dark:border-neutral-800 p-3 space-y-2.5">
-        <!-- Series header -->
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate">{{ ds.label || `Series ${i + 1}` }}</span>
-          <button type="button" class="text-sm text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300"
-            @click="toggleSeriesExpanded(i)">{{ expandedSeries.has(i) ? 'Collapse' : 'Expand' }}</button>
-        </div>
+      <div v-for="(ds, i) in localDatasets" :key="i" class="rounded-lg border border-gray-100 dark:border-neutral-800 overflow-hidden">
+        <!-- Series header: tinted bar + color dot so series names read as headers, not fields -->
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-2 bg-gray-50 dark:bg-neutral-800/80 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-neutral-700/70 transition-colors"
+          @click="toggleSeriesExpanded(i)"
+        >
+          <span class="flex min-w-0 items-center gap-2">
+            <span
+              class="h-2.5 w-2.5 flex-shrink-0 rounded-full border border-black/10 dark:border-white/20"
+              :style="{ background: seriesSwatch(ds, i) }"
+            />
+            <span class="truncate text-sm font-semibold text-gray-800 dark:text-neutral-100">{{ ds.label || `Series ${i + 1}` }}</span>
+          </span>
+          <ChevronDown
+            class="h-3.5 w-3.5 flex-shrink-0 text-gray-400 dark:text-neutral-500 transition-transform"
+            :class="expandedSeries.has(i) ? 'rotate-180' : ''"
+          />
+        </button>
 
-        <template v-if="expandedSeries.has(i)">
+        <div v-if="expandedSeries.has(i)" class="p-3 space-y-2.5">
           <!-- Series type (combo) — cartesian charts only -->
           <div v-if="!isPie" class="space-y-1">
             <label class="text-sm text-gray-700 dark:text-neutral-200">Series type</label>
@@ -315,7 +327,7 @@
               </div>
             </template>
           </div>
-        </template>
+        </div>
       </div>
     </StyleSection>
 
@@ -395,23 +407,28 @@
       <div v-if="!localOpts.referenceLines?.length" class="text-sm text-gray-400 dark:text-neutral-500">No reference lines.</div>
       <div v-for="(rl, ri) in (localOpts.referenceLines ?? [])" :key="rl.id ?? ri"
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
-        <div class="flex items-center gap-2">
+        <div class="grid grid-cols-2 gap-2">
           <input :value="rl.value" type="number" placeholder="Value" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full min-w-0 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefLineProp(ri, 'value', +($event.target as HTMLInputElement).value)" />
           <input :value="rl.label ?? ''" type="text" placeholder="Label" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full min-w-0 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefLineProp(ri, 'label', ($event.target as HTMLInputElement).value)" />
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex flex-1 min-w-0 rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
+            <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
+              class="flex-1 py-1 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              :class="(rl.style ?? 'dashed') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
+              @click="editMode && setRefLineProp(ri, 'style', opt.value)">{{ opt.label }}</button>
+          </div>
           <ColorPickerPopover :model-value="rl.color" :disabled="!editMode"
             @update:model-value="setRefLineProp(ri, 'color', $event)" />
-          <button v-if="editMode" type="button" class="text-gray-400 dark:text-neutral-500 hover:text-rose-500 dark:hover:text-rose-400"
-            @click="removeReferenceLine(ri)">✕</button>
-        </div>
-        <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
-          <button v-for="opt in lineStyleOptions" :key="opt.value" type="button" :disabled="!editMode"
-            class="flex-1 py-1 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
-            :class="(rl.style ?? 'dashed') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
-            @click="editMode && setRefLineProp(ri, 'style', opt.value)">{{ opt.label }}</button>
+          <button v-if="editMode" type="button" title="Remove reference line"
+            class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-gray-400 dark:text-neutral-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
+            @click="removeReferenceLine(ri)">
+            <Trash2 class="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </StyleSection>
@@ -426,20 +443,25 @@
       <div v-if="!localOpts.referenceBands?.length" class="text-sm text-gray-400 dark:text-neutral-500">No reference bands.</div>
       <div v-for="(rb, rbi) in (localOpts.referenceBands ?? [])" :key="rb.id ?? rbi"
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
-        <div class="flex items-center gap-2">
+        <div class="grid grid-cols-2 gap-2">
           <input :value="rb.from" type="number" placeholder="From" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full min-w-0 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefBandProp(rbi, 'from', +($event.target as HTMLInputElement).value)" />
           <input :value="rb.to" type="number" placeholder="To" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="w-full min-w-0 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefBandProp(rbi, 'to', +($event.target as HTMLInputElement).value)" />
+        </div>
+        <div class="flex items-center gap-2">
           <input :value="rb.label ?? ''" type="text" placeholder="Label" :disabled="!editMode"
-            class="flex-1 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+            class="flex-1 min-w-0 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
             @input="setRefBandProp(rbi, 'label', ($event.target as HTMLInputElement).value)" />
           <ColorPickerPopover :model-value="rb.color" :disabled="!editMode"
             @update:model-value="setRefBandProp(rbi, 'color', $event)" />
-          <button v-if="editMode" type="button" class="text-gray-400 dark:text-neutral-500 hover:text-rose-500 dark:hover:text-rose-400"
-            @click="removeReferenceBand(rbi)">✕</button>
+          <button v-if="editMode" type="button" title="Remove reference band"
+            class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-gray-400 dark:text-neutral-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
+            @click="removeReferenceBand(rbi)">
+            <Trash2 class="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </StyleSection>
@@ -746,9 +768,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { Trash2, ChevronDown } from 'lucide-vue-next'
 import ColorPickerPopover from './ColorPickerPopover.vue'
 import StyleSection from './StyleSection.vue'
 import { FONT_SIZE_OPTIONS } from './styleOptions'
+import { DEFAULT_PALETTE } from '~/composables/useChart'
 import type { WidgetConfig, ChartWidgetConfig } from '~/types/dashboard'
 import type { ChartOptions, DatasetConfig, ChartAxisConfig, ReferenceLine, ReferenceBand } from '~/types/chart'
 import { DATASET_STYLE_KEYS } from '~/utils/widgetMerge'
@@ -823,6 +847,13 @@ watch(
 )
 
 const hasRightAxis = computed(() => localDatasets.value.some(ds => ds.yAxisID === 'right'))
+
+/** Color shown in the series-header dot: explicit style, else the palette color
+ *  the renderer would assign by index. */
+function seriesSwatch(ds: DatasetConfig, i: number): string {
+  const bg = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[0] : ds.backgroundColor
+  return (ds.borderColor as string) || (bg as string) || DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]
+}
 
 const isPie = computed(() => chartConfig.value.type === 'pie' || chartConfig.value.type === 'doughnut')
 const isFunnel = computed(() => chartConfig.value.type === 'funnel')

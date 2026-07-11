@@ -71,7 +71,7 @@ Chart.register(
   legendSpacingPlugin
 )
 
-const DEFAULT_PALETTE = [
+export const DEFAULT_PALETTE = [
   '#6366f1', // indigo-500
   '#8b5cf6', // violet-500
   '#ec4899', // pink-500
