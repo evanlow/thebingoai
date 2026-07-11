@@ -18,6 +18,7 @@ vi.stubGlobal('localStorage', {
 vi.stubGlobal('ref', ref)
 vi.stubGlobal('watch', watch)
 vi.stubGlobal('computed', computed)
+vi.stubGlobal('onScopeDispose', vi.fn())
 
 // Capture the (request_id-gated) WebSocket handlers so tests can fire events.
 const wsHandlers = new Map<string, Function>()

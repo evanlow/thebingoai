@@ -696,7 +696,21 @@ html.font-lg .mention-pc           { font-size: 14px; }
   }
 
   .prose-chat table {
-    @apply w-full border-collapse mb-3;
+    @apply border-collapse mb-3;
+    min-width: 100%;
+    width: max-content;
+  }
+
+  /* Wide result previews scroll horizontally; when wider than the column they
+     break out leftward into the empty margin (right edge fixed, bubbles stay). */
+  .prose-chat .table-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  /* JS (tagWideTables) sets inline width + margin-left to span the viewport with a
+     gutter each side; this only lifts the max-width cap so that width can apply. */
+  .prose-chat .table-scroll--wide {
+    max-width: none;
   }
 
   .prose-chat th,

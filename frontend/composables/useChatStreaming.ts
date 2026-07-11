@@ -8,8 +8,19 @@ export const useChatStreaming = () => {
   const ws = useWebSocket()
   const { refresh: refreshCredits } = useCreditBalance()
 
+  // query.result (the CSV/Excel export side-channel) is delivered via Redis
+  // pub/sub — a slower lane than the direct chat.done — so it can arrive after a
+  // turn's handlers are torn down. Keep the latest turn's handler alive across
+  // that gap; it's replaced at the next turn's start and released on dispose.
+  let activeQueryResultUnsub: (() => void) | null = null
+  onScopeDispose(() => { activeQueryResultUnsub?.() })
+
   const sendMessage = async (message: string, fileIds: string[] = [], options?: { source?: Message['source'] }) => {
     chatStore.isStreaming = true
+
+    // Drop the previous turn's lingering query.result handler before this turn
+    // registers its own, so a late event can't write to the wrong message.
+    if (activeQueryResultUnsub) { activeQueryResultUnsub(); activeQueryResultUnsub = null }
 
     // This thread's history is about to change — drop its cached copy so a later
     // revisit refetches the new turn instead of serving a stale cache.
@@ -298,7 +309,11 @@ export const useChatStreaming = () => {
         syncStepsLog()
       })
 
-      onEvent('query.result', (data) => {
+      // Registered OUTSIDE `unsubs` and stored on activeQueryResultUnsub so
+      // cleanup() on chat.done does NOT tear it down — the export event often
+      // lands just after done via the slower Redis lane.
+      activeQueryResultUnsub = ws.on('query.result', (data: any) => {
+        if (data.request_id && data.request_id !== requestId) return
         const payload = data.data || {}
         const columns: string[] = payload.columns || []
         const rawRows: any[][] = payload.rows || []

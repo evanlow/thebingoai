@@ -112,16 +112,17 @@
           </svg>
           <span class="font-medium text-gray-600 dark:text-neutral-300">{{ f.label }}</span>
           <span>· {{ f.row_count }}×{{ f.col_count }}</span>
-          <button
-            :disabled="downloadingRef === f.result_ref"
-            class="ml-1 rounded border border-gray-200 px-2 py-0.5 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50 dark:border-neutral-600 dark:hover:border-neutral-500 dark:hover:bg-neutral-700"
-            @click="downloadResult(f, 'csv')"
-          >CSV</button>
-          <button
-            :disabled="downloadingRef === f.result_ref"
-            class="rounded border border-gray-200 px-2 py-0.5 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50 dark:border-neutral-600 dark:hover:border-neutral-500 dark:hover:bg-neutral-700"
-            @click="downloadResult(f, 'xlsx')"
-          >Excel</button>
+          <UiDropdown :items="exportItems(f)" align="left">
+            <template #trigger>
+              <button
+                :disabled="downloadingRef === f.result_ref"
+                class="ml-1 inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-0.5 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50 dark:border-neutral-600 dark:hover:border-neutral-500 dark:hover:bg-neutral-700"
+              >
+                Data Export
+                <ChevronDown class="h-3 w-3" />
+              </button>
+            </template>
+          </UiDropdown>
         </div>
       </div>
 
@@ -241,6 +242,8 @@
 import type { Message, QueryFile } from '~/stores/chat'
 import type { SkillSuggestion } from '~/types/skillSuggestion'
 import { toast } from 'vue-sonner'
+import { ChevronDown } from 'lucide-vue-next'
+import UiDropdown from '~/components/ui/UiDropdown.vue'
 import { useDashboardStore } from '~/stores/dashboard'
 import { parseUtcDate, formatDate } from '~/utils/format'
 import { IMAGE_MIME_TYPES } from '~/composables/_chatConstants'
@@ -267,6 +270,11 @@ const { resolvedMentions } = useMentions()
 
 // ── Query result download (CSV / Excel) ─────────────────────
 const downloadingRef = ref<string | null>(null)
+
+const exportItems = (f: QueryFile) => [
+  { label: 'CSV',   onClick: () => downloadResult(f, 'csv')  },
+  { label: 'Excel', onClick: () => downloadResult(f, 'xlsx') },
+]
 
 async function downloadResult(file: QueryFile, format: 'csv' | 'xlsx') {
   downloadingRef.value = file.result_ref
