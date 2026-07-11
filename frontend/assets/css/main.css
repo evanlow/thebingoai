@@ -435,6 +435,26 @@ html.font-lg .mention-pc           { font-size: 14px; }
   border-color: color-mix(in oklch, var(--d-plum) 40%, var(--ink-0));
 }
 
+/* Dark theme inverts --ink-0 (the user-bubble surface) to near-white, so the
+   dark-bubble pill sits on a light surface — flip text/border to the dark,
+   legible values used by the light-context variants above. */
+.dark .mention-pill--dark.mention-pill--dataset,
+.dark .mention-pill--dark.mention-pill--default {
+  color: color-mix(in oklch, var(--ember) 65%, #000);
+  border-color: color-mix(in oklch, var(--ember) 45%, var(--ink-0));
+}
+.dark .mention-pill--dark.mention-pill--dashboard {
+  color: color-mix(in oklch, var(--d-teal) 65%, #000);
+  border-color: color-mix(in oklch, var(--d-teal) 45%, var(--ink-0));
+}
+.dark .mention-pill--dark.mention-pill--notion {
+  color: var(--ink-1);
+}
+.dark .mention-pill--dark.mention-pill--skill {
+  color: color-mix(in oklch, var(--d-plum) 65%, #000);
+  border-color: color-mix(in oklch, var(--d-plum) 45%, var(--ink-0));
+}
+
 /* ── ParentChildPill (two-halved anatomy) ──────────────────── */
 .mention-pc {
   display: inline-flex;
