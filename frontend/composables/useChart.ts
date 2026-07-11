@@ -335,6 +335,25 @@ function getChartColors() {
 
 // ── Annotation builder ────────────────────────────────────────────────────────
 
+// Reference bands always render translucent — a solid fill would cover the
+// series it's meant to annotate. User picks the hue; alpha is fixed.
+const BAND_ALPHA = 0.12
+
+function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith('#')) {
+    let h = color.slice(1)
+    if (h.length === 3) h = h.split('').map(c => c + c).join('')
+    const n = parseInt(h.slice(0, 6), 16)
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
+  }
+  const m = color.match(/^rgba?\(([^)]+)\)/)
+  if (m) {
+    const [r, g, b] = m[1].split(',').map(s => s.trim())
+    return `rgba(${r},${g},${b},${alpha})`
+  }
+  return color
+}
+
 function buildAnnotations(config: ChartConfig): Record<string, any> {
   const opts = config.options ?? {}
   const annotations: Record<string, any> = {}
@@ -365,7 +384,7 @@ function buildAnnotations(config: ChartConfig): Record<string, any> {
       ...(isY
         ? { yMin: rb.from, yMax: rb.to }
         : { xMin: rb.from, xMax: rb.to }),
-      backgroundColor: rb.color ?? 'rgba(99,102,241,0.10)',
+      backgroundColor: withAlpha(rb.color ?? '#6366f1', BAND_ALPHA),
       borderWidth: 0,
       label: {
         display: !!(rb.label),
