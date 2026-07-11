@@ -511,6 +511,24 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
             family: getFontFamilyStr(opts.legendFontFamily ?? opts.fontFamily),
             size: getFontSizePx(opts.legendFontSize ?? opts.fontSize),
           },
+          // Marker mirrors what the series draws: line stroke (dashed if
+          // borderDash) for lines, rect for bars/areas, circle for scatter.
+          // Pie/doughnut keeps the default per-slice color boxes.
+          ...(isPieOrDoughnut ? {} : {
+            usePointStyle: true,
+            pointStyleWidth: 28,
+            generateLabels: (chart: Chart) => {
+              const items = Chart.defaults.plugins.legend.labels.generateLabels(chart)
+              for (const item of items) {
+                const ds = chart.data.datasets[item.datasetIndex!] as any
+                const effType = ds?.type ?? (chart.config as any).type
+                if (effType === 'scatter' || effType === 'bubble') item.pointStyle = 'circle'
+                else if (effType === 'line' && !ds?.fill) item.pointStyle = 'line'
+                else item.pointStyle = 'rect'
+              }
+              return items
+            },
+          }),
         },
       },
       tooltip: {
