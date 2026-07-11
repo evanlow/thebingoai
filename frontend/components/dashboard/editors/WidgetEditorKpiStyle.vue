@@ -2,8 +2,7 @@
   <div class="h-full overflow-y-auto p-5 space-y-5 [&>*+*]:border-t [&>*+*]:border-gray-200 dark:[&>*+*]:border-neutral-700 [&>*+*]:pt-5">
 
     <!-- Title -->
-    <div class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</h3>
+    <StyleSection title="Title">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show title</span>
         <button
@@ -53,11 +52,10 @@
           </div>
         </div>
       </template>
-    </div>
+    </StyleSection>
 
     <!-- Primary metric -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Primary Metric</h3>
+    <StyleSection title="Primary Metric" body-class="space-y-3">
 
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Compact numbers</span>
@@ -107,11 +105,10 @@
           @input="emitUpdate()"
         />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Comparison fields -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Comparison Fields</h3>
+    <StyleSection title="Comparison Fields" body-class="space-y-3">
 
       <div class="flex items-center justify-between">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Positive change color</span>
@@ -197,11 +194,10 @@
           @input="emitUpdate()"
         />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Progress visual -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Progress Visual</h3>
+    <StyleSection title="Progress Visual" body-class="space-y-3">
       <div class="space-y-1.5">
         <label class="text-sm text-gray-700 dark:text-neutral-200">Style</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
@@ -218,11 +214,10 @@
           >{{ opt.label }}</button>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Missing data -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Missing Data</h3>
+    <StyleSection title="Missing Data" body-class="space-y-3">
       <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button
           v-for="opt in missingDataOptions"
@@ -236,11 +231,10 @@
           @click="editMode && setMissingData(opt.value as 'noData' | 'zero' | 'dash' | 'null' | 'blank')"
         >{{ opt.label }}</button>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Labels -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Labels</h3>
+    <StyleSection title="Labels" body-class="space-y-3">
 
       <div class="flex items-center justify-between gap-2">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Font</span>
@@ -317,11 +311,10 @@
           >{{ opt.label }}</button>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Background & Border -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Background &amp; Border</h3>
+    <StyleSection title="Background &amp; Border" body-class="space-y-3">
 
       <div class="flex items-center justify-between">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Background</span>
@@ -405,7 +398,7 @@
           <span class="text-sm text-gray-500 dark:text-neutral-400 tabular-nums w-6 text-right">{{ localBorderRadius }}px</span>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
   </div>
 </template>
@@ -414,6 +407,8 @@
 import { ref } from 'vue'
 import type { WidgetConfig, KpiWidgetConfig, KpiComparisonConfig } from '~/types/dashboard'
 import ColorPickerPopover from './ColorPickerPopover.vue'
+import StyleSection from './StyleSection.vue'
+import { BORDER_STYLE_OPTIONS } from './styleOptions'
 
 const props = defineProps<{
   modelValue: WidgetConfig
@@ -491,12 +486,7 @@ const alignOptions = [
   { value: 'center', label: 'Center' },
   { value: 'right', label: 'Right' },
 ]
-const borderStyleOptions = [
-  { value: 'solid', label: 'Solid' },
-  { value: 'dashed', label: 'Dashed' },
-  { value: 'dotted', label: 'Dotted' },
-  { value: 'none', label: 'None' },
-]
+const borderStyleOptions = BORDER_STYLE_OPTIONS
 
 // Toggle helpers for boolean fields
 const boolFields: Record<string, () => boolean> = {

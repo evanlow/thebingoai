@@ -39,11 +39,19 @@
     <div v-if="chartMapping && columnOptions.length > 0" class="space-y-3">
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Dimensions & Metrics</h3>
 
+      <!-- Incomplete mapping: tell the user exactly what's missing -->
+      <div
+        v-if="requiredMissing.length"
+        class="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+      >
+        Select {{ requiredMissing.join(', ') }} to display data.
+      </div>
+
       <!-- SCATTER / BUBBLE: dimension + X/Y metric pickers (+ size for bubble) -->
       <template v-if="localType === 'scatter' || localType === 'bubble'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension (optional — groups &amp; colors points)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle" />Dimension (optional — groups &amp; colors points)</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -55,7 +63,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">X Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-500 align-middle" />X Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.xMetricColumn || ''"
@@ -77,7 +85,7 @@
             </div>
           </div>
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Y Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-500 align-middle" />Y Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.yMetricColumn || ''"
@@ -99,7 +107,7 @@
             </div>
           </div>
           <div v-if="localType === 'bubble'" class="space-y-1.5">
-            <label class="text-xs text-gray-600 dark:text-neutral-400">Bubble Size Metric <span class="text-red-500">*</span></label>
+            <label class="text-xs text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-500 align-middle" />Bubble Size Metric <span class="text-red-500">*</span></label>
             <select
               :value="chartMapping.sizeMetricColumn || ''"
               :disabled="!editMode"
@@ -118,7 +126,7 @@
       <template v-else-if="localType === 'pie' || localType === 'doughnut'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle" />Dimension</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -130,7 +138,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-500 align-middle" />Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.datasetColumns?.[0]?.column || ''"
@@ -167,7 +175,7 @@
       <template v-else-if="localType === 'funnel'">
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension (stage)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle" />Dimension (stage)</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -179,7 +187,7 @@
             </select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Metric</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-500 align-middle" />Metric</label>
             <div class="flex gap-2">
               <select
                 :value="chartMapping.datasetColumns?.[0]?.column || ''"
@@ -273,7 +281,7 @@
       <template v-else>
         <div class="space-y-3">
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension (X-axis)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle" />Dimension (X-axis)</label>
             <select
               :value="chartMapping.labelColumn || ''"
               :disabled="!editMode"
@@ -301,7 +309,7 @@
 
           <div class="space-y-2">
             <div class="flex items-center justify-between">
-              <label class="text-sm text-gray-600 dark:text-neutral-400">Metrics (Y-axis)</label>
+              <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-500 align-middle" />Metrics (Y-axis)</label>
               <button
                 v-if="editMode"
                 type="button"
@@ -410,7 +418,7 @@
 
           <!-- Series breakdown -->
           <div class="space-y-1.5">
-            <label class="text-sm text-gray-600 dark:text-neutral-400">Break down by (optional)</label>
+            <label class="text-sm text-gray-600 dark:text-neutral-400"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle" />Break down by (optional)</label>
             <select
               :value="chartMapping?.breakdownColumn || ''"
               :disabled="!editMode"
@@ -424,6 +432,14 @@
           </div>
         </div>
       </template>
+    </div>
+
+    <!-- No data source / no columns yet: explain instead of hiding the section -->
+    <div v-else class="space-y-2">
+      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Dimensions & Metrics</h3>
+      <div class="rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 px-3 py-4 text-center text-sm text-gray-400 dark:text-neutral-500">
+        {{ dataSource ? 'No columns available from the query yet.' : 'Connect a data source in the Data Source tab to configure dimensions and metrics.' }}
+      </div>
     </div>
 
     <!-- Sort (hidden for scatter / timeline) -->
@@ -493,6 +509,7 @@
           v-for="opt in stackedOptions"
           :key="opt.value"
           type="button"
+          :title="opt.hint"
           :disabled="!editMode"
           class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
           :class="currentStacked === opt.value
@@ -575,6 +592,28 @@ const columnOptions = computed(() => {
   return [...cols]
 })
 
+// Required fields still unset for the current chart type — drives the inline
+// "Select … to display data" hint (Looker-style guidance instead of a blank chart).
+const requiredMissing = computed<string[]>(() => {
+  const m = chartMapping.value
+  if (!m) return []
+  const missing: string[] = []
+  const t = localType.value
+  if (t === 'scatter' || t === 'bubble') {
+    if (!m.xMetricColumn) missing.push('an X metric')
+    if (!m.yMetricColumn) missing.push('a Y metric')
+    if (t === 'bubble' && !m.sizeMetricColumn) missing.push('a bubble size metric')
+  } else if (t === 'timeline') {
+    if (!m.labelColumn) missing.push('a row label')
+    if (!m.startColumn) missing.push('a start time')
+    if (!m.endColumn) missing.push('an end time')
+  } else {
+    if (!m.labelColumn) missing.push('a dimension')
+    if (!m.datasetColumns?.some(d => d.column)) missing.push('a metric')
+  }
+  return missing
+})
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 function emitDebounced() {
@@ -609,9 +648,9 @@ function setType(t: string) {
 // ── Stacked segmented ────────────────────────────────────────────────────────
 
 const stackedOptions = [
-  { value: 'none', label: 'None' },
-  { value: 'standard', label: 'Stacked' },
-  { value: 'percentage', label: '100%' },
+  { value: 'none', label: 'None', hint: 'Series drawn side by side' },
+  { value: 'standard', label: 'Stacked', hint: 'Series stacked on top of each other (absolute values)' },
+  { value: 'percentage', label: '100%', hint: 'Each stack normalized to 100% — shows share, not absolute values' },
 ]
 
 const currentStacked = computed(() => {
@@ -634,7 +673,9 @@ function emitMappingPatch(patch: Record<string, any>) {
 
 function updateDatasetColumn(idx: number, field: keyof ChartDatasetColumn, value: any) {
   const cols = [...(chartMapping.value?.datasetColumns ?? [])]
-  if (!cols[idx]) return
+  // Single-metric types (pie/doughnut/funnel) have no "Add Metric" button, so
+  // the first selection must create the entry rather than silently no-op.
+  while (cols.length <= idx) cols.push({ column: '', label: '', aggregation: 'sum' })
   cols[idx] = { ...cols[idx], [field]: value }
   emit('update:mapping', { datasetColumns: cols })
 }

@@ -2,8 +2,7 @@
   <div class="h-full overflow-y-auto p-5 space-y-5 [&>*+*]:border-t [&>*+*]:border-gray-200 dark:[&>*+*]:border-neutral-700 [&>*+*]:pt-5">
 
     <!-- Title -->
-    <div class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</h3>
+    <StyleSection title="Title">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show title</span>
         <button type="button" role="switch" :aria-checked="localShowTitle" :disabled="!editMode"
@@ -20,11 +19,10 @@
           class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
           :class="!editMode ? 'cursor-default bg-gray-50 dark:bg-neutral-900' : ''" @input="emitUpdate()" />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Table Body -->
-    <div class="space-y-1">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Table Body</h3>
+    <StyleSection title="Table Body" body-class="space-y-1">
       <div v-for="opt in bodyOptions" :key="opt.key" class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">{{ opt.label }}</span>
         <button type="button" role="switch" :aria-checked="localFlags[opt.key]" :disabled="!editMode"
@@ -35,21 +33,19 @@
             :class="localFlags[opt.key] ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
         </button>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Table Colors -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Table Colors</h3>
+    <StyleSection title="Table Colors" body-class="space-y-3">
       <div v-for="opt in tableColorOptions" :key="opt.key" class="flex items-center justify-between">
         <span class="text-sm text-gray-700 dark:text-neutral-200">{{ opt.label }}</span>
         <ColorPickerPopover :model-value="localTableColors[opt.key] || undefined" :disabled="!editMode"
           @update:model-value="(c) => { localTableColors[opt.key] = c ?? ''; emitUpdate() }" />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Totals labels -->
-    <div class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Totals Labels</h3>
+    <StyleSection title="Totals Labels">
       <div class="space-y-1">
         <label class="text-sm text-gray-700 dark:text-neutral-200">Subtotal label</label>
         <input v-model="localSubtotalLabel" type="text" placeholder="Subtotal" :readonly="!editMode"
@@ -60,11 +56,10 @@
         <input v-model="localGrandTotalLabel" type="text" placeholder="Grand total" :readonly="!editMode"
           class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm disabled:bg-gray-50 dark:disabled:bg-neutral-800" @input="emitUpdate()" />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Data -->
-    <div class="space-y-1.5">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Data</h3>
+    <StyleSection title="Data" body-class="space-y-1.5">
       <label class="text-sm text-gray-700 dark:text-neutral-200">Missing data display</label>
       <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
         <button v-for="opt in missingOptions" :key="opt.value" type="button" :disabled="!editMode"
@@ -72,11 +67,10 @@
           :class="localMissingData === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
           @click="editMode && (localMissingData = opt.value, emitUpdate())">{{ opt.label }}</button>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Border -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Border</h3>
+    <StyleSection title="Border" body-class="space-y-3">
       <div class="flex items-center justify-between">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
         <ColorPickerPopover :model-value="localBorderColor || undefined" :disabled="!editMode"
@@ -105,11 +99,10 @@
           <span class="text-sm text-gray-500 dark:text-neutral-400 tabular-nums w-6 text-right">{{ localBorderRadius }}px</span>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Font -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Font</h3>
+    <StyleSection title="Font" body-class="space-y-3">
       <div class="flex items-center justify-between gap-2">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Family</span>
         <select v-model="localFontFamily" :disabled="!editMode"
@@ -134,7 +127,7 @@
         <ColorPickerPopover :model-value="localFontColor || undefined" :disabled="!editMode"
           @update:model-value="(c) => { localFontColor = c ?? ''; emitUpdate() }" />
       </div>
-    </div>
+    </StyleSection>
 
   </div>
 </template>
@@ -144,6 +137,8 @@ import { ref } from 'vue'
 import { computed } from 'vue'
 import type { WidgetConfig, PivotTableWidgetConfig } from '~/types/dashboard'
 import ColorPickerPopover from './ColorPickerPopover.vue'
+import StyleSection from './StyleSection.vue'
+import { BORDER_STYLE_OPTIONS, FONT_SIZE_OPTIONS } from './styleOptions'
 
 const props = defineProps<{ modelValue: WidgetConfig; editMode: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: WidgetConfig] }>()
@@ -195,18 +190,8 @@ const localFontFamily = ref<'system' | 'sans' | 'serif' | 'mono'>(cfg.value.font
 const localFontSize = ref<'xs' | 'sm' | 'md' | 'lg'>(cfg.value.fontSize ?? 'sm')
 const localFontColor = ref(cfg.value.fontColor ?? '')
 
-const borderStyleOptions = [
-  { value: 'solid' as const, label: 'Solid' },
-  { value: 'dashed' as const, label: 'Dashed' },
-  { value: 'dotted' as const, label: 'Dotted' },
-  { value: 'none' as const, label: 'None' },
-]
-const fontSizeOptions = [
-  { value: 'xs' as const, label: 'XS' },
-  { value: 'sm' as const, label: 'S' },
-  { value: 'md' as const, label: 'M' },
-  { value: 'lg' as const, label: 'L' },
-]
+const borderStyleOptions = BORDER_STYLE_OPTIONS
+const fontSizeOptions = FONT_SIZE_OPTIONS
 
 function emitUpdate() {
   emit('update:modelValue', {

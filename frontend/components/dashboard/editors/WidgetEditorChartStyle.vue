@@ -2,8 +2,7 @@
   <div class="h-full overflow-y-auto p-5 space-y-5 [&>*+*]:border-t [&>*+*]:border-gray-200 dark:[&>*+*]:border-neutral-700 [&>*+*]:pt-5">
 
     <!-- 1. Title -->
-    <div class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Title</h3>
+    <StyleSection title="Title">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show title</span>
         <button type="button" role="switch" :aria-checked="!!localOpts.showTitle" :disabled="!editMode"
@@ -76,11 +75,10 @@
           <ColorPickerPopover v-model="localOpts.titleFontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
         </div>
       </template>
-    </div>
+    </StyleSection>
 
     <!-- Funnel options -->
-    <div v-if="isFunnel" class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Funnel</h3>
+    <StyleSection v-if="isFunnel" title="Funnel" body-class="space-y-3">
       <div class="space-y-1.5">
         <label class="text-sm text-gray-700 dark:text-neutral-200">Funnel shape</label>
         <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
@@ -121,11 +119,10 @@
             @click="editMode && setOpt('funnelColorMode', opt.value)">{{ opt.label }}</button>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- Timeline options -->
-    <div v-if="isTimeline" class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Timeline</h3>
+    <StyleSection v-if="isTimeline" title="Timeline" body-class="space-y-3">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Group by row label</span>
         <button type="button" role="switch" :aria-checked="!!localOpts.timelineGroupByRowLabel" :disabled="!editMode"
@@ -156,11 +153,10 @@
             :class="localOpts.timelineAltRows ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
         </button>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 2. Series -->
-    <div v-if="isStandardChart" class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Series</h3>
+    <StyleSection v-if="isStandardChart" title="Series" body-class="space-y-3">
       <p v-if="!localDatasets.length" class="text-sm text-gray-400 dark:text-neutral-500">No datasets yet. Connect a data source first.</p>
       <div v-for="(ds, i) in localDatasets" :key="i" class="rounded-lg border border-gray-100 dark:border-neutral-800 p-3 space-y-2.5">
         <!-- Series header -->
@@ -171,8 +167,8 @@
         </div>
 
         <template v-if="expandedSeries.has(i)">
-          <!-- Series type (combo) -->
-          <div class="space-y-1">
+          <!-- Series type (combo) — cartesian charts only -->
+          <div v-if="!isPie" class="space-y-1">
             <label class="text-sm text-gray-700 dark:text-neutral-200">Series type</label>
             <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
               <button v-for="opt in seriesTypeOptions" :key="opt.value" type="button" :disabled="!editMode"
@@ -248,8 +244,8 @@
             </div>
           </template>
 
-          <!-- Cumulative -->
-          <div class="flex items-center justify-between py-0.5">
+          <!-- Cumulative — cartesian charts only -->
+          <div v-if="!isPie" class="flex items-center justify-between py-0.5">
             <span class="text-sm text-gray-700 dark:text-neutral-200">Cumulative</span>
             <button type="button" role="switch" :aria-checked="!!ds.cumulative" :disabled="!editMode"
               class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -284,8 +280,8 @@
             </div>
           </div>
 
-          <!-- Trendline -->
-          <div class="space-y-1.5 pt-1 border-t border-gray-100 dark:border-neutral-800">
+          <!-- Trendline — cartesian charts only -->
+          <div v-if="!isPie" class="space-y-1.5 pt-1 border-t border-gray-100 dark:border-neutral-800">
             <label class="text-sm font-medium text-gray-600 dark:text-neutral-400">Trendline</label>
             <select :value="ds.trendline?.type ?? 'none'" :disabled="!editMode"
               class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
@@ -321,11 +317,10 @@
           </div>
         </template>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 3. General -->
-    <div v-if="isStandardChart" class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">General</h3>
+    <StyleSection v-if="isStandardChart" title="General">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show legend</span>
         <button type="button" role="switch" :aria-checked="localOpts.showLegend !== false" :disabled="!editMode"
@@ -378,27 +373,25 @@
           class="w-16 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-center text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @input="emitUpdate()" />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 4. Missing data (date mode only) -->
-    <div v-if="chartConfig.options?.xAxisMode === 'date'" class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Missing Data</h3>
+    <StyleSection v-if="chartConfig.options?.xAxisMode === 'date'" title="Missing Data">
       <div class="flex rounded border border-gray-200 dark:border-neutral-700 overflow-hidden">
-        <button v-for="opt in missingDataOptions" :key="opt.value" type="button" :disabled="!editMode"
+        <button v-for="opt in missingDataOptions" :key="opt.value" type="button" :title="opt.hint" :disabled="!editMode"
           class="flex-1 py-1.5 text-sm font-medium transition-colors border-r border-gray-200 dark:border-neutral-700 last:border-r-0 disabled:opacity-40 disabled:cursor-not-allowed"
           :class="(localOpts.missingData ?? 'lineToZero') === opt.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800'"
           @click="editMode && setOpt('missingData', opt.value)">{{ opt.label }}</button>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 5. Reference Lines -->
-    <div v-if="isStandardChart" class="space-y-2">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Reference Lines</h3>
-        <button v-if="editMode" type="button"
-          class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
-          @click="addReferenceLine()">+ Add</button>
-      </div>
+    <StyleSection v-if="hasAxes" title="Reference Lines">
+      <template #action>
+          <button v-if="editMode" type="button"
+            class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
+            @click.stop.prevent="addReferenceLine()">+ Add</button>
+      </template>
       <div v-if="!localOpts.referenceLines?.length" class="text-sm text-gray-400 dark:text-neutral-500">No reference lines.</div>
       <div v-for="(rl, ri) in (localOpts.referenceLines ?? [])" :key="rl.id ?? ri"
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
@@ -421,16 +414,15 @@
             @click="editMode && setRefLineProp(ri, 'style', opt.value)">{{ opt.label }}</button>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 6. Reference Bands -->
-    <div v-if="isStandardChart" class="space-y-2">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Reference Bands</h3>
-        <button v-if="editMode" type="button"
-          class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
-          @click="addReferenceBand()">+ Add</button>
-      </div>
+    <StyleSection v-if="hasAxes" title="Reference Bands">
+      <template #action>
+          <button v-if="editMode" type="button"
+            class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
+            @click.stop.prevent="addReferenceBand()">+ Add</button>
+      </template>
       <div v-if="!localOpts.referenceBands?.length" class="text-sm text-gray-400 dark:text-neutral-500">No reference bands.</div>
       <div v-for="(rb, rbi) in (localOpts.referenceBands ?? [])" :key="rb.id ?? rbi"
         class="rounded border border-gray-100 dark:border-neutral-800 p-2.5 space-y-2">
@@ -450,11 +442,10 @@
             @click="removeReferenceBand(rbi)">✕</button>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 7. Axes -->
-    <div v-if="isStandardChart" class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Axes</h3>
+    <StyleSection v-if="hasAxes" title="Axes" body-class="space-y-3">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Reverse X-axis</span>
         <button type="button" role="switch" :aria-checked="!!localOpts.reverseXAxis" :disabled="!editMode"
@@ -553,11 +544,10 @@
           class="w-full rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-300 disabled:bg-gray-50 dark:disabled:bg-neutral-800"
           @input="setAxisProp('xAxis', 'title', ($event.target as HTMLInputElement).value); setAxisProp('xAxis', 'showTitle', true)" />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 8. Grid -->
-    <div v-if="isStandardChart" class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Grid</h3>
+    <StyleSection v-if="hasAxes" title="Grid">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show X-axis grid lines</span>
         <button type="button" role="switch" :aria-checked="localOpts.showXGridLines !== false" :disabled="!editMode"
@@ -591,11 +581,10 @@
             @click="editMode && setOpt('gridLineStyle', opt.value)">{{ opt.label }}</button>
         </div>
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 9. Legend -->
-    <div v-if="isStandardChart" class="space-y-2">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Legend</h3>
+    <StyleSection v-if="isStandardChart" title="Legend">
       <div class="flex items-center justify-between py-1">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Show legend</span>
         <button type="button" role="switch" :aria-checked="localOpts.showLegend !== false" :disabled="!editMode"
@@ -658,11 +647,10 @@
           <ColorPickerPopover v-model="localOpts.legendFontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
         </div>
       </template>
-    </div>
+    </StyleSection>
 
     <!-- Font (base — applies to legend, axis labels & title unless overridden per-element) -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Font</h3>
+    <StyleSection title="Font" body-class="space-y-3">
       <div class="flex items-center justify-between gap-2">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Family</span>
         <select v-model="localOpts.fontFamily" :disabled="!editMode"
@@ -694,11 +682,10 @@
         <span class="text-sm text-gray-700 dark:text-neutral-200">Color</span>
         <ColorPickerPopover v-model="localOpts.fontColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
       </div>
-    </div>
+    </StyleSection>
 
     <!-- 10. Background & border -->
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Background & Border</h3>
+    <StyleSection title="Background & Border" body-class="space-y-3">
       <div class="flex items-center justify-between gap-2">
         <span class="text-sm text-gray-700 dark:text-neutral-200">Background</span>
         <ColorPickerPopover v-model="localOpts.backgroundColor" :disabled="!editMode" @update:model-value="emitUpdate()" />
@@ -752,7 +739,7 @@
             :class="localOpts.addBorderShadow ? 'translate-x-4 ml-0.5' : 'translate-x-0 ml-0.5'" />
         </button>
       </div>
-    </div>
+    </StyleSection>
 
   </div>
 </template>
@@ -760,6 +747,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import ColorPickerPopover from './ColorPickerPopover.vue'
+import StyleSection from './StyleSection.vue'
+import { FONT_SIZE_OPTIONS } from './styleOptions'
 import type { WidgetConfig, ChartWidgetConfig } from '~/types/dashboard'
 import type { ChartOptions, DatasetConfig, ChartAxisConfig, ReferenceLine, ReferenceBand } from '~/types/chart'
 import { DATASET_STYLE_KEYS } from '~/utils/widgetMerge'
@@ -841,6 +830,8 @@ const isTimeline = computed(() => chartConfig.value.type === 'timeline')
 // Funnel/timeline render with custom components, so the Chart.js-oriented
 // sections (series, axes, grid, legend, reference lines…) don't apply to them.
 const isStandardChart = computed(() => !isFunnel.value && !isTimeline.value)
+// Pie/doughnut have no cartesian axes — axis-anchored sections do nothing there.
+const hasAxes = computed(() => isStandardChart.value && !isPie.value)
 
 const sliceLabelOptions = [
   { value: 'none', label: 'None' },
@@ -869,9 +860,9 @@ const seriesTypeOptions = [
 ]
 
 const missingDataOptions = [
-  { value: 'lineToZero', label: 'Zero' },
-  { value: 'breaks', label: 'Break' },
-  { value: 'linearInterpolation', label: 'Interpolate' },
+  { value: 'lineToZero', label: 'Zero', hint: 'Treat missing dates as 0' },
+  { value: 'breaks', label: 'Break', hint: 'Leave a gap in the line where data is missing' },
+  { value: 'linearInterpolation', label: 'Interpolate', hint: 'Connect across the gap with a straight line' },
 ]
 
 const legendPositionOptions = [
@@ -888,12 +879,7 @@ const borderStyleOptions = [
   { value: 'dotted', label: 'Dotted' },
 ]
 
-const fontSizeOptions = [
-  { value: 'xs' as const, label: 'XS' },
-  { value: 'sm' as const, label: 'S' },
-  { value: 'md' as const, label: 'M' },
-  { value: 'lg' as const, label: 'L' },
-]
+const fontSizeOptions = FONT_SIZE_OPTIONS
 
 // ── Mutation helpers ──────────────────────────────────────────────────────────
 

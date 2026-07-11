@@ -56,8 +56,40 @@
       <!-- Configure tab (or full area for text widgets) -->
       <div
         v-if="!isDataWidget || activeTab === 'configure'"
-        class="h-full overflow-hidden"
+        class="h-full overflow-hidden flex flex-col"
       >
+        <!-- Data source chip (Looker-style: source shown above the setup fields) -->
+        <button
+          v-if="isDataWidget"
+          type="button"
+          class="flex w-full flex-shrink-0 items-center gap-2 border-b border-gray-100 dark:border-neutral-800 px-5 py-2 text-left text-sm transition-colors hover:bg-gray-50 dark:hover:bg-neutral-700/50"
+          title="Open Data Source tab"
+          @click="activeTab = 'data'"
+        >
+          <Database class="h-3.5 w-3.5 flex-shrink-0" :class="props.widget.dataSource ? 'text-indigo-500' : 'text-amber-500'" />
+          <span v-if="props.widget.dataSource" class="truncate text-gray-600 dark:text-neutral-300">{{ sourceTableLabel }}</span>
+          <span v-else class="text-amber-600 dark:text-amber-400">No data source — click to connect</span>
+        </button>
+        <!-- Column-fetch status: keep the form usable but explain why pickers are empty -->
+        <div
+          v-if="columnsLoading"
+          class="flex flex-shrink-0 items-center gap-2 border-b border-gray-100 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 px-5 py-2 text-sm text-gray-500 dark:text-neutral-400"
+        >
+          <RefreshCw class="h-3 w-3 animate-spin" />
+          Loading columns…
+        </div>
+        <div
+          v-else-if="columnsError && isDataWidget"
+          class="flex flex-shrink-0 items-start justify-between gap-2 border-b border-rose-100 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 px-5 py-2 text-sm text-rose-600 dark:text-rose-300"
+        >
+          <span class="flex-1">{{ columnsError }}</span>
+          <button
+            class="flex-shrink-0 rounded px-2 py-0.5 text-sm font-medium bg-rose-100 dark:bg-rose-500/15 hover:bg-rose-200 dark:hover:bg-rose-500/25 transition-colors"
+            @click="fetchSourceColumns(true)"
+          >
+            Retry
+          </button>
+        </div>
         <component
           :is="editorComponent"
           v-if="editorComponent"
@@ -73,11 +105,11 @@
                 : props.widget.widget.type === 'pivot_table'
                   ? { dataSource: props.widget.dataSource, sourceColumns }
                   : {}"
-          class="h-full"
+          class="flex-1 min-h-0"
           @update:model-value="onConfigUpdate"
           @update:mapping="onMappingUpdate"
         />
-        <div v-else class="flex h-full items-center justify-center p-10 text-sm text-gray-400 dark:text-neutral-500">
+        <div v-else class="flex flex-1 items-center justify-center p-10 text-sm text-gray-400 dark:text-neutral-500">
           Configuration editor not yet available for this widget type.
         </div>
       </div>
@@ -319,7 +351,7 @@ const editorComponents: Record<string, ReturnType<typeof defineAsyncComponent>> 
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { X, RefreshCw, Sparkles, Code } from 'lucide-vue-next'
+import { X, RefreshCw, Sparkles, Code, Database } from 'lucide-vue-next'
 import type { DashboardWidget, WidgetConfig, WidgetDataSource } from '~/types/dashboard'
 import { useDashboardStore } from '~/stores/dashboard'
 import { useApi } from '~/composables/useApi'
@@ -370,6 +402,8 @@ const previewError = ref<string | null>(null)
 const suggestLoading = ref(false)
 const suggestion = ref<{ suggested_sql: string; explanation: string } | null>(null)
 const sourceColumns = ref<string[]>([])
+const columnsLoading = ref(false)
+const columnsError = ref<string | null>(null)
 
 // Phase 6: Source picker tab — "Org tables" (DataPlane outputs) vs "Live source connections"
 const sourceTab = ref<'orgTables' | 'live'>('live')
@@ -412,6 +446,14 @@ watch(localSql, updateHighlight)
 
 const isDataWidget = computed(() => DATA_WIDGET_TYPES.has(props.widget.widget.type))
 
+// Best-effort source name for the Configure-tab chip: first FROM target in the SQL
+const sourceTableLabel = computed(() => {
+  const sql = props.widget.dataSource?.sql
+  if (!sql) return null
+  const m = sql.match(/\bfrom\s+([`"[]?[\w."`\]]+)/i)
+  return m ? m[1].replace(/[`"[\]]/g, '') : 'SQL query'
+})
+
 // Current config is read from the store so the widget on canvas stays in sync
 const currentConfig = computed(() => props.widget.widget)
 
@@ -446,19 +488,30 @@ async function fetchSourceColumns(force = false) {
       return
     }
   }
+  columnsLoading.value = true
+  columnsError.value = null
   try {
     const response = await api.dashboards.refreshWidget({
       connection_id: ds.connectionId,
       sql: ds.sql,
       mapping: ds.mapping as any,
+      // Identify the widget so the backend can serve from its caching ladder
+      // (Redis / DuckDB / Parquet) instead of a live source-DB query. Skip
+      // widget_id when the SQL was just edited (force) — the Parquet _dash_*
+      // cache is keyed by widget, not SQL, and would return stale rows.
+      dashboard_id: store.currentDashboardId ?? undefined,
+      widget_id: force ? undefined : props.widget.id,
+      widget_sources: props.widget.sources ?? undefined,
     }) as { source_columns?: string[]; source_rows?: any[][] }
     sourceColumns.value = response.source_columns ?? []
     previewRows.value = response.source_rows ?? []
     if (response.source_columns) {
       store.setWidgetSourceData(props.widget.id, response.source_columns, response.source_rows ?? [])
     }
-  } catch {
-    // silently ignore — columns will just be empty
+  } catch (err: any) {
+    columnsError.value = `Couldn't load source columns: ${err?.data?.detail ?? err?.message ?? 'Query failed'}`
+  } finally {
+    columnsLoading.value = false
   }
 }
 
@@ -471,6 +524,10 @@ watch(() => props.widget.id, () => {
   previewError.value = null
   suggestion.value = null
   sourceColumns.value = []
+  columnsError.value = null
+  // Data Source tab state must not leak from the previous widget
+  selectedOrgTable.value = ''
+  sourceTab.value = props.widget.dataSource?.connectionId || orgTables.value.length === 0 ? 'live' : 'orgTables'
   if (isDataWidget.value) fetchSourceColumns()
   activeTab.value = 'configure'
 })
@@ -489,53 +546,32 @@ function onMappingUpdate(patch: Record<string, any>) {
     ...ds,
     mapping: newMapping,
   })
-  // Re-transform cached data so chart/sparkline updates instantly (no server round-trip)
-  if (ds.mapping.type === 'kpi' && sourceColumns.value.length && previewRows.value.length) {
-    import('~/utils/widgetTransform').then(({ transformWidgetData }) => {
-      const config = transformWidgetData(
-        { columns: sourceColumns.value, rows: previewRows.value },
-        newMapping,
-      )
-      // Preserve user-configured style/label/comparison fields by merging
-      // existing config under the freshly transformed value/sparkline/trend.
-      const current = props.widget.widget
-      const existingConfig = current.type === 'kpi' ? (current.config as Record<string, any>) : {}
-      store.updateWidgetConfig(props.widget.id, {
-        type: 'kpi',
-        config: { ...existingConfig, ...config } as any,
-      })
-    })
-  } else if (ds.mapping.type === 'chart' && sourceColumns.value.length && previewRows.value.length) {
+  // Re-transform cached data so chart/sparkline updates instantly (no server round-trip).
+  // Preserves user-configured style/label/comparison fields by merging the existing
+  // config under the freshly transformed data; charts additionally merge per-series
+  // style edits by index (the transform rebuilds datasets from the mapping only).
+  const type = ds.mapping.type
+  if (
+    (type === 'kpi' || type === 'chart' || type === 'pivot_table')
+    && sourceColumns.value.length && previewRows.value.length
+  ) {
     import('~/utils/widgetTransform').then(({ transformWidgetData }) => {
       const transformed = transformWidgetData(
         { columns: sourceColumns.value, rows: previewRows.value },
         newMapping,
       )
       const current = props.widget.widget
-      const existingConfig = current.type === 'chart' ? (current.config as Record<string, any>) : {}
-      // Preserve per-series style edits (showDataLabels, colors, trendline, …) —
-      // the transform rebuilds datasets from the mapping only and would otherwise
-      // reset them to defaults. Merges existing dataset style in by index.
-      mergeRefreshedConfig(props.widget, transformed)
+      const existingConfig = current.type === type ? (current.config as Record<string, any>) : {}
+      if (type === 'chart') mergeRefreshedConfig(props.widget, transformed)
       store.updateWidgetConfig(props.widget.id, {
-        type: 'chart',
+        type,
         config: { ...existingConfig, ...transformed } as any,
       })
-    })
-  } else if (ds.mapping.type === 'pivot_table' && sourceColumns.value.length && previewRows.value.length) {
-    import('~/utils/widgetTransform').then(({ transformWidgetData }) => {
-      const transformed = transformWidgetData(
-        { columns: sourceColumns.value, rows: previewRows.value },
-        newMapping,
-      )
-      // Preserve the pivot structure (row/column dims, values, style); refresh
-      // only the granular rows/columns the pivot computes from.
-      const current = props.widget.widget
-      const existingConfig = current.type === 'pivot_table' ? (current.config as Record<string, any>) : {}
-      store.updateWidgetConfig(props.widget.id, {
-        type: 'pivot_table',
-        config: { ...existingConfig, ...transformed } as any,
-      })
+      columnsError.value = null
+    }).catch((err: any) => {
+      // transformWidgetData throws on e.g. a mapped column missing from the
+      // query — surface it instead of dying as an unhandled rejection.
+      columnsError.value = err?.message ?? 'Failed to apply mapping'
     })
   }
 }
@@ -592,6 +628,11 @@ async function testQuery() {
       connection_id: ds.connectionId,
       sql: localSql.value,
       mapping: ds.mapping as any,
+      // dashboard_id lets DuckDB-over-DataPlane serve the test; widget_id is
+      // omitted on purpose — localSql may differ from the stored widget SQL and
+      // the widget-keyed caches would return stale rows.
+      dashboard_id: store.currentDashboardId ?? undefined,
+      widget_sources: props.widget.sources ?? undefined,
     }) as { config: any; source_columns?: string[]; source_rows?: any[][] }
 
     sourceColumns.value = response.source_columns ?? []

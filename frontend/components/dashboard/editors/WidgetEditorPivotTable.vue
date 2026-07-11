@@ -20,7 +20,7 @@
       <!-- Row dimensions -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Row Dimensions</h3>
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle" />Row Dimensions</h3>
           <button v-if="editMode" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addDim('row')">+ Add</button>
         </div>
@@ -59,7 +59,7 @@
       <!-- Column dimensions -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Column Dimensions</h3>
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle" />Column Dimensions</h3>
           <button v-if="editMode && localColDims.length < 2" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addDim('col')">+ Add</button>
         </div>
@@ -78,7 +78,7 @@
       <!-- Values / metrics -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Metrics</h3>
+          <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide"><span class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-500 align-middle" />Metrics</h3>
           <button v-if="editMode" type="button" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
             @click="addValue()">+ Add</button>
         </div>
@@ -144,13 +144,13 @@
           <span class="text-sm text-gray-700 dark:text-neutral-200">Number of rows</span>
           <input v-model.number="localRowLimit" type="number" min="1" placeholder="All" :disabled="!editMode"
             class="w-20 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-center disabled:bg-gray-50 dark:disabled:bg-neutral-800"
-            @input="emitConfig()" />
+            @input="emitConfig()" @change="clampLimits()" />
         </div>
         <div class="flex items-center justify-between">
           <span class="text-sm text-gray-700 dark:text-neutral-200">Number of columns</span>
           <input v-model.number="localColLimit" type="number" min="1" placeholder="All" :disabled="!editMode"
             class="w-20 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm text-center disabled:bg-gray-50 dark:disabled:bg-neutral-800"
-            @input="emitConfig()" />
+            @input="emitConfig()" @change="clampLimits()" />
         </div>
       </div>
     </div>
@@ -191,6 +191,14 @@ const localRowLimit = ref<number | undefined>(pivotConfig.value.rowLimit)
 const localColLimit = ref<number | undefined>(pivotConfig.value.columnLimit)
 const localSortBy = ref(pivotConfig.value.sortBy ?? '')
 const localSortDir = ref<'asc' | 'desc'>(pivotConfig.value.sortDir ?? 'desc')
+
+// A limit below 1 is meaningless — snap back to "All" so the field doesn't
+// silently persist 0 as unlimited.
+function clampLimits() {
+  if (typeof localRowLimit.value === 'number' && localRowLimit.value < 1) localRowLimit.value = undefined
+  if (typeof localColLimit.value === 'number' && localColLimit.value < 1) localColLimit.value = undefined
+  emitConfig()
+}
 
 let debounce: ReturnType<typeof setTimeout> | null = null
 function emitConfig() {

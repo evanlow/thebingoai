@@ -17,7 +17,7 @@
     <div class="space-y-3">
       <div
         v-for="(control, i) in localControls"
-        :key="i"
+        :key="control.key || i"
         class="rounded-lg border border-gray-200 dark:border-neutral-700 p-3 space-y-2 bg-gray-50 dark:bg-neutral-900"
       >
         <!-- Row 1: Type + Label -->
@@ -270,7 +270,11 @@ function emitUpdate() {
 }
 
 function addControl() {
-  const idx = localControls.value.length
+  // Unique across add/remove cycles — length-based keys collide after a removal,
+  // and filter values are stored per key, so a collision cross-wires two controls.
+  const existing = new Set(localControls.value.map(c => c.key))
+  let idx = localControls.value.length
+  while (existing.has(`filter_${idx}`)) idx++
   localControls.value.push({
     type: 'dropdown',
     label: '',
