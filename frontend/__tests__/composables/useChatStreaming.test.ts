@@ -20,10 +20,17 @@ vi.stubGlobal('watch', watch)
 vi.stubGlobal('computed', computed)
 vi.stubGlobal('onScopeDispose', vi.fn())
 
-// Capture the (request_id-gated) WebSocket handlers so tests can fire events.
+// Capture the (request_id-gated) WebSocket handlers so tests can fire events, and
+// the unsub returned for each registration so we can assert teardown/persistence.
 const wsHandlers = new Map<string, Function>()
+const wsUnsubs = new Map<string, ReturnType<typeof vi.fn>>()
 vi.stubGlobal('useWebSocket', () => ({
-  on: vi.fn((type: string, handler: Function) => { wsHandlers.set(type, handler); return vi.fn() }),
+  on: vi.fn((type: string, handler: Function) => {
+    wsHandlers.set(type, handler)
+    const unsub = vi.fn()
+    wsUnsubs.set(type, unsub)
+    return unsub
+  }),
   isConnected: ref(true),   // true → skip the reconnect/auth branch in sendMessage
   send: vi.fn(),
 }))
@@ -45,6 +52,7 @@ describe('useChatStreaming — query.result → query_files', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     wsHandlers.clear()
+    wsUnsubs.clear()
     store = useChatStore()
     store.pendingConnectionIds = []
   })
@@ -112,5 +120,63 @@ describe('useChatStreaming — query.result → query_files', () => {
 
     expect(lastMsg().results).toHaveLength(MAX_QUERY_RESULT_ROWS)
     expect(lastMsg().query_files![0].row_count).toBe(60)
+  })
+})
+
+describe('useChatStreaming — persistent query.result handler', () => {
+  let store: ReturnType<typeof useChatStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    wsHandlers.clear()
+    wsUnsubs.clear()
+    store = useChatStore()
+    store.pendingConnectionIds = []
+  })
+
+  const lastMsg = () => store.messages.at(-1)!
+  const frame = (result_ref = 'r1') => ({
+    result_ref,
+    data: { columns: ['a'], rows: [[1]], label: 'Q', row_count: 1 },
+  })
+
+  it('survives cleanup() — a late query.result after chat.done still writes to the message', () => {
+    const { sendMessage } = useChatStreaming()
+    sendMessage('hi')
+    const fire = wsHandlers.get('query.result')!
+    const qrUnsub = wsUnsubs.get('query.result')!
+
+    // chat.done with no prior tokens drains instantly, so cleanup() runs synchronously
+    // and tears down the per-turn handlers — but must NOT touch query.result.
+    wsHandlers.get('chat.done')!({ thread_id: 't1' })
+    expect(store.isStreaming).toBe(false)     // cleanup ran
+    expect(qrUnsub).not.toHaveBeenCalled()    // query.result handler outlived it
+
+    fire(frame())
+    expect(lastMsg().results).toEqual([{ a: 1 }])
+    expect(lastMsg().query_files).toEqual([
+      { result_ref: 'r1', label: 'Q', row_count: 1, col_count: 1 },
+    ])
+  })
+
+  it('is replaced at the next turn — the previous turn\'s handler is unsubscribed', () => {
+    const { sendMessage } = useChatStreaming()
+    sendMessage('hi')                         // turn 1
+    const qrUnsub1 = wsUnsubs.get('query.result')!
+
+    sendMessage('again')                      // turn 2 drops the previous handler
+    expect(qrUnsub1).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a frame whose request_id belongs to a different turn', () => {
+    const fire = (() => {
+      const { sendMessage } = useChatStreaming()
+      sendMessage('hi')
+      return wsHandlers.get('query.result')!
+    })()
+
+    fire({ ...frame(), request_id: '__other_turn__' })
+    expect(lastMsg().results).toBeUndefined()
+    expect(lastMsg().query_files).toBeUndefined()
   })
 })

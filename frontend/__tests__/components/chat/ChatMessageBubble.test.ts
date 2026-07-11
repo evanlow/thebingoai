@@ -232,6 +232,15 @@ describe('ChatMessageBubble — query result download', () => {
   const buttonByText = (wrapper: any, text: string) =>
     wrapper.findAll('button').find((b: any) => b.text() === text)
 
+  // CSV/Excel live inside a headlessui Menu (the "Data Export" dropdown) and only
+  // render once opened — click the trigger before reaching for them.
+  const exportTrigger = (wrapper: any) => buttonByText(wrapper, 'Data Export')
+  async function openExport(wrapper: any) {
+    await exportTrigger(wrapper)!.trigger('click')
+    await nextTick()
+    await flushPromises()
+  }
+
   let realCreateElement: typeof document.createElement
   let anchorClick: ReturnType<typeof vi.fn>
   let fakeAnchor: any
@@ -260,6 +269,7 @@ describe('ChatMessageBubble — query result download', () => {
     const blob = new Blob(['x'])
     mockFetchWithRefresh.mockResolvedValue(blob)
     const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
     installAnchorSpy()
 
     await buttonByText(wrapper, 'CSV')!.trigger('click')
@@ -279,6 +289,7 @@ describe('ChatMessageBubble — query result download', () => {
   it('Excel download requests xlsx and names the file .xlsx', async () => {
     mockFetchWithRefresh.mockResolvedValue(new Blob(['x']))
     const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
     installAnchorSpy()
 
     await buttonByText(wrapper, 'Excel')!.trigger('click')
@@ -296,6 +307,7 @@ describe('ChatMessageBubble — query result download', () => {
     const wrapper = mountBubble(withFiles({
       query_files: [{ result_ref: 'ref-1', label: '', row_count: 1, col_count: 1 }],
     }))
+    await openExport(wrapper)
     installAnchorSpy()
 
     await buttonByText(wrapper, 'CSV')!.trigger('click')
@@ -304,25 +316,38 @@ describe('ChatMessageBubble — query result download', () => {
     expect(fakeAnchor.download).toBe('query-export.csv')
   })
 
-  it('disables the row buttons while downloading, re-enables after', async () => {
+  it('disables the trigger while downloading, re-enables after', async () => {
+    // The export-race guard lives as :disabled on the "Data Export" trigger. Real
+    // headlessui MenuButton (as="template") doesn't forward a reactive disabled in
+    // happy-dom, so swap UiDropdown for a passthrough that renders the trigger slot
+    // + items plainly — this exercises the bubble's own binding, not headlessui.
+    const UiDropdownPassthrough = {
+      name: 'UiDropdown',
+      props: ['items', 'align'],
+      template:
+        '<div><slot name="trigger" /><button v-for="(it,i) in items" :key="i" class="item" @click="it.onClick">{{ it.label }}</button></div>',
+    }
     let resolveFetch!: (b: Blob) => void
     mockFetchWithRefresh.mockReturnValue(new Promise<Blob>((r) => { resolveFetch = r }))
-    const wrapper = mountBubble(withFiles())
+    const wrapper = mount(ChatMessageBubble, {
+      props: { message: withFiles(), showActions: false, actionType: null, isLast: false, agentName: 'Bingo' },
+      global: { stubs: { UiDropdown: UiDropdownPassthrough } },
+    })
     installAnchorSpy()
-    const csv = () => buttonByText(wrapper, 'CSV')!
 
-    await csv().trigger('click')
+    await buttonByText(wrapper, 'CSV')!.trigger('click')
     await nextTick()
-    expect(csv().attributes('disabled')).toBeDefined()
+    expect(exportTrigger(wrapper)!.attributes('disabled')).toBeDefined()
 
     resolveFetch(new Blob(['x']))
     await flushPromises()
-    expect(csv().attributes('disabled')).toBeUndefined()
+    expect(exportTrigger(wrapper)!.attributes('disabled')).toBeUndefined()
   })
 
   it('shows an "expired" toast on 404', async () => {
     mockFetchWithRefresh.mockRejectedValue({ statusCode: 404 })
     const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
     installAnchorSpy()
 
     await buttonByText(wrapper, 'CSV')!.trigger('click')
@@ -334,11 +359,24 @@ describe('ChatMessageBubble — query result download', () => {
   it('shows the error message on a non-404 failure', async () => {
     mockFetchWithRefresh.mockRejectedValue({ message: 'boom' })
     const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
     installAnchorSpy()
 
     await buttonByText(wrapper, 'CSV')!.trigger('click')
     await flushPromises()
 
     expect(toast.error).toHaveBeenCalledWith('boom')
+  })
+
+  it('renders a Data Export trigger per query_file that opens to CSV + Excel', async () => {
+    const wrapper = mountBubble(withFiles())
+    // Trigger is present; CSV/Excel are hidden until the dropdown is opened.
+    expect(exportTrigger(wrapper)).toBeTruthy()
+    expect(buttonByText(wrapper, 'CSV')).toBeUndefined()
+    expect(buttonByText(wrapper, 'Excel')).toBeUndefined()
+
+    await openExport(wrapper)
+    expect(buttonByText(wrapper, 'CSV')).toBeTruthy()
+    expect(buttonByText(wrapper, 'Excel')).toBeTruthy()
   })
 })
