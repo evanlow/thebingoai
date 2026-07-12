@@ -169,6 +169,7 @@
           @share="handleShare"
           @update:title="handleTitleUpdate"
           @analyze="openAnalyzePanel"
+          @briefs="briefsPanel = !briefsPanel"
         />
 
         <!-- Toolbar — edit-mode only -->
@@ -204,6 +205,15 @@
               :dashboard-id="store.currentDashboard?.id ?? 0"
               :class="isMobile ? 'fixed inset-0 z-50 w-full' : ''"
               @close="analyzePanel = false"
+            />
+          </Transition>
+          <Transition name="panel-slide">
+            <DashboardBriefsPanel
+              v-if="briefsPanel && store.currentDashboard?.id"
+              :key="store.currentDashboard?.id"
+              :dashboard-id="store.currentDashboard?.id ?? 0"
+              :class="isMobile ? 'fixed inset-0 z-50 w-full' : ''"
+              @close="briefsPanel = false"
             />
           </Transition>
         </div>
@@ -265,6 +275,7 @@ import { toDashboardListItem } from '~/types/dashboard'
 import type { DashboardWidget } from '~/types/dashboard'
 import DashboardWidgetEditor from '~/components/dashboard/editors/DashboardWidgetEditor.vue'
 import DashboardAnalyzePanel from '~/components/dashboard/DashboardAnalyzePanel.vue'
+import DashboardBriefsPanel from '~/components/dashboard/DashboardBriefsPanel.vue'
 import DashboardTable from '~/components/dashboard/DashboardTable.vue'
 import DashboardCardGrid from '~/components/dashboard/DashboardCardGrid.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
@@ -322,6 +333,7 @@ const sqlEditorWidget = ref<DashboardWidget | null>(null)
 const sqlEditorError = ref<string | null>(null)
 const configEditorWidget = ref<DashboardWidget | null>(null)
 const analyzePanel = ref(false)
+const briefsPanel = ref(false)
 
 function openAnalyzePanel() {
   analyzePanel.value = true
