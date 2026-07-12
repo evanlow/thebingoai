@@ -23,6 +23,13 @@ describe('resolveColumn', () => {
     }
   })
 
+  it('clamps labels clustered above the top edge without overlap', () => {
+    const items = [mk(-20), mk(-18)] // both above chartArea.top (small slices at pie top)
+    resolveColumn(items, 0, 400, 15)
+    expect(items[0].y).toBe(0)
+    expect(items[1].y - items[0].y).toBeGreaterThanOrEqual(15 - 0.001)
+  })
+
   it('leaves already-spaced labels untouched', () => {
     const items = [mk(50), mk(100), mk(150)]
     resolveColumn(items, 0, 400, 15)
