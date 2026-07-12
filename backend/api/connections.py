@@ -7,7 +7,7 @@ from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection, ProfilingStatus
 from backend.models.team_membership import TeamMembership
 from backend.models.team_connection_policy import TeamConnectionPolicy
-from backend.schemas.semantics import SemanticLayerUpdate
+from backend.schemas.semantics import SemanticLayerUpdate, GenerateDescriptionsRequest
 from backend.schemas.connection import (
     ConnectionCreate, ConnectionUpdate, ConnectionResponse,
     ConnectionTestResponse, SchemaRefreshResponse, ConnectorTypeResponse,
@@ -548,6 +548,62 @@ async def update_connection_semantics(
     )
     db.commit()
     return layer
+
+
+@router.post("/{connection_id}/semantics/generate-descriptions", status_code=202)
+async def generate_connection_descriptions(
+    connection_id: str,
+    request: GenerateDescriptionsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Queue LLM-drafted glossary descriptions for the given tables.
+
+    Drafts land as ``{source: "llm", status: "draft"}`` for the user to review;
+    they never reach agent prompts until confirmed.
+    """
+    connection = _find_connection(db, connection_id, current_user)
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    _governance_require_mutate_connection(current_user, connection)
+
+    from backend.services.connection_context import load_connection_context
+    context = load_connection_context(db, connection.id)
+    if not context:
+        raise HTTPException(status_code=409, detail="Connection is not profiled yet.")
+
+    available = set((context.get("tables") or {}).keys())
+    unknown = [t for t in request.tables if t not in available]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown tables: {', '.join(unknown)}")
+
+    from backend.tasks.semantic_tasks import (
+        generate_glossary_drafts,
+        get_generation_status,
+        set_generation_status,
+    )
+    if get_generation_status(connection.id).get("status") == "running":
+        raise HTTPException(status_code=400, detail="Generation is already in progress")
+
+    set_generation_status(connection.id, status="queued", progress=f"0/{len(request.tables)}")
+    generate_glossary_drafts.delay(connection.id, request.tables)
+    return {"status": "queued", "tables": len(request.tables)}
+
+
+@router.get("/{connection_id}/semantics/generation-status")
+async def get_connection_generation_status(
+    connection_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Poll the status of an LLM description-generation run."""
+    connection = _find_connection(db, connection_id, current_user)
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    from backend.tasks.semantic_tasks import get_generation_status
+    return get_generation_status(connection.id)
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

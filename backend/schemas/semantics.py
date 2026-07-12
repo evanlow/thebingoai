@@ -15,3 +15,8 @@ class SemanticLayerUpdate(BaseModel):
     glossary: Optional[Dict[str, Any]] = None
     relationships: Optional[List[Dict[str, Any]]] = None
     definitions: Optional[List[Dict[str, Any]]] = None
+
+
+class GenerateDescriptionsRequest(BaseModel):
+    """Tables to draft glossary descriptions for via the LLM."""
+    tables: List[str] = Field(min_length=1)
