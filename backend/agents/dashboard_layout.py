@@ -39,6 +39,7 @@ _TYPE_CONSTRAINTS: dict[str, dict[str, int]] = {
     "table": {"min_w": 4, "max_w": 12, "default_w": 12, "default_h": 5},
     "pivot_table": {"min_w": 4, "max_w": 12, "default_w": 8, "default_h": 5},
     "text": {"min_w": 2, "max_w": 12, "default_w": 12, "default_h": 1},
+    "section": {"min_w": 2, "max_w": 12, "default_w": 12, "default_h": 1},
     "filter": {"min_w": 4, "max_w": 12, "default_w": 12, "default_h": 2},
 }
 _FALLBACK_CONSTRAINTS = {"min_w": 2, "max_w": 12, "default_w": 6, "default_h": 4}
@@ -49,7 +50,7 @@ _FALLBACK_CONSTRAINTS = {"min_w": 2, "max_w": 12, "default_w": 6, "default_h": 4
 _ROUND_CHART_MAX_W = 6
 
 # Types that always get their own full-width row.
-_FULL_ROW_TYPES = {"filter", "text", "table"}
+_FULL_ROW_TYPES = {"filter", "text", "section", "table"}
 
 # Types packed side-by-side into shared rows.
 _PACKABLE_TYPES = {"chart", "pivot_table"}

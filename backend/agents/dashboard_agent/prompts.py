@@ -19,7 +19,7 @@ Phase 1 — Context:
 
 Phase 2 — Design (informed by context):
 4. Call `get_widget_spec("all")` ONCE to fetch the specs for every widget type
-   (kpi, chart, table, pivot_table, filter, text) in a single call BEFORE designing.
+   (kpi, chart, table, pivot_table, filter, section, text) in a single call BEFORE designing.
    Consider for each type whether the data supports it; do not default to charts only.
    - Pivot rule: if the data context has 2+ categorical dimensions and at least one numeric
      metric, you MUST include exactly one pivot_table in Section 4 (metric by A × B).
@@ -112,9 +112,9 @@ Structure every dashboard as a top-to-bottom data story:
   - `(YTD)` ≡ `(Year to Date)` — pick one form, prefer `(Year to Date)`.
 - If the user's request says "show me spend for yesterday, last 7 days, and last 30 days", you must NOT generate three "Spend" KPIs. Pick the most useful window (typically Last 30 Days), put it in the KPI, and let the filter bar drive the window.
 
-**Section 3 — Analysis & Trends:** Text section header, then 3-5 charts with varied types.
+**Section 3 — Analysis & Trends:** Section widget header, then 3-5 charts with varied types.
 
-**Section 4 — Detail & Drill-Down:** One Text section header (e.g. "## Detail & Records"), then 1-2 detail tables. Use `title` on each table widget for its specific title — do NOT add extra Text widgets just to title individual tables.
+**Section 4 — Detail & Drill-Down:** One section widget header (e.g. `{"type": "section", "title": "Detail & Records"}`), then 1-2 detail tables. Use `title` on each table widget for its specific title — do NOT add text widgets to title sections or tables.
   - When the question is "metric by A × B" (two categorical breakdowns at once, e.g. revenue by region × quarter), use ONE `pivot_table` here instead of a flat table.
 
 ### Layout (positions are computed by the backend)
@@ -130,8 +130,8 @@ consecutive charts share the row equally (6+6).
 ### Widget Count Guidelines
 
 - Target **9-13 widgets** total (min 7, max 15)
-- 3-5 KPIs + 1 filter bar + 2 text section headers + 3-5 charts + 1-2 tables (a pivot_table counts as a table)
-- Text widgets are section headers only (one before charts, one before tables) — tables use `config.title` for their own title
+- 3-5 KPIs + 1 filter bar + 2 section widgets + 3-5 charts + 1-2 tables (a pivot_table counts as a table)
+- Section widgets are the section headers (one before charts, one before tables) — tables use `config.title` for their own title. Text widgets are for optional narrative prose only.
 
 ### Chart Type Selection Guide
 
@@ -170,7 +170,7 @@ Rules:
 Before configuring widgets, call `get_widget_spec(widget_type)` to get the complete
 field definitions, mapping structure, SQL patterns, and best practices.
 
-Available types: kpi, chart, table, pivot_table, filter, text.
+Available types: kpi, chart, table, pivot_table, filter, section, text.
 
 Emit LEAN widgets: a flat object `{"type": <type>, ...params}` per widget. Do NOT
 output position, the `widget`/`config` envelope, or a `mapping` object — the backend
@@ -207,10 +207,10 @@ Efficiency tips for updates:
 - Reuse an existing widget's `connectionId` + `sql` — only call list_tables/get_table_schema for NEW widget types.
 - For "add a chart" requests, reuse existing widgets' SQL patterns as templates.
 
-## Text Section Header Example (lean)
+## Section Header Example (lean)
 
 ```json
-{"type": "text", "content": "## Trends & Breakdown"}
+{"type": "section", "title": "Trends & Breakdown"}
 ```
 
 """

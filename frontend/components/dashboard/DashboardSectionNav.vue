@@ -1,5 +1,5 @@
 <template>
-  <nav v-if="sections.length >= 2" ref="navRef" class="section-nav">
+  <nav v-if="sections.length >= 2" class="section-nav">
     <button
       v-for="section in sections"
       :key="section.id"
@@ -24,7 +24,6 @@ const props = defineProps<{
   gridWrapper: HTMLElement | null
 }>()
 
-const navRef = ref<HTMLElement | null>(null)
 const activeId = ref<string | null>(null)
 
 function scrollContainer(): HTMLElement | null {
@@ -46,21 +45,20 @@ function sectionScrollTop(id: string): number | null {
   return wrapperTop + b.top
 }
 
-function navOffset(): number {
-  return (navRef.value?.offsetHeight ?? 0) + 10
-}
+// The bar sits outside the scroll viewport — only a small breathing offset.
+const JUMP_OFFSET = 10
 
 function jump(id: string) {
   const container = scrollContainer()
   const top = sectionScrollTop(id)
   if (!container || top === null) return
-  container.scrollTo({ top: Math.max(0, top - navOffset()), behavior: 'smooth' })
+  container.scrollTo({ top: Math.max(0, top - JUMP_OFFSET), behavior: 'smooth' })
 }
 
 function updateActive() {
   const container = scrollContainer()
   if (!container) return
-  const cursor = container.scrollTop + navOffset() + 16
+  const cursor = container.scrollTop + JUMP_OFFSET + 24
   let current: string | null = props.sections[0]?.id ?? null
   for (const section of props.sections) {
     const top = sectionScrollTop(section.id)
@@ -83,17 +81,14 @@ watch(() => [props.sections, props.bounds], updateActive, { deep: true })
 
 <style scoped>
 .section-nav {
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  padding: 6px 2px 8px;
-  margin-bottom: 4px;
-  background: color-mix(in oklch, var(--paper-0) 88%, transparent);
-  backdrop-filter: blur(6px);
+  padding: 8px 24px;
+  background: var(--paper-0);
+  border-bottom: 1px solid var(--line);
 }
 .section-nav-pill {
   display: inline-flex;

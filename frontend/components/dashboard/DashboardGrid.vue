@@ -1,7 +1,4 @@
 <template>
-  <!-- Section jump nav — sticky within the page's scroll container -->
-  <DashboardSectionNav :sections="sections" :bounds="bounds" :grid-wrapper="wrapperRef" />
-
   <div ref="wrapperRef" class="relative">
     <!-- Section bands — painted behind the grid items -->
     <DashboardSectionBands :sections="sections" :bounds="bounds" />
@@ -32,13 +29,15 @@
 
 <script setup lang="ts">
 import type { DashboardWidget } from '~/types/dashboard'
+import type { DashboardSection, SectionBounds } from '~/composables/useDashboardSections'
 import { useDashboardGrid } from '~/composables/useDashboardGrid'
-import { useDashboardSections } from '~/composables/useDashboardSections'
 import { useDashboardStore } from '~/stores/dashboard'
 
 const props = defineProps<{
   widgets: DashboardWidget[]
   editMode: boolean
+  sections: DashboardSection[]
+  bounds: Record<string, SectionBounds>
 }>()
 
 const emit = defineEmits<{
@@ -54,7 +53,9 @@ const widgetsRef = computed(() => props.widgets)
 const { contentRefs, renderedWidgets, resizeWidget } = useDashboardGrid(containerRef, widgetsRef)
 provide('resizeWidget', resizeWidget)
 
-const { sections, bounds } = useDashboardSections(widgetsRef, wrapperRef)
+// Sections are derived by the page (which also renders the jump nav);
+// this component only paints the bands and exposes the measuring root.
+defineExpose({ wrapperEl: wrapperRef })
 
 function onRemove(id: string) {
   store.removeWidget(id)

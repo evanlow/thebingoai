@@ -113,6 +113,12 @@
         :widget-id="widget.id"
         :config="widget.widget.config"
       />
+      <DashboardWidgetSection
+        v-else-if="widget.widget.type === 'section'"
+        :widget-id="widget.id"
+        :config="widget.widget.config"
+        :edit-mode="editMode"
+      />
     </div>
 
     <!-- Provenance footer (view mode only) -->

@@ -91,7 +91,7 @@ defineProps<{
   widgetCount: number
 }>()
 
-const emit = defineEmits<{ 'add-widget': [type: WidgetType | 'section'] }>()
+const emit = defineEmits<{ 'add-widget': [type: WidgetType] }>()
 </script>
 
 <style scoped>

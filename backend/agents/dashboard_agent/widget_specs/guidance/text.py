@@ -2,26 +2,27 @@
 
 TEXT_GUIDANCE = """### Usage
 
-Text widgets are used as **section headers** to structure the dashboard narrative.
+Text widgets are for **narrative prose** — commentary, methodology notes,
+caveats. Section headers are the `section` widget type, NOT text widgets.
 
 ### Example
 
 ```json
 {
-  "id": "header_analysis",
+  "id": "note_method",
   "position": {"x": 0, "y": 4, "w": 12, "h": 1},
   "widget": {
     "type": "text",
-    "config": {"content": "## Trends & Breakdown"}
+    "config": {"content": "Figures exclude cancelled orders."}
   }
 }
 ```
 
 ### Best Practices
 
-- Use `## Heading` markdown for section titles
-- Place before each dashboard section (y=4 before charts, y=15 before tables)
-- Default width w=12, h=1
+- Use sparingly — most dashboards need zero text widgets
+- Markdown supported; keep content concise
+- Do NOT use `## Heading` text widgets as section headers — emit a
+  `section` widget instead
 - No dataSource needed — text is static content
-- Keep content concise — these are signposts, not paragraphs
 """

@@ -2,7 +2,7 @@
   <div ref="wrapperRef" :class="[alignClass, editMode ? 'px-3 py-1 compact-text' : 'p-4']">
     <template v-if="isSection">
       <div class="section-header" :class="{ 'justify-center': config.alignment === 'center', 'justify-end': config.alignment === 'right' }">
-        <span class="section-header-accent" :style="{ background: `var(--section-${config.sectionColor ?? 'default'}-line)` }" />
+        <span class="section-header-accent" :style="{ background: `var(--section-${sectionColorToken(config.sectionColor)}-line)` }" />
         <span class="section-header-title">{{ headerTitle }}</span>
       </div>
       <UiMarkdownRenderer v-if="headerBody" :content="headerBody" />
@@ -13,6 +13,7 @@
 
 <script setup lang="ts">
 import type { TextWidgetConfig } from '~/types/dashboard'
+import { sectionColorToken } from '~/types/dashboard'
 import { sectionTitle } from '~/composables/useDashboardSections'
 
 const props = defineProps<{

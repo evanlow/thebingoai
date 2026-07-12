@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
-import type { DashboardWidget, SectionColor, TextWidgetConfig } from '~/types/dashboard'
-import { isSectionHeader } from '~/types/dashboard'
+import type { DashboardWidget, SectionColor, SectionWidgetConfig, TextWidgetConfig } from '~/types/dashboard'
+import { isSectionHeader, sectionColorToken } from '~/types/dashboard'
 
 export interface DashboardSection {
   id: string          // header widget id — stable scroll/jump target
@@ -34,11 +34,15 @@ export function useDashboardSections(
 
   const sections = computed<DashboardSection[]>(() =>
     readingOrder.value.filter(isSectionHeader).map((w) => {
+      if (w.widget.type === 'section') {
+        const config = w.widget.config as SectionWidgetConfig
+        return { id: w.id, title: (config.title ?? '').trim(), color: sectionColorToken(config.sectionColor) }
+      }
       const config = w.widget.config as TextWidgetConfig
       return {
         id: w.id,
         title: sectionTitle(config.content),
-        color: config.sectionColor ?? 'default',
+        color: sectionColorToken(config.sectionColor),
       }
     }),
   )
@@ -106,14 +110,17 @@ export function useDashboardSections(
   // Header flag/color edits change sections without moving anything.
   watch([sections, membership], () => nextTick(scheduleMeasure))
 
+  // Catches container reflows the store can't see: initial staggered widget
+  // mount, window resize, mobile 1-column collapse. The wrapper element can
+  // arrive after setup (it lives inside a child component), so attach on watch.
   let resizeObserver: ResizeObserver | undefined
-  onMounted(() => {
-    scheduleMeasure()
-    // Catches container reflows the store can't see: initial staggered widget
-    // mount, window resize, mobile 1-column collapse.
+  watch(wrapperRef, (el) => {
+    resizeObserver?.disconnect()
+    if (!el) return
     resizeObserver = new ResizeObserver(scheduleMeasure)
-    if (wrapperRef.value) resizeObserver.observe(wrapperRef.value)
-  })
+    resizeObserver.observe(el)
+    scheduleMeasure()
+  }, { immediate: true })
   onBeforeUnmount(() => {
     resizeObserver?.disconnect()
     cancelAnimationFrame(raf)

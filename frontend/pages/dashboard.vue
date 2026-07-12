@@ -179,12 +179,22 @@
           @add-widget="handleAddWidget"
         />
 
+        <!-- Section jump nav — solid bar, frozen above the scrolling grid -->
+        <DashboardSectionNav
+          :sections="sections"
+          :bounds="sectionBounds"
+          :grid-wrapper="gridRef?.wrapperEl ?? null"
+        />
+
         <!-- Grid + inline editor -->
         <div class="flex flex-1 overflow-hidden">
           <div class="flex-1 overflow-y-auto p-4" data-dashboard-scroll>
             <DashboardGrid
+              ref="gridRef"
               :widgets="store.currentWidgets"
               :edit-mode="store.editMode"
+              :sections="sections"
+              :bounds="sectionBounds"
               @open-sql-editor="openSqlEditor"
               @edit-config="openConfigEditor"
             />
@@ -274,6 +284,7 @@ import { useWorkspaceStore } from '~/stores/workspace'
 import { toDashboardListItem } from '~/types/dashboard'
 import type { DashboardWidget } from '~/types/dashboard'
 import DashboardWidgetEditor from '~/components/dashboard/editors/DashboardWidgetEditor.vue'
+import { useDashboardSections } from '~/composables/useDashboardSections'
 import DashboardAnalyzePanel from '~/components/dashboard/DashboardAnalyzePanel.vue'
 import DashboardBriefsPanel from '~/components/dashboard/DashboardBriefsPanel.vue'
 import DashboardTable from '~/components/dashboard/DashboardTable.vue'
@@ -329,6 +340,12 @@ watch(
 )
 
 // ── Drill-down state ──────────────────────────────────────
+const gridRef = ref<{ wrapperEl: HTMLElement | null } | null>(null)
+const { sections, bounds: sectionBounds } = useDashboardSections(
+  computed(() => store.currentWidgets),
+  computed(() => gridRef.value?.wrapperEl ?? null),
+)
+
 const sqlEditorWidget = ref<DashboardWidget | null>(null)
 const sqlEditorError = ref<string | null>(null)
 const configEditorWidget = ref<DashboardWidget | null>(null)
@@ -399,10 +416,9 @@ function handleShare() {
   toast.success('Link copied to clipboard')
 }
 
-function handleAddWidget(type: import('~/types/dashboard').WidgetType | 'section') {
+function handleAddWidget(type: import('~/types/dashboard').WidgetType) {
   if (!store.editMode) store.toggleEditMode()
-  if (type === 'section') store.addSection()
-  else store.addWidget(type)
+  store.addWidget(type)
 }
 
 // ── List view state ───────────────────────────────────────

@@ -341,6 +341,7 @@ import WidgetEditorPivotTableStyle from './WidgetEditorPivotTableStyle.vue'
 // Defined at module level so they're singletons, not re-created on each setup call
 const editorComponents: Record<string, ReturnType<typeof defineAsyncComponent>> = {
   text: defineAsyncComponent(() => import('./WidgetEditorText.vue')),
+  section: defineAsyncComponent(() => import('./WidgetEditorSection.vue')),
   kpi: defineAsyncComponent(() => import('./WidgetEditorKpi.vue')),
   table: defineAsyncComponent(() => import('./WidgetEditorTable.vue')),
   pivot_table: defineAsyncComponent(() => import('./WidgetEditorPivotTable.vue')),

@@ -11,7 +11,7 @@ vi.stubGlobal('onMounted', () => {})
 vi.stubGlobal('onBeforeUnmount', () => {})
 
 import { useDashboardSections, sectionTitle } from '~/composables/useDashboardSections'
-import { isSectionHeader } from '~/types/dashboard'
+import { isSectionHeader, sectionColorToken } from '~/types/dashboard'
 import type { DashboardWidget } from '~/types/dashboard'
 
 function widget(id: string, y: number, type = 'chart', config: Record<string, any> = {}): DashboardWidget {
@@ -49,7 +49,30 @@ describe('isSectionHeader', () => {
   })
 })
 
+describe('sectionColorToken', () => {
+  it('passes known tokens, clamps everything else to default', () => {
+    expect(sectionColorToken('violet')).toBe('violet')
+    expect(sectionColorToken(undefined)).toBe('default')
+    expect(sectionColorToken('x);background:url(//evil')).toBe('default')
+  })
+})
+
 describe('useDashboardSections', () => {
+  it('treats section widgets as headers and clamps their color', () => {
+    const widgets = ref<DashboardWidget[]>([
+      widget('s1', 0, 'section', { title: 'Overview', sectionColor: 'blue' }),
+      widget('c1', 1),
+      widget('s2', 5, 'section', { title: 'Detail', sectionColor: 'x);url(//evil' }),
+      header('legacy', 9, { content: '## Old Style' }),
+    ])
+    const { sections } = useDashboardSections(widgets, ref(null))
+    expect(sections.value).toEqual([
+      { id: 's1', title: 'Overview', color: 'blue' },
+      { id: 's2', title: 'Detail', color: 'default' },
+      { id: 'legacy', title: 'Old Style', color: 'default' },
+    ])
+  })
+
   it('derives sections in reading order with default color', () => {
     const widgets = ref<DashboardWidget[]>([
       header('h2', 10, { content: '## Detail & Records' }),
