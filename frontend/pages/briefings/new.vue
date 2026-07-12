@@ -21,6 +21,8 @@
 </template>
 
 <script setup lang="ts">
+import { trackEvent } from '~/utils/analytics'
+
 const route = useRoute()
 const error = ref('')
 const { fetchWithRefresh } = useApi()
@@ -33,6 +35,7 @@ onMounted(async () => {
   }
   try {
     const resp = await fetchWithRefresh(`/api/dashboards/${dashboardId}/brief`, { method: 'POST' })
+    trackEvent('briefing_create', { dashboard_id: Number(dashboardId) })
     useBriefingsList().refresh()
     await navigateTo(`/briefings/${resp.briefing_id}`, { replace: true })
   } catch (err: any) {

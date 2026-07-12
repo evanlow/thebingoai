@@ -1,3 +1,5 @@
+import { trackEvent } from '~/utils/analytics'
+
 export interface PipelineScheduleTable {
   source_table: string
   target_table: string
@@ -95,10 +97,12 @@ export function createPipelinesApi(fetchWithRefresh: Function) {
       return fetchWithRefresh(`/api/pipelines/${id}`, {})
     },
     async create(data: PipelineCreate): Promise<Pipeline> {
-      return fetchWithRefresh('/api/pipelines', {
+      const result = await fetchWithRefresh('/api/pipelines', {
         method: 'POST',
         body: data,
       })
+      trackEvent('pipeline_create', { mode: data?.mode ?? 'unknown' })
+      return result
     },
     async update(id: string, data: PipelineUpdate): Promise<Pipeline> {
       return fetchWithRefresh(`/api/pipelines/${id}`, {
@@ -118,9 +122,11 @@ export function createPipelinesApi(fetchWithRefresh: Function) {
       })
     },
     async run(id: string): Promise<{ run_id: string; status: string }> {
-      return fetchWithRefresh(`/api/pipelines/${id}/run`, {
+      const result = await fetchWithRefresh(`/api/pipelines/${id}/run`, {
         method: 'POST',
       })
+      trackEvent('pipeline_run_manual')
+      return result
     },
     async redetectWatermark(id: string): Promise<Pipeline> {
       return fetchWithRefresh(`/api/pipelines/${id}/redetect-watermark`, {
@@ -128,10 +134,12 @@ export function createPipelinesApi(fetchWithRefresh: Function) {
       })
     },
     async loadHistory(id: string, since: string): Promise<{ run_id: string; status: string; since: string }> {
-      return fetchWithRefresh(`/api/pipelines/${id}/load-history`, {
+      const result = await fetchWithRefresh(`/api/pipelines/${id}/load-history`, {
         method: 'POST',
         body: { since },
       })
+      trackEvent('pipeline_backfill')
+      return result
     },
   }
 }

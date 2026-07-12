@@ -10,6 +10,8 @@ COPY . .
 # API base URL in the browser — defaults to /api (nginx proxies it)
 ARG NUXT_PUBLIC_API_BASE_URL=/api
 ENV NUXT_PUBLIC_API_BASE_URL=$NUXT_PUBLIC_API_BASE_URL
+ARG NUXT_PUBLIC_GA4_ID=
+ENV NUXT_PUBLIC_GA4_ID=$NUXT_PUBLIC_GA4_ID
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 RUN npm run build

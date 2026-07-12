@@ -20,6 +20,9 @@ vi.stubGlobal('useBriefingsList', () => ({ refresh: mockRefreshBriefings }))
 let query: Record<string, any> = {}
 vi.stubGlobal('useRoute', () => ({ query }))
 
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
+
 import NewBriefing from '~/pages/briefings/new.vue'
 
 describe('briefings/new', () => {
@@ -50,6 +53,26 @@ describe('briefings/new', () => {
 
     expect(mockNavigate).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain('Daily credits used up.')
+    document.body.innerHTML = ''
+  })
+
+  it('fires GA4 briefing_create with the numeric dashboard id on success', async () => {
+    trackEventMock.mockClear()
+    mockFetch.mockResolvedValue({ briefing_id: 46, status: 'generating' })
+    mount(NewBriefing, { attachTo: document.body })
+    await flushPromises()
+
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('briefing_create', { dashboard_id: 40 })
+    document.body.innerHTML = ''
+  })
+
+  it('fires no GA4 event when the POST fails', async () => {
+    trackEventMock.mockClear()
+    mockFetch.mockRejectedValue({ data: { detail: 'nope' } })
+    mount(NewBriefing, { attachTo: document.body })
+    await flushPromises()
+
+    expect(trackEventMock).not.toHaveBeenCalled()
     document.body.innerHTML = ''
   })
 

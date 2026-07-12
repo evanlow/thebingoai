@@ -1,3 +1,5 @@
+import { trackEvent } from '~/utils/analytics'
+
 export interface PdfOp {
   block: number
   page: number
@@ -194,6 +196,7 @@ export function useBriefingPdf() {
       }
 
       doc.save(`briefing-${slug(headline)}.pdf`)
+      trackEvent('briefing_export_pdf')
     } catch (e) {
       console.error('Briefing PDF export failed', e)
     } finally {

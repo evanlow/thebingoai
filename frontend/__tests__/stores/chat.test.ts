@@ -9,6 +9,9 @@ vi.stubGlobal('localStorage', {
   removeItem: vi.fn((key: string) => { delete storage[key] }),
 })
 
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
+
 import { useChatStore } from '~/stores/chat'
 import type { Conversation, Message } from '~/stores/chat'
 
@@ -302,5 +305,20 @@ describe('chat store', () => {
     store.moveToArchived('thread-1')
 
     expect(store.conversationOffset).toBe(0)
+  })
+
+  // ── GA4 events ────────────────────────────────────────────────────
+  it('startNewChat fires chat_start', () => {
+    trackEventMock.mockClear()
+    const store = useChatStore()
+    store.startNewChat()
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('chat_start')
+  })
+
+  it('addMessage fires no GA4 event (heartbeats/relays also land here)', () => {
+    trackEventMock.mockClear()
+    const store = useChatStore()
+    store.addMessage(makeMessage())
+    expect(trackEventMock).not.toHaveBeenCalled()
   })
 })

@@ -3,6 +3,7 @@ import type { Dashboard, DashboardWidget, FilterControl, GridPosition, WidgetDat
 import { WIDGET_DEFAULTS } from '~/types/dashboard'
 import { useApi } from '~/composables/useApi'
 import { mergeRefreshedConfig } from '~/utils/widgetMerge'
+import { trackEvent } from '~/utils/analytics'
 
 export interface ActiveFilter {
   column: string
@@ -175,6 +176,7 @@ export const useDashboardStore = defineStore('dashboard', {
         updatedAt: data.updated_at,
       }
       this.dashboards.push(dashboard)
+      trackEvent('dashboard_create', { dashboard_id: dashboard.id })
       return dashboard
     },
 
@@ -234,6 +236,7 @@ export const useDashboardStore = defineStore('dashboard', {
     },
 
     async openDashboard(id: number) {
+      trackEvent('dashboard_view', { dashboard_id: id })
       this.currentDashboardId = id
       this.editMode = false
       this.dirty = false
@@ -310,6 +313,7 @@ export const useDashboardStore = defineStore('dashboard', {
 
       dashboard.widgets.push(newWidget)
       this.dirty = true
+      trackEvent('widget_add', { widget_type: type })
     },
 
     removeWidget(widgetId: string) {
@@ -394,6 +398,7 @@ export const useDashboardStore = defineStore('dashboard', {
       const requestKey = `${dashboardId}:${JSON.stringify(filters ?? [])}`
       if (this.bulkKeyInFlight === requestKey) return
       this.bulkKeyInFlight = requestKey
+      trackEvent('widget_refresh', { dashboard_id: dashboardId, widget_count: dashboard.widgets.length })
 
       const bulkSeq = ++this.bulkSeq
       // Snapshot per-widget seqs: a single-widget refresh issued after this

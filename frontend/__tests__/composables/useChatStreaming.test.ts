@@ -37,6 +37,9 @@ vi.stubGlobal('useWebSocket', () => ({
 
 vi.stubGlobal('useCreditBalance', () => ({ refresh: vi.fn() }))
 vi.stubGlobal('useDatasetStatus', () => ({ datasets: ref([]) }))
+
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
 vi.stubGlobal('useMentions', () => ({
   extractMentionConnectionIds: () => [],
   extractMentions: () => [],
@@ -178,5 +181,69 @@ describe('useChatStreaming — persistent query.result handler', () => {
     fire({ ...frame(), request_id: '__other_turn__' })
     expect(lastMsg().results).toBeUndefined()
     expect(lastMsg().query_files).toBeUndefined()
+  })
+})
+
+describe('useChatStreaming — GA4 chat events', () => {
+  let store: ReturnType<typeof useChatStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    wsHandlers.clear()
+    wsUnsubs.clear()
+    trackEventMock.mockClear()
+    store = useChatStore()
+    store.pendingConnectionIds = []
+  })
+
+  it('sendMessage fires chat_message_sent with the current thread id', () => {
+    store.currentThreadId = 't9'
+    const { sendMessage } = useChatStreaming()
+    sendMessage('hi')
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('chat_message_sent', {
+      thread_id: 't9',
+    })
+  })
+
+  it('chat.done fires chat_response_received with has_sql false when no SQL ran', () => {
+    const { sendMessage } = useChatStreaming()
+    sendMessage('hi')
+    trackEventMock.mockClear()
+    // No streamed tokens → the drip is drained → finalize runs synchronously.
+    wsHandlers.get('chat.done')!({ thread_id: 't1' })
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('chat_response_received', {
+      thread_id: 't1',
+      has_sql: false,
+    })
+  })
+
+  it('chat.done fires has_sql true when an execute_query tool call ran', () => {
+    const { sendMessage } = useChatStreaming()
+    sendMessage('sum revenue')
+    trackEventMock.mockClear()
+    wsHandlers.get('chat.tool_call')!({ content: { tool: 'execute_query', args: {} } })
+    wsHandlers.get('chat.done')!({ thread_id: 't1' })
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('chat_response_received', {
+      thread_id: 't1',
+      has_sql: true,
+    })
+  })
+
+  it('chat.done fires has_sql true when execute_query is nested in data_agent sub_steps', () => {
+    const { sendMessage } = useChatStreaming()
+    sendMessage('sum revenue')
+    trackEventMock.mockClear()
+    wsHandlers.get('chat.tool_call')!({
+      content: { tool: 'data_agent', args: {} },
+    })
+    // The tool_result handler copies result.steps into the step's sub_steps.
+    wsHandlers.get('chat.tool_result')!({
+      content: { tool: 'data_agent', result: { steps: [{ tool_name: 'execute_query' }] } },
+    })
+    wsHandlers.get('chat.done')!({ thread_id: 't1' })
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('chat_response_received', {
+      thread_id: 't1',
+      has_sql: true,
+    })
   })
 })

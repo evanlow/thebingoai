@@ -2,6 +2,7 @@ import { useChatStore } from '~/stores/chat'
 import type { Message, AgentStep } from '~/stores/chat'
 import { useChatFileUpload } from './useChatFileUpload'
 import { MAX_QUERY_RESULT_ROWS } from './_chatConstants'
+import { trackEvent } from '~/utils/analytics'
 
 export const useChatStreaming = () => {
   const chatStore = useChatStore()
@@ -49,6 +50,10 @@ export const useChatStreaming = () => {
       attachments: hasAttachments ? attachments : undefined,
       source: options?.source,
     }
+    // Only messages sent through this in-app compose path count as a user chat
+    // action — heartbeat/Telegram relays, skill suggestions, and the reconnect
+    // placeholder push straight to chatStore.addMessage() and never hit here.
+    trackEvent('chat_message_sent', { thread_id: chatStore.currentThreadId })
     chatStore.addMessage(userMessage)
     chatStore.clearInput()
 
@@ -421,6 +426,17 @@ export const useChatStreaming = () => {
         // already filled it), this is a no-op.
         const finalizeWhenDripDone = () => {
           if (displayedContent.length >= accumulatedContent.length) {
+            // Fire once per completed assistant response, here.
+            // chatStore.currentThreadId is set above for new threads, so this also
+            // fixes the thread_id-null-on-first-message gap the old addMessage-based
+            // event had. Message.sql is only populated on history reload, never live,
+            // so has_sql is derived from the live agent steps instead (execute_query
+            // at top level or nested in data_agent sub_steps).
+            const hasSql = agentSteps.some(s =>
+              s.tool_name === 'execute_query' ||
+              (s.content?.sub_steps || []).some((ss: any) => ss.tool_name === 'execute_query')
+            )
+            trackEvent('chat_response_received', { thread_id: chatStore.currentThreadId, has_sql: hasSql })
             cleanup()
           } else {
             setTimeout(finalizeWhenDripDone, DRIP_INTERVAL_MS)

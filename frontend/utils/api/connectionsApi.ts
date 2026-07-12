@@ -1,4 +1,5 @@
 import { xhrUpload, withAuthRetry } from './xhrUpload'
+import { trackEvent } from '~/utils/analytics'
 
 export function createConnectionsApi(fetchWithRefresh: Function, authStore: any, router: any) {
   return {
@@ -9,10 +10,12 @@ export function createConnectionsApi(fetchWithRefresh: Function, authStore: any,
       return fetchWithRefresh(`/api/connections/${id}`, {})
     },
     async create(data: any) {
-      return fetchWithRefresh('/api/connections', {
+      const result = await fetchWithRefresh('/api/connections', {
         method: 'POST',
         body: data
       })
+      trackEvent('connection_create', { connector_type: data?.db_type ?? 'unknown' })
+      return result
     },
     async update(id: string, data: any) {
       return fetchWithRefresh(`/api/connections/${id}`, {
@@ -27,9 +30,11 @@ export function createConnectionsApi(fetchWithRefresh: Function, authStore: any,
       })
     },
     async test(id: string) {
-      return fetchWithRefresh(`/api/connections/${id}/test`, {
+      const result = await fetchWithRefresh(`/api/connections/${id}/test`, {
         method: 'POST',
       })
+      trackEvent('connection_test')
+      return result
     },
     async testWrite(id: string) {
       return fetchWithRefresh(`/api/connections/${id}/test-write`, {
@@ -120,11 +125,13 @@ export function createConnectionsApi(fetchWithRefresh: Function, authStore: any,
         ? `/api/connections/upload-dataset?thread_id=${encodeURIComponent(threadId)}`
         : '/api/connections/upload-dataset'
 
-      return withAuthRetry(
+      const result = await withAuthRetry(
         (token) => xhrUpload({ url, formData, token, onProgress }),
         authStore,
         router
       )
+      trackEvent('csv_upload')
+      return result
     }
   }
 }

@@ -10,6 +10,9 @@ vi.stubGlobal('watch', watch)
 const html2canvasMock = vi.fn()
 vi.mock('html2canvas', () => ({ default: html2canvasMock }))
 
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
+
 const addImageMock = vi.fn()
 const addPageMock = vi.fn()
 const saveMock = vi.fn()
@@ -27,6 +30,7 @@ import { useBriefingPdf, paginate } from '~/composables/useBriefingPdf'
 describe('useBriefingPdf', () => {
   beforeEach(() => {
     html2canvasMock.mockReset()
+    trackEventMock.mockClear()
     addImageMock.mockClear()
     addPageMock.mockClear()
     saveMock.mockClear()
@@ -135,6 +139,8 @@ describe('useBriefingPdf', () => {
       expect(addImageMock).toHaveBeenCalledTimes(2)
       expect(addPageMock).not.toHaveBeenCalled()
       expect(saveMock).toHaveBeenCalledWith('briefing-revenue-held-flat.pdf')
+      // GA4 export event fires only after a successful save
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('briefing_export_pdf')
     })
 
     it('adds a page when a block overflows the current page', async () => {
@@ -167,6 +173,8 @@ describe('useBriefingPdf', () => {
       const el = { querySelectorAll: () => [{}] } as unknown as HTMLElement
       await exportPdf(el, 'x', 0)
       expect(exporting.value).toBe(false)
+      // failed export must not report a briefing_export_pdf event
+      expect(trackEventMock).not.toHaveBeenCalled()
     })
   })
 
