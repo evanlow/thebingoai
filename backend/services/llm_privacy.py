@@ -20,6 +20,11 @@ future path for orgs that need them covered too.
 Per-column sensitivity (``glossary[key].sensitive``) is enforced by
 ``redact_sensitive_columns`` even when the org flag is off — see the semantic
 layer.
+
+Global floor: the ``LLM_METADATA_ONLY`` env var (``settings.llm_metadata_only``,
+default True) forces metadata-only on EVERY Org regardless of its per-Org flag —
+so a fresh install shares no real values with the LLM. Set it false to hand
+control back to the per-Org ``metadata_only_llm`` flag.
 """
 from __future__ import annotations
 
@@ -39,12 +44,29 @@ _REDACTED = "[REDACTED]"
 # Flag resolution
 # ---------------------------------------------------------------------------
 
-def metadata_only_for_connection(connection: Any) -> bool:
-    """True when the connection's Org has ``metadata_only_llm`` enabled.
+def _env_forces_metadata_only() -> bool:
+    """Global privacy floor. True (the default) forces metadata-only on every Org
+    regardless of its per-Org flag; false defers to the per-Org flag.
 
-    A connection with no ``org_id`` (legacy rows) resolves to False — matches the
-    existing flag pattern (`data_agent/tools.py`).
+    Reads ``settings.llm_metadata_only`` (env ``LLM_METADATA_ONLY``). Any failure
+    to load settings fails safe to True (strict).
     """
+    try:
+        from backend.config import settings
+        return bool(getattr(settings, "llm_metadata_only", True))
+    except Exception:
+        return True
+
+
+def metadata_only_for_connection(connection: Any) -> bool:
+    """True when real values must be withheld from the LLM for this connection.
+
+    The global floor (``LLM_METADATA_ONLY``, default on) short-circuits to True.
+    With the floor off, resolves the connection's Org ``metadata_only_llm`` flag;
+    a connection with no ``org_id`` (legacy rows) resolves to False.
+    """
+    if _env_forces_metadata_only():
+        return True
     org_id = getattr(connection, "org_id", None)
     if not org_id:
         return False
@@ -53,11 +75,14 @@ def metadata_only_for_connection(connection: Any) -> bool:
 
 
 def metadata_only_for_user(db, user_id: Optional[str]) -> bool:
-    """True when the user's Org has ``metadata_only_llm`` enabled.
+    """True when real values must be withheld from the LLM for this user.
 
-    Used on paths that have a user but no connection (uploaded chat files).
-    Missing user or org → False.
+    Used on paths that have a user but no connection (uploaded chat files). The
+    global floor short-circuits to True; with the floor off, resolves the user's
+    Org ``metadata_only_llm`` flag. Missing user or org → False.
     """
+    if _env_forces_metadata_only():
+        return True
     if not user_id:
         return False
     from backend.models.user import User

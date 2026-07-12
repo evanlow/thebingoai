@@ -55,14 +55,44 @@ def test_redact_sensitive_columns_noop_when_none_match():
     assert out == [["Alice", 1]]
 
 
-# --- flag resolution ---------------------------------------------------------
+# --- global privacy floor ----------------------------------------------------
 
-def test_metadata_only_for_connection_none_org_is_false():
+def _floor(monkeypatch, on: bool):
+    """Force the LLM_METADATA_ONLY floor on/off for a test."""
+    from backend.config import settings
+    monkeypatch.setattr(settings, "llm_metadata_only", on, raising=False)
+
+
+def test_floor_on_forces_strict_regardless_of_org(monkeypatch):
+    _floor(monkeypatch, True)
+    # even an org with the per-Org flag off, and a legacy no-org connection, are strict
+    monkeypatch.setattr(
+        "backend.config.feature_flags.enabled",
+        lambda org_id, flag, default=False: False,
+    )
+    assert llm_privacy.metadata_only_for_connection(SimpleNamespace(org_id="org-2")) is True
+    assert llm_privacy.metadata_only_for_connection(SimpleNamespace(org_id=None)) is True
+
+
+def test_floor_defaults_on(monkeypatch):
+    # A fresh install (no env, no per-Org flag) withholds values.
+    monkeypatch.setattr(
+        "backend.config.feature_flags.enabled",
+        lambda org_id, flag, default=False: False,
+    )
+    assert llm_privacy.metadata_only_for_connection(SimpleNamespace(org_id="org-2")) is True
+
+
+# --- per-Org flag resolution (floor off) -------------------------------------
+
+def test_metadata_only_for_connection_none_org_is_false(monkeypatch):
+    _floor(monkeypatch, False)
     conn = SimpleNamespace(org_id=None)
     assert llm_privacy.metadata_only_for_connection(conn) is False
 
 
 def test_metadata_only_for_connection_respects_flag(monkeypatch):
+    _floor(monkeypatch, False)
     monkeypatch.setattr(
         "backend.config.feature_flags.enabled",
         lambda org_id, flag, default=False: flag == "metadata_only_llm" and org_id == "org-1",
