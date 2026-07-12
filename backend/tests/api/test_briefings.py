@@ -92,3 +92,25 @@ def test_post_brief_402_when_out_of_credits(authenticated_client, db_session, sa
         .count()
     )
     assert count == 0
+
+
+def test_list_briefings_filters_by_dashboard_id(
+    authenticated_client, db_session, sample_dashboard, sample_user
+):
+    from backend.models.briefing import Briefing
+    from backend.models.dashboard import Dashboard
+
+    other = Dashboard(user_id=sample_user.id, title="Other")
+    db_session.add(other)
+    db_session.commit()
+
+    a = Briefing(user_id=sample_user.id, dashboard_id=sample_dashboard.id, source="manual", status="ready")
+    b = Briefing(user_id=sample_user.id, dashboard_id=other.id, source="manual", status="ready")
+    db_session.add_all([a, b])
+    db_session.commit()
+
+    resp = authenticated_client.get(f"/api/briefings?dashboard_id={sample_dashboard.id}")
+    assert resp.status_code == 200
+    ids = {row["id"] for row in resp.json()}
+    assert a.id in ids
+    assert b.id not in ids
