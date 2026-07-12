@@ -10,7 +10,7 @@
       <!-- Logo row + collapse button -->
       <div class="flex h-14 items-center px-4 gap-2 flex-shrink-0">
         <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" style="height: 24px; width: auto;" class="dark:hidden" />
-        <img src="/logo/BINGO Logo Design_FA_Primary_W.png" alt="Bingo" style="height: 24px; width: auto;" class="hidden dark:block" />
+        <img src="/logo/BINGO Logo Design_FA_Primary_M.png" alt="Bingo" style="height: 24px; width: auto;" class="hidden dark:block" />
         <div class="flex-1" />
         <button
           @click="layoutStore.toggleSidebarCollapsed()"
@@ -319,8 +319,8 @@
     style="width: 220px"
   >
     <div class="flex h-14 items-center px-4">
-      <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" style="height: 36px; width: auto;" class="hidden dark:block" />
-      <img src="/logo/BINGO Logo Design_FA_Primary_W.png" alt="Bingo" style="height: 36px; width: auto;" class="hidden dark:block" />
+      <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" style="height: 36px; width: auto;" class="dark:hidden" />
+      <img src="/logo/BINGO Logo Design_FA_Primary_M.png" alt="Bingo" style="height: 36px; width: auto;" class="hidden dark:block" />
       <div class="flex-1" />
       <button @click="layoutStore.setMainExpanded(true)" class="p-1 text-[var(--ink-3)] hover:text-[var(--ink-1)]">
         <X class="h-4 w-4" />
