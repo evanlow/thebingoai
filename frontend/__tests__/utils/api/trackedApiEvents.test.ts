@@ -6,6 +6,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
 vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
 
+// uploadDataset goes through withAuthRetry + xhrUpload (XHR, browser-only) —
+// mock the module so the upload resolves/rejects without a network layer.
+const { withAuthRetryMock } = vi.hoisted(() => ({ withAuthRetryMock: vi.fn() }))
+vi.mock('~/utils/api/xhrUpload', () => ({
+  xhrUpload: vi.fn(),
+  withAuthRetry: withAuthRetryMock,
+}))
+
 import { createDashboardsApi } from '~/utils/api/dashboardsApi'
 import { createConnectionsApi } from '~/utils/api/connectionsApi'
 import { createPipelinesApi } from '~/utils/api/pipelinesApi'
@@ -56,6 +64,18 @@ describe('tracked API events', () => {
     it('test fires connection_test with no params', async () => {
       await makeApi().test('c1')
       expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('connection_test')
+    })
+
+    it('uploadDataset fires csv_upload on success', async () => {
+      withAuthRetryMock.mockResolvedValueOnce({ connection_id: 1 })
+      await makeApi().uploadDataset(new File(['a,b'], 'data.csv'))
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('csv_upload')
+    })
+
+    it('uploadDataset fires no event when the upload fails', async () => {
+      withAuthRetryMock.mockRejectedValueOnce(new Error('413'))
+      await expect(makeApi().uploadDataset(new File(['x'], 'data.csv'))).rejects.toThrow()
+      expect(trackEventMock).not.toHaveBeenCalled()
     })
   })
 
