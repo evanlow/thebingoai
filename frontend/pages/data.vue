@@ -265,19 +265,82 @@
             </div>
 
             <!-- Relationships -->
-            <div v-if="relationships.length" class="mt-8">
+            <div class="mt-8">
               <div class="mb-3 flex items-center gap-3.5">
-                <span class="eyebrow">Relationships · {{ relationships.length }}</span>
+                <span class="eyebrow">Relationships · {{ activeRelationships.length }}</span>
                 <div class="h-px flex-1 border-t border-dashed border-[var(--line-2)]"></div>
               </div>
-              <ul class="space-y-2">
-                <li v-for="(r, i) in relationships" :key="i" class="flex items-center gap-2.5 text-sm text-[var(--ink-1)]">
+
+              <ul v-if="activeRelationships.length" class="space-y-1.5">
+                <li
+                  v-for="r in activeRelationships"
+                  :key="'rel-' + r.from + '→' + r.to"
+                  class="group flex items-center gap-2.5 rounded-md px-1.5 py-1 text-sm text-[var(--ink-1)] hover:bg-[var(--paper-1)]"
+                >
                   <span class="font-mono text-xs text-[var(--ink-0)]">{{ r.from }}</span>
-                  <ArrowRight class="h-3.5 w-3.5 text-[var(--ink-3)]" />
+                  <ArrowRight class="h-3.5 w-3.5 flex-shrink-0 text-[var(--ink-3)]" />
                   <span class="font-mono text-xs text-[var(--ink-0)]">{{ r.to }}</span>
-                  <span v-if="r.inferred" class="rounded-full border border-[var(--line)] bg-[var(--paper-2)] px-2 py-0.5 text-[11px] text-[var(--ink-2)]">guessed</span>
+                  <span v-if="r.guessed" class="rounded-full border border-[var(--line)] bg-[var(--paper-2)] px-2 py-0.5 text-[11px] text-[var(--ink-2)]">guessed</span>
+                  <span v-else-if="r.manual" class="rounded-full border border-[var(--ember)] bg-[var(--ember-wash)] px-2 py-0.5 text-[11px] text-[var(--ember)]">manual</span>
+                  <span v-else-if="r.confirmed" class="inline-flex items-center gap-1 text-[11px] text-[var(--ink-2)]"><Check class="h-3 w-3 text-emerald-600 dark:text-emerald-400" />confirmed</span>
+                  <div class="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      v-if="r.guessed"
+                      @click="confirmRel(r)"
+                      title="confirm this relationship"
+                      class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-[var(--ember)] hover:bg-[var(--ember-wash)]"
+                    ><Check class="h-3 w-3" />Confirm</button>
+                    <button
+                      @click="rejectRel(r)"
+                      title="reject this relationship"
+                      class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-2)] hover:bg-red-500/10 hover:text-red-600"
+                    ><X class="h-3 w-3" />Reject</button>
+                  </div>
                 </li>
               </ul>
+              <p v-else class="text-xs text-[var(--ink-3)]">No relationships detected — add one below.</p>
+
+              <!-- rejected -->
+              <div v-if="rejectedRelationships.length" class="mt-3">
+                <p class="mb-1.5 text-[11px] uppercase tracking-[0.08em] text-[var(--ink-3)]">Rejected · {{ rejectedRelationships.length }}</p>
+                <ul class="space-y-1">
+                  <li
+                    v-for="r in rejectedRelationships"
+                    :key="'rej-' + r.from + '→' + r.to"
+                    class="flex items-center gap-2.5 px-1.5 py-1 text-sm text-[var(--ink-3)]"
+                  >
+                    <span class="font-mono text-xs line-through">{{ r.from }}</span>
+                    <ArrowRight class="h-3.5 w-3.5 flex-shrink-0" />
+                    <span class="font-mono text-xs line-through">{{ r.to }}</span>
+                    <button
+                      @click="restoreRel(r)"
+                      class="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-2)] hover:bg-[var(--ember-wash)] hover:text-[var(--ember)]"
+                    ><RotateCcw class="h-3 w-3" />Restore</button>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- add manual -->
+              <div class="mt-3 flex items-center gap-2">
+                <input
+                  v-model="relFrom"
+                  @keydown.enter="addRel"
+                  placeholder="orders.user_id"
+                  class="w-40 rounded-md border border-[var(--line)] bg-[var(--paper-1)] px-2 py-1 font-mono text-xs text-[var(--ink-0)] placeholder:text-[var(--ink-3)] focus:border-[var(--ember)] focus:outline-none"
+                />
+                <ArrowRight class="h-3.5 w-3.5 flex-shrink-0 text-[var(--ink-3)]" />
+                <input
+                  v-model="relTo"
+                  @keydown.enter="addRel"
+                  placeholder="users.id"
+                  class="w-40 rounded-md border border-[var(--line)] bg-[var(--paper-1)] px-2 py-1 font-mono text-xs text-[var(--ink-0)] placeholder:text-[var(--ink-3)] focus:border-[var(--ember)] focus:outline-none"
+                />
+                <button
+                  @click="addRel"
+                  :disabled="!relFrom.trim() || !relTo.trim()"
+                  class="inline-flex items-center gap-1 rounded-md border border-[var(--line-2)] px-2.5 py-1 text-xs font-medium text-[var(--ink-1)] hover:border-[var(--ember)] hover:text-[var(--ember)] disabled:opacity-40"
+                ><Plus class="h-3 w-3" />Add</button>
+              </div>
             </div>
           </div>
           </div>
@@ -298,6 +361,7 @@
 import {
   Sparkles, Save, Search, Database, Table2, DatabaseZap,
   Eye, Check, CheckCheck, CheckSquare, ArrowRight, Loader2,
+  X, RotateCcw, Plus,
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
@@ -360,8 +424,11 @@ async function selectConnection(c: any) {
     ])
     context.value = ctx
     semantics.value = sem || { glossary: {}, relationships: [], definitions: [] }
-    // seed editable state from saved glossary
+    // seed editable state from saved glossary + relationship overlay
     edits.value = JSON.parse(JSON.stringify(sem?.glossary || {}))
+    relOverlay.value = JSON.parse(JSON.stringify(sem?.relationships || []))
+    relFrom.value = ''
+    relTo.value = ''
     const tnames = Object.keys(ctx?.tables || {})
     if (tnames.length) selectedTable.value = tnames[0]
   } finally {
@@ -415,7 +482,71 @@ watch(selectedTable, (name) => {
   refreshColumnRows()
 }, { immediate: true })
 
-const relationships = computed(() => context.value?.relationships || [])
+// --- relationship curation ---------------------------------------------------
+// Editable overlay of curation entries {from,to,status,inferred?}. The backend
+// merge (semantic_layer.merge_semantics_into_context) applies it: status
+// 'rejected' drops an auto-detected pair, any non-rejected new pair is added.
+// Seeded per-connection from saved semantics; saved alongside the glossary.
+const relOverlay = ref<any[]>([])
+const relFrom = ref('')
+const relTo = ref('')
+
+const relKey = (r: any) => `${r.from}→${r.to}`
+
+const activeRelationships = computed(() => {
+  const overlay = new Map(relOverlay.value.map((r) => [relKey(r), r]))
+  const baseRels = context.value?.relationships || []
+  const base = baseRels.filter((r: any) => overlay.get(relKey(r))?.status !== 'rejected')
+  const seen = new Set(base.map(relKey))
+  const basePairs = new Set(baseRels.map(relKey))
+  const manual = relOverlay.value.filter((r: any) => r.status !== 'rejected' && !seen.has(relKey(r)))
+  return [...base, ...manual].map((r: any) => {
+    const confirmed = overlay.get(relKey(r))?.status === 'confirmed'
+    return {
+      from: r.from,
+      to: r.to,
+      inferred: !!r.inferred,
+      guessed: !!r.inferred && !confirmed,
+      confirmed,
+      manual: !r.inferred && !basePairs.has(relKey(r)),
+    }
+  })
+})
+
+const rejectedRelationships = computed(() =>
+  relOverlay.value.filter((r: any) => r.status === 'rejected')
+)
+
+function setRelOverlay(from: string, to: string, patch: any) {
+  const key = `${from}→${to}`
+  const i = relOverlay.value.findIndex((r) => `${r.from}→${r.to}` === key)
+  const inferred = i >= 0 ? relOverlay.value[i].inferred : patch.inferred
+  const entry = { from, to, ...(inferred ? { inferred: true } : {}), ...patch }
+  if (i >= 0) relOverlay.value.splice(i, 1, entry)
+  else relOverlay.value.push(entry)
+  dirty.value = true
+}
+
+function confirmRel(r: any) { setRelOverlay(r.from, r.to, { status: 'confirmed', inferred: r.inferred }) }
+function rejectRel(r: any) { setRelOverlay(r.from, r.to, { status: 'rejected', inferred: r.inferred }) }
+function restoreRel(r: any) {
+  const key = relKey(r)
+  relOverlay.value = relOverlay.value.filter((x) => relKey(x) !== key)
+  dirty.value = true
+}
+function addRel() {
+  const from = relFrom.value.trim()
+  const to = relTo.value.trim()
+  if (!from || !to) return
+  const key = `${from}→${to}`
+  const dup =
+    relOverlay.value.some((r) => `${r.from}→${r.to}` === key) ||
+    (context.value?.relationships || []).some((r: any) => `${r.from}→${r.to}` === key)
+  if (!dup) relOverlay.value.push({ from, to, status: 'confirmed' })
+  relFrom.value = ''
+  relTo.value = ''
+  dirty.value = true
+}
 
 function buildStats(c: any): string {
   const parts: string[] = []
@@ -461,8 +592,10 @@ async function saveSemantics() {
         glossary[tkey] = { ...(glossary[tkey] || {}), description: tableDesc.value, source: 'human', status: 'confirmed' }
       }
     }
-    await api.connections.putSemantics(selectedConn.value.id, { glossary })
+    const relationships = JSON.parse(JSON.stringify(relOverlay.value))
+    await api.connections.putSemantics(selectedConn.value.id, { glossary, relationships })
     semantics.value.glossary = glossary
+    semantics.value.relationships = relationships
     dirty.value = false
     toast.success('Documentation saved')
   } catch (e) {
