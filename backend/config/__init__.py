@@ -193,6 +193,12 @@ class Settings(BaseSettings):
     orchestrator_lean_tools: bool = False  # ≤10 primary tools + manage meta-tool + @-mention scope
     template_backfill_on_startup: bool = True  # plugin-template framework: backfill existing connections at boot
 
+    # LLM data-privacy floor (env LLM_METADATA_ONLY). True (default) forces
+    # metadata-only on EVERY Org — real cell values never reach the LLM,
+    # overriding each Org's metadata_only_llm flag. Set false to defer to the
+    # per-Org flag (which itself defaults off = values shared).
+    llm_metadata_only: bool = True
+
     # Maintenance mode — hides login UI behind a static page. Developers can bypass via
     # `?maint_bypass=KEY` URL param which the backend exchanges for an HttpOnly cookie.
     maintenance_mode: bool = False

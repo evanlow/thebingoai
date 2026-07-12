@@ -8,8 +8,9 @@ import time
 class TableSchema:
     """Represents a database table schema."""
     table_name: str
-    columns: List[Dict[str, Any]]  # [{name, type, nullable, primary_key}, ...]
+    columns: List[Dict[str, Any]]  # [{name, type, nullable, primary_key, comment?}, ...]
     row_count: Optional[int] = None
+    comment: Optional[str] = None  # table-level description from the DB catalog
 
 
 @dataclass
@@ -193,6 +194,21 @@ class BaseConnector(ABC):
             WHERE TABLE_SCHEMA = {marker} AND TABLE_NAME = {marker}
               AND REFERENCED_TABLE_NAME IS NOT NULL
         """, (schema, table))
+
+    def _get_column_comments(self, cursor, schema: str, table_name: str) -> Dict[str, str]:
+        """Return ``{column_name: comment}`` for a table's documented columns.
+
+        Default is empty — most engines have no column comments or don't expose
+        them uniformly. Engine subclasses override to read the DB catalog
+        (Postgres ``pg_description``, MySQL ``column_comment``). Comments seed the
+        semantic-layer glossary as the lowest-precedence description source, so a
+        missing/empty comment is expected, never an error.
+        """
+        return {}
+
+    def _get_table_comment(self, cursor, schema: str, table_name: str) -> Optional[str]:
+        """Return the table's own comment/description, or None. Default None."""
+        return None
 
     # ============================================================
     # Concrete Template Methods (shared by all connectors)
@@ -383,6 +399,23 @@ class BaseConnector(ABC):
         for col in columns:
             col['primary_key'] = col['name'] in primary_keys
 
+        # Column + table comments from the DB catalog. Default hooks return
+        # empty; engine subclasses (pg, mysql) override. Seeds the semantic-layer
+        # glossary as the lowest-precedence description source — any failure is
+        # non-fatal, comments are optional metadata.
+        try:
+            col_comments = self._get_column_comments(cursor, schema, table_name)
+        except Exception:
+            col_comments = {}
+        for col in columns:
+            comment = col_comments.get(col['name'])
+            if comment:
+                col['comment'] = comment
+        try:
+            table_comment = self._get_table_comment(cursor, schema, table_name)
+        except Exception:
+            table_comment = None
+
         # Row count — uses the DB's cached estimate when the connector overrides
         # `_get_row_count` (no full scan during schema discovery). row_count is a
         # descriptive size hint only; it is never used in any computation.
@@ -393,7 +426,8 @@ class BaseConnector(ABC):
         return TableSchema(
             table_name=table_name,
             columns=columns,
-            row_count=row_count
+            row_count=row_count,
+            comment=table_comment,
         )
 
     def get_foreign_keys(self, table_name: str, schema: Optional[str] = None) -> List[Dict[str, str]]:

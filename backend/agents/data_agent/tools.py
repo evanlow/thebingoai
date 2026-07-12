@@ -300,7 +300,7 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
 
             # Return metadata + first rows so the LLM can format tables
             preview_rows = [[_coerce(v) for v in row] for row in result.rows[:20]]
-            return {
+            preview = {
                 "columns": result.columns,
                 "rows": preview_rows,
                 "row_count": result.row_count,
@@ -308,6 +308,14 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                 "result_ref": result_ref,
                 "truncated": result.truncated,
             }
+            # Privacy: under metadata_only_llm, withhold the preview rows from the
+            # LLM (the full result still reaches the user via the side-channel above).
+            from backend.services.llm_privacy import (
+                metadata_only_for_connection, strip_preview,
+            )
+            if metadata_only_for_connection(connection):
+                return strip_preview(preview)
+            return preview
 
         except Exception as e:
             logger.error(f"Query execution failed: {str(e)}")
@@ -368,7 +376,7 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
             from backend.services.table_profiler import profile_table as _profile
 
             with get_connector_for_connection(connection) as connector:
-                return _profile(
+                profile = _profile(
                     connector=connector,
                     table_name=table_name,
                     schema_name=found_schema,
@@ -377,6 +385,14 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                     db_type=db_type_str,
                     is_dataset=is_dataset,
                 )
+            # Privacy: under metadata_only_llm, drop real values (min/max/top_values)
+            # from the profile before it reaches the LLM; keep derived stats.
+            from backend.services.llm_privacy import (
+                metadata_only_for_connection, strip_profile_values,
+            )
+            if metadata_only_for_connection(connection):
+                profile = strip_profile_values(profile)
+            return profile
         except Exception as e:
             logger.exception(f"profile_table failed for {table_name}")
             return {"error": f"{type(e).__name__}: {e}" or "Unknown error"}

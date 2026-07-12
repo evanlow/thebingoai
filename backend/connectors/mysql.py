@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import ClassVar, Optional, Dict
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -64,6 +64,34 @@ class MySQLConnector(BaseConnector):
     def _default_schema(self) -> str:
         """MySQL default schema is the connected database."""
         return self.database
+
+    def _get_column_comments(self, cursor, schema: str, table_name: str) -> Dict[str, str]:
+        """Read column comments from ``information_schema.columns.column_comment``."""
+        cursor.execute(
+            "SELECT column_name, column_comment FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s",
+            (schema, table_name),
+        )
+        out: Dict[str, str] = {}
+        for row in cursor.fetchall():
+            name = row['column_name'] if isinstance(row, dict) else row[0]
+            comment = row['column_comment'] if isinstance(row, dict) else row[1]
+            if comment:  # MySQL returns '' (never NULL) for undocumented columns
+                out[name] = comment
+        return out
+
+    def _get_table_comment(self, cursor, schema: str, table_name: str) -> Optional[str]:
+        """Read the table comment from ``information_schema.tables.table_comment``."""
+        cursor.execute(
+            "SELECT table_comment FROM information_schema.tables "
+            "WHERE table_schema = %s AND table_name = %s",
+            (schema, table_name),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        comment = row['table_comment'] if isinstance(row, dict) else row[0]
+        return comment or None
 
     def _get_row_count(self, cursor, schema: str, table_name: str) -> int:
         """Use information_schema.tables.table_rows (InnoDB estimate, no scan).

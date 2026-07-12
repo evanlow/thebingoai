@@ -73,6 +73,24 @@ export function createConnectionsApi(fetchWithRefresh: Function, authStore: any,
     async getContext(id: number) {
       return fetchWithRefresh(`/api/connections/${id}/context`, {})
     },
+    async getSemantics(id: number) {
+      return fetchWithRefresh(`/api/connections/${id}/semantics`, {})
+    },
+    async putSemantics(id: number, data: { glossary?: any; relationships?: any[]; definitions?: any[] }) {
+      return fetchWithRefresh(`/api/connections/${id}/semantics`, {
+        method: 'PUT',
+        body: data,
+      })
+    },
+    async generateDescriptions(id: number, tables: string[]) {
+      return fetchWithRefresh(`/api/connections/${id}/semantics/generate-descriptions`, {
+        method: 'POST',
+        body: { tables },
+      })
+    },
+    async getGenerationStatus(id: number) {
+      return fetchWithRefresh(`/api/connections/${id}/semantics/generation-status`, {})
+    },
     async listOrg() {
       return fetchWithRefresh('/api/connections/org', {})
     },

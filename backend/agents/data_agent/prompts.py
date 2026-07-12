@@ -33,6 +33,7 @@ Guidelines:
 6. **Limit results**: Use LIMIT 1000 for large result sets
 7. **Join properly**: Use foreign key relationships from schema when joining
 8. **Schema-only results**: execute_query returns column names, row count, and execution time — NOT actual data values. The full data is delivered directly to the user's screen. Describe what the query found based on the metadata (e.g. "Found 42 rows across 3 columns").
+   - **Privacy mode**: this org may withhold ALL data values from you (a `"values_withheld": true` note on results, and profiles/schemas without sample values or min/max). When you see this, describe shape and columns only, never fabricate values, and use RELATIVE date ranges in SQL (e.g. `WHERE dt >= CURRENT_DATE - INTERVAL '90 days'`) since actual min/max dates are not provided.
 9. **Accept empty results**: If list_tables or search_tables returns no results, the database is empty or has no matching tables. Do NOT retry the same call — report the finding to the user immediately.
 10. **Never retry identical calls**: Never call the same tool with the same arguments more than once. If you already got a result, use it. Retrying will not change the outcome. (This does NOT prevent rule 4 self-heal retries, since those use DIFFERENT arguments — the fix.)
 11. **Schema discovery limit**: If list_tables or search_tables returns no useful results, do NOT fall back to execute_query against sqlite_master, information_schema, or PRAGMA commands. The schema tools ARE the authoritative source of truth. If they return empty, the connection has no accessible tables — report this to the user immediately.
@@ -112,6 +113,7 @@ def build_dataset_context_block(connection_metadata: list) -> str:
 
     from backend.database.session import SessionLocal
     from backend.services.connection_context import load_connection_context
+    from backend.services.llm_privacy import metadata_only_for_connection
 
     blocks: list[str] = []
     db = SessionLocal()
@@ -120,6 +122,9 @@ def build_dataset_context_block(connection_metadata: list) -> str:
             ctx = load_connection_context(db, conn.id)
             if not ctx:
                 continue
+            # Privacy: under metadata_only_llm, omit real values (range min/max,
+            # top-value examples). Derived cardinality is kept.
+            meta_only = metadata_only_for_connection(conn)
             for tname, tdata in ctx.get("tables", {}).items():
                 lines = [
                     f'\nConnection {conn.id} ("{conn.name}") — table {tname} '
@@ -130,11 +135,11 @@ def build_dataset_context_block(connection_metadata: list) -> str:
                         str(cdata.get("type", "text")),
                         f"role={cdata.get('role', 'attribute')}",
                     ]
-                    if cdata.get("min") is not None and cdata.get("max") is not None:
+                    if not meta_only and cdata.get("min") is not None and cdata.get("max") is not None:
                         parts.append(f"range {cdata['min']} to {cdata['max']}")
                     if cdata.get("cardinality") is not None:
                         parts.append(f"{cdata['cardinality']} distinct")
-                    if cdata.get("topValues"):
+                    if not meta_only and cdata.get("topValues"):
                         sample = ", ".join(str(v) for v in cdata["topValues"][:3])
                         parts.append(f"e.g. {sample}")
                     lines.append(f"  - {cname}: {' | '.join(parts)}")

@@ -18,6 +18,10 @@ silently — see test_feature_flags::test_known_flags):
     duckdb_widget_serving        — serve widget reads via DuckDB over DataPlane
                                    Parquet (transpiled/DuckDB stored SQL) instead
                                    of per-widget materialization + source BQ jobs
+    metadata_only_llm            — strip real data values (top_values, sample
+                                   rows, query previews, min/max) from anything
+                                   sent to the LLM provider; user-facing results
+                                   are unaffected (delivered via side-channel)
 """
 from __future__ import annotations
 
@@ -43,6 +47,7 @@ KNOWN_FLAGS: frozenset[str] = frozenset({
     "duckdb_widget_serving",
     "bulk_widget_loading",
     "widget_result_cache",
+    "metadata_only_llm",
 })
 
 
