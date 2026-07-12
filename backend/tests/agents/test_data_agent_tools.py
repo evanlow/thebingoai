@@ -224,3 +224,66 @@ def test_execute_query_falls_back_to_connector_when_serve_returns_none(monkeypat
     assert out["row_count"] == 1
     assert out["rows"] == [[2]]
     connector.execute_query.assert_called_once_with("SELECT 2")
+
+
+# ── execute_query: export-file label ───────────────────────────────────────
+#
+# `label` never reaches the tool's return value — it only rides along in the
+# payload handed to store_query_result / publish_query_result, which is what
+# the frontend names export files from. So assert on the published payload.
+
+def _run_execute_query(monkeypatch, sql):
+    """Invoke execute_query over a stubbed connector; return the published payload."""
+    from backend.agents.context import AgentContext
+    from backend.connectors.base import QueryResult
+
+    ctx = AgentContext(user_id="u-1", available_connections=[42])
+    qr = QueryResult(columns=["c"], rows=[(1,)], row_count=1, execution_time_ms=1.0)
+
+    fake_db = MagicMock()
+    fake_db.query.return_value.filter.return_value.first.return_value = _conn()
+    monkeypatch.setattr("backend.agents.data_agent.tools.SessionLocal", lambda: fake_db)
+    monkeypatch.setattr(
+        "backend.agents.data_agent.tools._serve_query_via_dataplane",
+        lambda conn, sql, db: qr,
+    )
+    publish = MagicMock()
+    monkeypatch.setattr("backend.agents.data_agent.tools.store_query_result", MagicMock())
+    monkeypatch.setattr("backend.agents.data_agent.tools.publish_query_result", publish)
+
+    tools_list = tools.build_data_agent_tools(ctx)
+    exec_tool = next(t for t in tools_list if t.name == "execute_query")
+    exec_tool.invoke({"connection_id": 42, "sql": sql})
+
+    publish.assert_called_once()
+    return publish.call_args.args[2]
+
+
+def test_label_is_the_referenced_table(monkeypatch):
+    payload = _run_execute_query(monkeypatch, "SELECT * FROM orders WHERE id = 1")
+    assert payload["label"] == "orders"
+
+
+def test_label_is_lowercased_and_ignores_schema_qualifier(monkeypatch):
+    payload = _run_execute_query(monkeypatch, "SELECT * FROM Analytics.Orders")
+    assert payload["label"] == "orders"
+
+
+def test_label_falls_back_to_query_when_no_table_ref(monkeypatch):
+    payload = _run_execute_query(monkeypatch, "SELECT 1")
+    assert payload["label"] == "query"
+
+
+def test_label_falls_back_to_query_when_sql_unparseable(monkeypatch):
+    # extract_table_refs swallows parse errors and returns [] → fallback applies.
+    payload = _run_execute_query(monkeypatch, "SELECT FROM WHERE ((")
+    assert payload["label"] == "query"
+
+
+def test_label_on_join_is_alphabetically_first_not_the_driving_table(monkeypatch):
+    """Pins real behaviour: extract_table_refs sorts, so tables[0] is the
+    alphabetically-first ref, not the FROM table."""
+    payload = _run_execute_query(
+        monkeypatch, "SELECT * FROM orders o JOIN customers c ON c.id = o.customer_id"
+    )
+    assert payload["label"] == "customers"
