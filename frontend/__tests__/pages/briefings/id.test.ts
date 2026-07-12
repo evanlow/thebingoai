@@ -28,6 +28,13 @@ vi.stubGlobal('useBriefingPdf', () => ({
 const navigateToMock = vi.fn()
 vi.stubGlobal('navigateTo', navigateToMock)
 
+// retry() re-POSTs /brief via useApi
+const retryFetchMock = vi.fn()
+vi.stubGlobal('useApi', () => ({ fetchWithRefresh: retryFetchMock }))
+
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
+
 import BriefingPage from '~/pages/briefings/[id].vue'
 
 const mountPage = () =>
@@ -101,5 +108,24 @@ describe('briefings/[id]', () => {
     const wrapper = mountPage()
     await wrapper.find('[data-testid="briefing-back"]').trigger('click')
     expect(navigateToMock).toHaveBeenCalledWith('/dashboard?id=42')
+  })
+
+  it('retry on a failed briefing fires GA4 briefing_create with the dashboard id', async () => {
+    trackEventMock.mockClear()
+    retryFetchMock.mockResolvedValue({ briefing_id: 49 })
+    briefingValue = {
+      id: 48,
+      status: 'failed',
+      dashboard_id: 42,
+      error: 'generation blew up',
+      payload: null,
+      created_at: '2026-06-19T00:00:00Z',
+    }
+    const wrapper = mountPage()
+    const retryBtn = wrapper.findAll('button').find((b) => b.text() === 'Retry')
+    expect(retryBtn).toBeDefined()
+    await retryBtn!.trigger('click')
+    expect(retryFetchMock).toHaveBeenCalledWith('/api/dashboards/42/brief', { method: 'POST' })
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('briefing_create', { dashboard_id: 42 })
   })
 })
