@@ -1,5 +1,5 @@
 <template>
-  <div class="section-widget-bar h-full" :style="{ background: `var(--section-${color}-bar)` }">
+  <div class="section-widget-bar" :style="{ background: `var(--section-${color}-bar)` }">
     <input
       v-if="editMode"
       class="section-widget-input"
@@ -37,6 +37,11 @@ function onTitle(title: string) {
   align-items: center;
   padding: 0 16px;
   border-radius: 10px;
+  /* Headroom above the bar creates the spacing between adjacent bands and
+     the title padding from the band's top edge — geometry constants in
+     useDashboardSections.ts are derived from this margin. */
+  margin-top: 22px;
+  height: calc(100% - 22px);
 }
 
 .section-widget-label,

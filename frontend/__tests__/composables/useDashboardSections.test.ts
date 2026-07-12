@@ -67,9 +67,9 @@ describe('useDashboardSections', () => {
     ])
     const { sections } = useDashboardSections(widgets, ref(null))
     expect(sections.value).toEqual([
-      { id: 's1', title: 'Overview', color: 'blue' },
-      { id: 's2', title: 'Detail', color: 'default' },
-      { id: 'legacy', title: 'Old Style', color: 'default' },
+      { id: 's1', title: 'Overview', color: 'blue', kind: 'section' },
+      { id: 's2', title: 'Detail', color: 'default', kind: 'section' },
+      { id: 'legacy', title: 'Old Style', color: 'default', kind: 'text' },
     ])
   })
 
@@ -83,8 +83,8 @@ describe('useDashboardSections', () => {
     ])
     const { sections } = useDashboardSections(widgets, ref(null))
     expect(sections.value).toEqual([
-      { id: 'h1', title: 'Trends & Breakdown', color: 'violet' },
-      { id: 'h2', title: 'Detail & Records', color: 'default' },
+      { id: 'h1', title: 'Trends & Breakdown', color: 'violet', kind: 'text' },
+      { id: 'h2', title: 'Detail & Records', color: 'default', kind: 'text' },
     ])
   })
 

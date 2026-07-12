@@ -6,6 +6,7 @@ export interface DashboardSection {
   id: string          // header widget id — stable scroll/jump target
   title: string
   color: SectionColor
+  kind: 'section' | 'text'  // dedicated section widget vs legacy heading text widget
 }
 
 export interface SectionBounds {
@@ -36,57 +37,60 @@ export function useDashboardSections(
     readingOrder.value.filter(isSectionHeader).map((w) => {
       if (w.widget.type === 'section') {
         const config = w.widget.config as SectionWidgetConfig
-        return { id: w.id, title: (config.title ?? '').trim(), color: sectionColorToken(config.sectionColor) }
+        return { id: w.id, title: (config.title ?? '').trim(), color: sectionColorToken(config.sectionColor), kind: 'section' as const }
       }
       const config = w.widget.config as TextWidgetConfig
       return {
         id: w.id,
         title: sectionTitle(config.content),
         color: sectionColorToken(config.sectionColor),
+        kind: 'text' as const,
       }
     }),
   )
 
-  /** section id → member widget ids (header included). */
-  const membership = computed<Map<string, string[]>>(() => {
-    const map = new Map<string, string[]>()
-    let current: string[] | null = null
-    for (const w of readingOrder.value) {
-      if (isSectionHeader(w)) {
-        current = [w.id]
-        map.set(w.id, current)
-      } else {
-        current?.push(w.id)  // widgets above the first header stay ungrouped
-      }
-    }
-    return map
-  })
-
   const bounds = ref<Record<string, SectionBounds>>({})
 
-  // px beyond the members' bounding box — items already carry a 4px content
-  // inset, and adjacent sections are only 8px apart, so keep this ≤ 3.
-  const BAND_PAD = 2
+  // Adjacent gridstack items are contiguous (the 4px card breathing lives
+  // inside each item), so all section spacing is carved out of the header
+  // item's headroom above the bar (.section-widget-bar margin-top: 22px →
+  // bar top = item + 26). Split: previous band tails 8px past the header's
+  // item top (12px air under its last card), band top starts 8px above the
+  // bar (title padding), leaving a 10px gap between bands.
+  const SECTION_TOP_INSET = 18   // band top below header item top
+  const SECTION_TAIL = 8         // previous band's overhang into a section header's item
+  const TEXT_TOP_INSET = 2       // legacy text headers: card starts at item+4, stay above it
+  const TEXT_TAIL = -2
+  const LAST_TAIL = 8            // air under the final section's last card
 
   function measure() {
     const wrapper = wrapperRef.value
     if (!wrapper) return
-    const next: Record<string, SectionBounds> = {}
-    for (const [sectionId, memberIds] of membership.value) {
-      let top = Infinity
-      let bottom = -Infinity
-      for (const id of memberIds) {
-        const el = wrapper.querySelector<HTMLElement>(`[data-widget-id="${CSS.escape(id)}"]`)
-        if (!el) continue
-        top = Math.min(top, el.offsetTop)
-        bottom = Math.max(bottom, el.offsetTop + el.offsetHeight)
-      }
-      if (top === Infinity) continue
-      next[sectionId] = {
-        top: Math.max(0, top - BAND_PAD),
-        height: bottom - top + BAND_PAD * 2,
-      }
+    // Geometry comes from the DOM, not store positions: gridstack's packed
+    // layout can drift from saved y values (ties, compaction), and sections
+    // tiled header→next-header can never overlap by construction.
+    const headers = sections.value
+      .map(s => ({ s, el: wrapper.querySelector<HTMLElement>(`[data-widget-id="${CSS.escape(s.id)}"]`) }))
+      .filter((h): h is { s: typeof h.s; el: HTMLElement } => !!h.el)
+      .sort((a, b) => a.el.offsetTop - b.el.offsetTop)
+    if (!headers.length) {
+      bounds.value = {}
+      return
     }
+    let maxBottom = 0
+    wrapper.querySelectorAll<HTMLElement>('[data-widget-id]').forEach((el) => {
+      maxBottom = Math.max(maxBottom, el.offsetTop + el.offsetHeight)
+    })
+    const next: Record<string, SectionBounds> = {}
+    headers.forEach((h, i) => {
+      const top = h.el.offsetTop + (h.s.kind === 'section' ? SECTION_TOP_INSET : TEXT_TOP_INSET)
+      const nextHeader = headers[i + 1]
+      const end = nextHeader
+        ? nextHeader.el.offsetTop + (nextHeader.s.kind === 'section' ? SECTION_TAIL : TEXT_TAIL)
+        : maxBottom + LAST_TAIL
+      if (end <= top) return
+      next[h.s.id] = { top, height: end - top }
+    })
     bounds.value = next
   }
 
@@ -108,7 +112,7 @@ export function useDashboardSections(
     () => nextTick(scheduleMeasure),
   )
   // Header flag/color edits change sections without moving anything.
-  watch([sections, membership], () => nextTick(scheduleMeasure))
+  watch(sections, () => nextTick(scheduleMeasure))
 
   // Catches container reflows the store can't see: initial staggered widget
   // mount, window resize, mobile 1-column collapse. The wrapper element can

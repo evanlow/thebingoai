@@ -24,8 +24,9 @@
         :title="config.label"
       >{{ config.label }}</div>
 
-      <!-- Main value -->
-      <div class="flex items-baseline gap-1 mt-2 max-w-full overflow-hidden" :class="justifyClass">
+      <!-- Main value — flex-shrink-0 so a tight card squeezes whitespace,
+           never the glyphs (overflow-hidden here would clip them) -->
+      <div class="flex flex-shrink-0 items-baseline gap-1 mt-2 max-w-full overflow-hidden" :class="justifyClass">
         <span v-if="config.prefix" class="text-sm font-medium text-[var(--ink-3)] flex-shrink-0">{{ config.prefix }}</span>
         <span
           class="kpi-value truncate"
@@ -374,7 +375,7 @@ const kpiValueClass = computed(() => {
   font-size: 36px;
   font-optical-sizing: auto;
   font-variation-settings: 'opsz' 72;
-  line-height: 1.25;
+  line-height: 1.1;
   letter-spacing: -0.5px;
   color: var(--ink-0);
 }
