@@ -34,8 +34,8 @@
           class="w-64"
         />
         <div v-else class="flex items-center gap-2 mb-2">
-          <Shield class="h-4 w-4 text-gray-400" />
-          <span class="text-sm font-medium text-gray-900">{{ teams[0]?.name }}</span>
+          <Shield class="h-4 w-4 text-gray-400 dark:text-neutral-500" />
+          <span class="text-sm font-medium text-gray-900 dark:text-neutral-100">{{ teams[0]?.name }}</span>
         </div>
       </div>
 
@@ -49,38 +49,38 @@
         <UiCard class="p-5 mb-6">
           <div class="mb-4 flex items-center justify-between">
             <div>
-              <h3 class="text-base font-medium text-gray-900">Tool Policies</h3>
-              <p class="text-sm text-gray-500 mt-0.5">Control which tools this team can use</p>
+              <h3 class="text-base font-medium text-gray-900 dark:text-neutral-100">Tool Policies</h3>
+              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">Control which tools this team can use</p>
             </div>
             <UiButton size="sm" :loading="savingTools" @click="saveToolPolicy">
               Save Changes
             </UiButton>
           </div>
 
-          <div v-if="catalogByCategory.length === 0" class="text-sm text-gray-400">
+          <div v-if="catalogByCategory.length === 0" class="text-sm text-gray-400 dark:text-neutral-500">
             No tools in catalog.
           </div>
 
           <div v-else class="space-y-5">
             <div v-for="group in catalogByCategory" :key="group.category">
-              <h4 class="mb-2 text-sm font-medium uppercase tracking-wide text-gray-500">
+              <h4 class="mb-2 text-sm font-medium uppercase tracking-wide text-gray-500 dark:text-neutral-400">
                 {{ group.category }}
               </h4>
               <div class="space-y-2">
                 <div
                   v-for="tool in group.tools"
                   :key="tool.tool_key"
-                  class="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3"
+                  class="flex items-center justify-between rounded-lg border border-gray-100 dark:border-neutral-800 px-4 py-3"
                 >
                   <div class="min-w-0 flex-1 pr-4">
-                    <p class="text-sm font-medium text-gray-900">{{ tool.display_name }}</p>
-                    <p v-if="tool.description" class="text-sm text-gray-500 mt-0.5 truncate">{{ tool.description }}</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">{{ tool.display_name }}</p>
+                    <p v-if="tool.description" class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5 truncate">{{ tool.description }}</p>
                   </div>
                   <button
                     type="button"
                     @click="toggleTool(tool.tool_key)"
                     class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
-                    :class="enabledTools.has(tool.tool_key) ? 'bg-violet-600' : 'bg-gray-200'"
+                    :class="enabledTools.has(tool.tool_key) ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
                   >
                     <span
                       class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
@@ -97,15 +97,15 @@
         <UiCard class="p-5">
           <div class="mb-4 flex items-center justify-between">
             <div>
-              <h3 class="text-base font-medium text-gray-900">Connection Policies</h3>
-              <p class="text-sm text-gray-500 mt-0.5">Control which database connections this team can access</p>
+              <h3 class="text-base font-medium text-gray-900 dark:text-neutral-100">Connection Policies</h3>
+              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">Control which database connections this team can access</p>
             </div>
             <UiButton size="sm" :loading="savingConnections" @click="saveConnectionPolicy">
               Save Changes
             </UiButton>
           </div>
 
-          <div v-if="connections.length === 0" class="text-sm text-gray-400">
+          <div v-if="connections.length === 0" class="text-sm text-gray-400 dark:text-neutral-500">
             No database connections available.
           </div>
 
@@ -113,17 +113,17 @@
             <div
               v-for="conn in connections"
               :key="conn.id"
-              class="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3"
+              class="flex items-center justify-between rounded-lg border border-gray-100 dark:border-neutral-800 px-4 py-3"
             >
               <div class="min-w-0 flex-1 pr-4">
-                <p class="text-sm font-medium text-gray-900">{{ conn.name }}</p>
-                <p class="text-sm text-gray-500">{{ conn.db_type }} · {{ conn.host }}</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">{{ conn.name }}</p>
+                <p class="text-sm text-gray-500 dark:text-neutral-400">{{ conn.db_type }} · {{ conn.host }}</p>
               </div>
               <button
                 type="button"
                 @click="toggleConnection(conn.id)"
                 class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
-                :class="enabledConnections.has(conn.id) ? 'bg-violet-600' : 'bg-gray-200'"
+                :class="enabledConnections.has(conn.id) ? 'bg-violet-600' : 'bg-gray-200 dark:bg-neutral-600'"
               >
                 <span
                   class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"

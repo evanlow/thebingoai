@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import ClassVar, Optional, Dict
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -61,6 +61,44 @@ class PostgresConnector(BaseConnector):
         except Exception:
             pass
         return super()._get_row_count(cursor, schema, table_name)
+
+    def _get_column_comments(self, cursor, schema: str, table_name: str) -> Dict[str, str]:
+        """Read column comments from ``pg_description`` (via ``col_description``)."""
+        cursor.execute(
+            """
+            SELECT a.attname AS column_name, d.description AS comment
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+            JOIN pg_description d ON d.objoid = c.oid AND d.objsubid = a.attnum
+            WHERE n.nspname = %s AND c.relname = %s
+            """,
+            (schema, table_name),
+        )
+        out: Dict[str, str] = {}
+        for row in cursor.fetchall():
+            name = row['column_name'] if isinstance(row, dict) else row[0]
+            comment = row['comment'] if isinstance(row, dict) else row[1]
+            if comment:
+                out[name] = comment
+        return out
+
+    def _get_table_comment(self, cursor, schema: str, table_name: str) -> Optional[str]:
+        """Read the table comment via ``obj_description``."""
+        cursor.execute(
+            """
+            SELECT obj_description(c.oid) AS comment
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = %s AND c.relname = %s
+            """,
+            (schema, table_name),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        comment = row['comment'] if isinstance(row, dict) else row[0]
+        return comment or None
 
     def _foreign_key_query(self, schema: str, table: str) -> tuple:
         """

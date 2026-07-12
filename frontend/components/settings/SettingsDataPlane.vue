@@ -28,14 +28,14 @@
           v-for="plane in planes"
           :key="plane.id"
           class="flex items-start justify-between rounded-lg border p-4"
-          :class="plane.is_default ? 'border-blue-500 bg-blue-50' : 'border-gray-200'"
+          :class="plane.is_default ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 dark:border-neutral-700'"
         >
           <div>
             <div class="flex items-center gap-2">
-              <span class="text-sm font-medium text-gray-900">{{ planeLabel(plane.type) }}</span>
+              <span class="text-sm font-medium text-gray-900 dark:text-neutral-100">{{ planeLabel(plane.type) }}</span>
               <UiBadge v-if="plane.is_default" variant="info" size="sm">Default</UiBadge>
             </div>
-            <p class="mt-1 text-sm text-gray-500">{{ planeSummary(plane) }}</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-neutral-400">{{ planeSummary(plane) }}</p>
           </div>
           <div class="flex gap-2 shrink-0 ml-4">
             <UiButton
@@ -66,13 +66,13 @@
       />
 
       <!-- Add new plane -->
-      <div class="rounded-lg border border-dashed border-gray-300 p-5">
-        <h3 class="text-sm font-medium text-gray-900 mb-4">Add Data Plane</h3>
+      <div class="rounded-lg border border-dashed border-gray-300 dark:border-neutral-600 p-5">
+        <h3 class="text-sm font-medium text-gray-900 dark:text-neutral-100 mb-4">Add Data Plane</h3>
         <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1">Type</label>
           <select
             v-model="newType"
-            class="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="rounded-md border border-gray-300 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="local_filesystem">Local Filesystem (dev / self-hosted)</option>
             <option value="google_cloud_project">Google Cloud Project (cloud production)</option>
@@ -90,7 +90,7 @@
         />
 
         <div class="mt-4 flex items-center gap-3">
-          <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-neutral-300 cursor-pointer">
             <input v-model="newIsDefault" type="checkbox" class="rounded" />
             Set as default
           </label>

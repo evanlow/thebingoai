@@ -45,6 +45,7 @@
         <template v-if="!editMode">
           <DashboardSchedulePopover v-if="dashboardId" :dashboard-id="dashboardId" />
           <BriefMeButton v-if="dashboardId" :dashboard-id="dashboardId" />
+          <DashboardBriefsButton v-if="dashboardId" :key="dashboardId" :dashboard-id="dashboardId" @open="emit('briefs')" />
           <button
             class="hdr-btn"
             :disabled="refreshing"
@@ -81,7 +82,7 @@
           </button>
           <button v-if="!ws.isViewer" class="hdr-btn hdr-btn--filled" @click="emit('toggle-edit')">
             <Eye class="h-3.5 w-3.5" />
-            <span class="hidden sm:inline">Done</span>
+            <span class="hidden sm:inline">View</span>
           </button>
         </template>
       </div>
@@ -135,6 +136,7 @@ const emit = defineEmits<{
   delete: []
   share: []
   analyze: []
+  briefs: []
   'update:title': [value: string]
 }>()
 

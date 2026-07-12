@@ -2,9 +2,9 @@
   <div class="h-full overflow-y-auto bg-white dark:bg-neutral-900">
     <div class="max-w-3xl mx-auto px-6 py-10 space-y-4">
       <!-- Create failed (e.g. 402 out of credits) -->
-      <div v-if="error" class="rounded-lg border border-rose-200 bg-rose-50 p-6">
-        <h2 class="text-lg font-semibold text-rose-900 mb-2">Could not start briefing</h2>
-        <p class="text-sm text-rose-700">{{ error }}</p>
+      <div v-if="error" class="rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-6">
+        <h2 class="text-lg font-semibold text-rose-900 dark:text-rose-200 mb-2">Could not start briefing</h2>
+        <p class="text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       </div>
 
       <!-- Creating — shown instantly so the click feels responsive even while the
@@ -21,6 +21,8 @@
 </template>
 
 <script setup lang="ts">
+import { trackEvent } from '~/utils/analytics'
+
 const route = useRoute()
 const error = ref('')
 const { fetchWithRefresh } = useApi()
@@ -33,6 +35,7 @@ onMounted(async () => {
   }
   try {
     const resp = await fetchWithRefresh(`/api/dashboards/${dashboardId}/brief`, { method: 'POST' })
+    trackEvent('briefing_create', { dashboard_id: Number(dashboardId) })
     useBriefingsList().refresh()
     await navigateTo(`/briefings/${resp.briefing_id}`, { replace: true })
   } catch (err: any) {

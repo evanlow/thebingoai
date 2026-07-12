@@ -52,7 +52,7 @@
           @change="onFileChange"
         />
         <p v-if="formErrors.file" class="mt-1.5 text-sm text-red-600">{{ formErrors.file }}</p>
-        <p v-if="uploadingProgress > 0 && uploadingProgress < 100" class="mt-1.5 text-sm text-gray-500">
+        <p v-if="uploadingProgress > 0 && uploadingProgress < 100" class="mt-1.5 text-sm text-gray-500 dark:text-neutral-400">
           Uploading… {{ uploadingProgress }}%
         </p>
       </div>

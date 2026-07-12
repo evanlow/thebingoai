@@ -62,8 +62,10 @@ Mapping: `{"type": "kpi", "valueColumn": "current_value", "trendValueColumn": "p
 ### Best Practices
 
 - **Always include trend context** — a bare number without trend lacks meaning
+- **Cast text numerics inside aggregates** — if the profiled column type is TEXT/STRING, use `AVG(SAFE_CAST(col AS FLOAT64))`; `AVG(STRING)` fails on BigQuery
 - **Prefer autoTrend over legacy** — simpler SQL, fewer mapping fields, less error-prone
 - **Prefer date-based periods** — pair `periodLabel` with `trendDateColumn` for accurate comparisons; SQL should return individual rows (not pre-grouped) so the system can bucket them correctly
+- **Bound date-based queries** — only the current + previous period matter, so add a WHERE on the date column (e.g. last 60 days for "vs last month") instead of scanning full history
 - Use `aggregation: "last"` for the most recent value in a time-series
 - Use `aggregation: "sum"` for totals across all rows
 - Position KPIs in the executive summary row directly below the filter bar: y=2, w=3 or w=4, h=2

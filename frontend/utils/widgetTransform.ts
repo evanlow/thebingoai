@@ -135,22 +135,28 @@ function transformChart(result: SqliteQueryResult, mapping: Record<string, any>)
 
   const empty = { data: { labels: [], datasets: [] } }
 
+  // Ungrouped scatter/bubble series name — meaningful in tooltips ("y vs x").
+  const xyLabel = mapping.xMetricColumn && mapping.yMetricColumn
+    ? `${mapping.yMetricColumn} vs ${mapping.xMetricColumn}`
+    : 'Scatter'
+
   // Guard: no rows → return empty structure with correct dataset labels
   if (!result.rows.length) {
     if (mapping.xMetricColumn && mapping.yMetricColumn) {
-      return { data: { labels: [], datasets: [{ label: 'Scatter', data: [] }] } }
+      return { data: { labels: [], datasets: [{ label: xyLabel, data: [] }] } }
     }
     return { data: { labels: [], datasets: datasetCols.map(ds => ({ label: ds.label || ds.column, data: [] })) } }
   }
 
   // ── SCATTER: x+y metric columns → {x, y} point objects ────────────────────
+  // Optional: labelColumn groups points into one dataset (color) per value;
+  // sizeMetricColumn adds `r` per point (bubble chart). Both raw-path only.
   if (mapping.xMetricColumn && mapping.yMetricColumn) {
     const xIdx = result.columns.indexOf(mapping.xMetricColumn as string)
     const yIdx = result.columns.indexOf(mapping.yMetricColumn as string)
-    if (xIdx === -1 || yIdx === -1) return { data: { labels: [], datasets: [{ label: 'Scatter', data: [] }] } }
+    if (xIdx === -1 || yIdx === -1) return { data: { labels: [], datasets: [{ label: xyLabel, data: [] }] } }
 
     const yAgg = (mapping.yAggregation as string) || 'none'
-    let points: { x: any; y: any }[]
 
     if (yAgg && yAgg !== 'none') {
       // Group by X, aggregate Y per group
@@ -162,11 +168,39 @@ function transformChart(result: SqliteQueryResult, mapping: Record<string, any>)
         if (!groups.has(xVal)) { groups.set(xVal, []); order.push(xVal) }
         groups.get(xVal)!.push(yVal)
       }
-      points = order.map(x => ({ x, y: aggregateValues(groups.get(x)!, yAgg) ?? null }))
-    } else {
-      points = result.rows.map(row => ({ x: toJsonSafe(row[xIdx]), y: toJsonSafe(row[yIdx]) }))
+      const points = order.map(x => ({ x, y: aggregateValues(groups.get(x)!, yAgg) ?? null }))
+      return { data: { labels: [], datasets: [{ label: xyLabel, data: points }] } }
     }
-    return { data: { labels: [], datasets: [{ label: 'Scatter', data: points }] } }
+
+    const sizeIdx = mapping.sizeMetricColumn ? result.columns.indexOf(mapping.sizeMetricColumn as string) : -1
+    const toPoint = (row: any[]) => {
+      const p: { x: any; y: any; r?: any } = { x: toJsonSafe(row[xIdx]), y: toJsonSafe(row[yIdx]) }
+      if (sizeIdx !== -1) p.r = toJsonSafe(row[sizeIdx])
+      return p
+    }
+
+    // Data Studio parity: max 1000 points per series — even downsample.
+    const MAX_SCATTER_POINTS = 1000
+    const cap = (pts: any[]) => {
+      if (pts.length <= MAX_SCATTER_POINTS) return pts
+      const step = Math.ceil(pts.length / MAX_SCATTER_POINTS)
+      return pts.filter((_, i) => i % step === 0)
+    }
+
+    if (labelCol) {
+      const groupIdx = result.columns.indexOf(labelCol)
+      if (groupIdx !== -1) {
+        const groups = new Map<string, any[]>()
+        for (const row of result.rows) {
+          const gk = String(toJsonSafe(row[groupIdx]))
+          if (!groups.has(gk)) groups.set(gk, [])
+          groups.get(gk)!.push(toPoint(row))
+        }
+        return { data: { labels: [], datasets: [...groups.entries()].map(([gk, pts]) => ({ label: gk, data: cap(pts) })) } }
+      }
+    }
+
+    return { data: { labels: [], datasets: [{ label: xyLabel, data: cap(result.rows.map(toPoint)) }] } }
   }
 
   // ── STANDARD: dimension + metric columns ──────────────────────────────────

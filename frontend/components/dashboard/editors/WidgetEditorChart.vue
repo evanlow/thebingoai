@@ -36,12 +36,24 @@
     </div>
 
     <!-- Dimensions & Metrics (only when data source is connected) -->
-    <div v-if="chartMapping && sourceColumns && sourceColumns.length > 0" class="space-y-3">
+    <div v-if="chartMapping && columnOptions.length > 0" class="space-y-3">
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Dimensions & Metrics</h3>
 
-      <!-- SCATTER: X + Y metric pickers -->
-      <template v-if="localType === 'scatter'">
+      <!-- SCATTER / BUBBLE: dimension + X/Y metric pickers (+ size for bubble) -->
+      <template v-if="localType === 'scatter' || localType === 'bubble'">
         <div class="space-y-3">
+          <div class="space-y-1.5">
+            <label class="text-sm text-gray-600 dark:text-neutral-400">Dimension (optional — groups &amp; colors points)</label>
+            <select
+              :value="chartMapping.labelColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="">None</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
+            </select>
+          </div>
           <div class="space-y-1.5">
             <label class="text-sm text-gray-600 dark:text-neutral-400">X Metric</label>
             <div class="flex gap-2">
@@ -52,7 +64,7 @@
                 @change="emitMappingPatch({ xMetricColumn: ($event.target as HTMLSelectElement).value || undefined })"
               >
                 <option value="" disabled>Select column…</option>
-                <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+                <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
               </select>
               <select
                 :value="chartMapping.xAggregation || 'none'"
@@ -74,7 +86,7 @@
                 @change="emitMappingPatch({ yMetricColumn: ($event.target as HTMLSelectElement).value || undefined })"
               >
                 <option value="" disabled>Select column…</option>
-                <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+                <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
               </select>
               <select
                 :value="chartMapping.yAggregation || 'none'"
@@ -85,6 +97,19 @@
                 <option v-for="a in aggregationOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
               </select>
             </div>
+          </div>
+          <div v-if="localType === 'bubble'" class="space-y-1.5">
+            <label class="text-xs text-gray-600 dark:text-neutral-400">Bubble Size Metric <span class="text-red-500">*</span></label>
+            <select
+              :value="chartMapping.sizeMetricColumn || ''"
+              :disabled="!editMode"
+              class="w-full rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
+              @change="emitMappingPatch({ sizeMetricColumn: ($event.target as HTMLSelectElement).value || undefined })"
+            >
+              <option value="" disabled>Select column…</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
+            </select>
+            <p class="text-[11px] text-gray-400 dark:text-neutral-500">Point size scales with this metric.</p>
           </div>
         </div>
       </template>
@@ -101,23 +126,23 @@
               @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
           <div class="space-y-1.5">
             <label class="text-sm text-gray-600 dark:text-neutral-400">Metric</label>
             <div class="flex gap-2">
               <select
-                :value="chartMapping.datasetColumns[0]?.column || ''"
+                :value="chartMapping.datasetColumns?.[0]?.column || ''"
                 :disabled="!editMode"
                 class="flex-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="updateDatasetColumn(0, 'column', ($event.target as HTMLSelectElement).value)"
               >
                 <option value="" disabled>Select column…</option>
-                <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+                <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
               </select>
               <select
-                :value="chartMapping.datasetColumns[0]?.aggregation || 'sum'"
+                :value="chartMapping.datasetColumns?.[0]?.aggregation || 'sum'"
                 :disabled="!editMode"
                 class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="updateDatasetColumn(0, 'aggregation', ($event.target as HTMLSelectElement).value)"
@@ -126,7 +151,7 @@
               </select>
             </div>
             <input
-              :value="chartMapping.datasetColumns[0]?.label || ''"
+              :value="chartMapping.datasetColumns?.[0]?.label || ''"
               type="text"
               placeholder="Label (optional)"
               :readonly="!editMode"
@@ -150,23 +175,23 @@
               @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
           <div class="space-y-1.5">
             <label class="text-sm text-gray-600 dark:text-neutral-400">Metric</label>
             <div class="flex gap-2">
               <select
-                :value="chartMapping.datasetColumns[0]?.column || ''"
+                :value="chartMapping.datasetColumns?.[0]?.column || ''"
                 :disabled="!editMode"
                 class="flex-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="updateDatasetColumn(0, 'column', ($event.target as HTMLSelectElement).value)"
               >
                 <option value="" disabled>Select column…</option>
-                <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+                <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
               </select>
               <select
-                :value="chartMapping.datasetColumns[0]?.aggregation || 'sum'"
+                :value="chartMapping.datasetColumns?.[0]?.aggregation || 'sum'"
                 :disabled="!editMode"
                 class="w-28 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors disabled:cursor-default disabled:bg-gray-50 dark:disabled:bg-neutral-800"
                 @change="updateDatasetColumn(0, 'aggregation', ($event.target as HTMLSelectElement).value)"
@@ -190,7 +215,7 @@
               @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
           <div class="space-y-1.5">
@@ -202,7 +227,7 @@
               @change="emitMappingPatch({ barLabelColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="">None</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
           <div class="space-y-1.5">
@@ -214,7 +239,7 @@
               @change="emitMappingPatch({ startColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
           <div class="space-y-1.5">
@@ -226,7 +251,7 @@
               @change="emitMappingPatch({ endColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
           <div class="space-y-1.5">
@@ -238,7 +263,7 @@
               @change="emitMappingPatch({ tooltipColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="">None</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
         </div>
@@ -256,7 +281,7 @@
               @change="emitMappingPatch({ labelColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="" disabled>Select column…</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
           </div>
 
@@ -351,7 +376,7 @@
                     @change="updateDatasetColumn(idx, 'column', ($event.target as HTMLSelectElement).value)"
                   >
                     <option value="" disabled>Column…</option>
-                    <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+                    <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
                   </select>
                   <select
                     :value="ds.aggregation || 'sum'"
@@ -393,7 +418,7 @@
               @change="emitMappingPatch({ breakdownColumn: ($event.target as HTMLSelectElement).value || undefined })"
             >
               <option value="">None</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
+              <option v-for="col in columnOptions" :key="col" :value="col">{{ col }}</option>
             </select>
             <p v-if="chartMapping?.breakdownColumn" class="text-sm text-gray-400 dark:text-neutral-500">Splits the first metric into one series per value. Use Stacked / 100% (below) for stacked bars.</p>
           </div>
@@ -403,7 +428,7 @@
 
     <!-- Sort (hidden for scatter / timeline) -->
     <div
-      v-if="localType !== 'scatter' && localType !== 'timeline'"
+      v-if="localType !== 'scatter' && localType !== 'bubble' && localType !== 'timeline'"
       class="space-y-3"
     >
       <h3 class="text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">Sort</h3>
@@ -534,6 +559,22 @@ const chartMapping = computed(() => {
   return null
 })
 
+// Column picker options: source columns plus any column the mapping already
+// references — selections stay visible even when the source-columns fetch
+// fails or the list is missing a SQL alias.
+const columnOptions = computed(() => {
+  const cols = new Set(props.sourceColumns ?? [])
+  const m = chartMapping.value
+  if (m) {
+    for (const c of [m.labelColumn, m.xMetricColumn, m.yMetricColumn, m.sizeMetricColumn, m.breakdownColumn,
+                     m.startColumn, m.endColumn, m.barLabelColumn, m.tooltipColumn]) {
+      if (c) cols.add(c)
+    }
+    for (const dc of m.datasetColumns ?? []) if (dc.column) cols.add(dc.column)
+  }
+  return [...cols]
+})
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 function emitDebounced() {
@@ -556,7 +597,12 @@ function buildConfig(): WidgetConfig {
 }
 
 function setType(t: string) {
+  const prev = localType.value
   localType.value = t as ChartType
+  // Leaving bubble: drop the size metric so points return to fixed radius.
+  if (prev === 'bubble' && t !== 'bubble' && chartMapping.value?.sizeMetricColumn) {
+    emitMappingPatch({ sizeMetricColumn: undefined })
+  }
   emitDebounced()
 }
 
@@ -663,6 +709,16 @@ const ScatterIcon = {
   },
 }
 
+const BubbleIcon = {
+  render() {
+    return h('svg', { xmlns: 'http://www.w3.org/2000/svg', width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, [
+      h('circle', { cx: 8, cy: 15, r: 4 }),
+      h('circle', { cx: 16, cy: 8, r: 2.5 }),
+      h('circle', { cx: 18.5, cy: 16.5, r: 1.5 }),
+    ])
+  },
+}
+
 const chartTypes = [
   { value: 'line', label: 'Line', icon: LineChart },
   { value: 'bar', label: 'Bar', icon: BarChart2 },
@@ -670,6 +726,7 @@ const chartTypes = [
   { value: 'doughnut', label: 'Doughnut', icon: DoughnutIcon },
   { value: 'area', label: 'Area', icon: TrendingUp },
   { value: 'scatter', label: 'Scatter', icon: ScatterIcon },
+  { value: 'bubble', label: 'Bubble', icon: BubbleIcon },
   { value: 'funnel', label: 'Funnel', icon: Filter },
   { value: 'timeline', label: 'Timeline', icon: GanttChart },
 ]

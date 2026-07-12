@@ -2,14 +2,26 @@ import { useChatStore } from '~/stores/chat'
 import type { Message, AgentStep } from '~/stores/chat'
 import { useChatFileUpload } from './useChatFileUpload'
 import { MAX_QUERY_RESULT_ROWS } from './_chatConstants'
+import { trackEvent } from '~/utils/analytics'
 
 export const useChatStreaming = () => {
   const chatStore = useChatStore()
   const ws = useWebSocket()
   const { refresh: refreshCredits } = useCreditBalance()
 
+  // query.result (the CSV/Excel export side-channel) is delivered via Redis
+  // pub/sub — a slower lane than the direct chat.done — so it can arrive after a
+  // turn's handlers are torn down. Keep the latest turn's handler alive across
+  // that gap; it's replaced at the next turn's start and released on dispose.
+  let activeQueryResultUnsub: (() => void) | null = null
+  onScopeDispose(() => { activeQueryResultUnsub?.() })
+
   const sendMessage = async (message: string, fileIds: string[] = [], options?: { source?: Message['source'] }) => {
     chatStore.isStreaming = true
+
+    // Drop the previous turn's lingering query.result handler before this turn
+    // registers its own, so a late event can't write to the wrong message.
+    if (activeQueryResultUnsub) { activeQueryResultUnsub(); activeQueryResultUnsub = null }
 
     // This thread's history is about to change — drop its cached copy so a later
     // revisit refetches the new turn instead of serving a stale cache.
@@ -38,6 +50,10 @@ export const useChatStreaming = () => {
       attachments: hasAttachments ? attachments : undefined,
       source: options?.source,
     }
+    // Only messages sent through this in-app compose path count as a user chat
+    // action — heartbeat/Telegram relays, skill suggestions, and the reconnect
+    // placeholder push straight to chatStore.addMessage() and never hit here.
+    trackEvent('chat_message_sent', { thread_id: chatStore.currentThreadId })
     chatStore.addMessage(userMessage)
     chatStore.clearInput()
 
@@ -298,7 +314,11 @@ export const useChatStreaming = () => {
         syncStepsLog()
       })
 
-      onEvent('query.result', (data) => {
+      // Registered OUTSIDE `unsubs` and stored on activeQueryResultUnsub so
+      // cleanup() on chat.done does NOT tear it down — the export event often
+      // lands just after done via the slower Redis lane.
+      activeQueryResultUnsub = ws.on('query.result', (data: any) => {
+        if (data.request_id && data.request_id !== requestId) return
         const payload = data.data || {}
         const columns: string[] = payload.columns || []
         const rawRows: any[][] = payload.rows || []
@@ -314,6 +334,21 @@ export const useChatStreaming = () => {
         const targetMsg = chatStore.messages.find(m => m.id === assistantMsgId)
         if (!targetMsg?.results?.length || results.length >= (targetMsg.results?.length || 0)) {
           chatStore.updateMessageById(assistantMsgId, { results })
+        }
+
+        // Track every dataset for download (one entry per query, dedup by ref)
+        if (data.result_ref) {
+          const existing = targetMsg?.query_files || []
+          if (!existing.some(f => f.result_ref === data.result_ref)) {
+            chatStore.updateMessageById(assistantMsgId, {
+              query_files: [...existing, {
+                result_ref: data.result_ref,
+                label: payload.label || 'query',
+                row_count: payload.row_count ?? rawRows.length,
+                col_count: columns.length,
+              }],
+            })
+          }
         }
       })
 
@@ -391,6 +426,17 @@ export const useChatStreaming = () => {
         // already filled it), this is a no-op.
         const finalizeWhenDripDone = () => {
           if (displayedContent.length >= accumulatedContent.length) {
+            // Fire once per completed assistant response, here.
+            // chatStore.currentThreadId is set above for new threads, so this also
+            // fixes the thread_id-null-on-first-message gap the old addMessage-based
+            // event had. Message.sql is only populated on history reload, never live,
+            // so has_sql is derived from the live agent steps instead (execute_query
+            // at top level or nested in data_agent sub_steps).
+            const hasSql = agentSteps.some(s =>
+              s.tool_name === 'execute_query' ||
+              (s.content?.sub_steps || []).some((ss: any) => ss.tool_name === 'execute_query')
+            )
+            trackEvent('chat_response_received', { thread_id: chatStore.currentThreadId, has_sql: hasSql })
             cleanup()
           } else {
             setTimeout(finalizeWhenDripDone, DRIP_INTERVAL_MS)

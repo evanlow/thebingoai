@@ -28,17 +28,15 @@ def _with_dashboard_name(briefing: Briefing, db: Session) -> BriefingResponse:
 @router.get("/briefings", response_model=list[BriefingResponse])
 async def list_briefings(
     limit: int = 50,
+    dashboard_id: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List briefings for the current user, newest first."""
-    briefings = (
-        db.query(Briefing)
-        .filter(Briefing.user_id == current_user.id)
-        .order_by(Briefing.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    """List briefings for the current user, newest first. Optionally scope to one dashboard."""
+    query = db.query(Briefing).filter(Briefing.user_id == current_user.id)
+    if dashboard_id is not None:
+        query = query.filter(Briefing.dashboard_id == dashboard_id)
+    briefings = query.order_by(Briefing.created_at.desc()).limit(limit).all()
     return [_with_dashboard_name(b, db) for b in briefings]
 
 

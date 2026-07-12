@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="relative w-full overflow-hidden rounded-t-lg bg-gray-50" style="height: 96px;">
+  <div ref="containerRef" class="relative w-full overflow-hidden rounded-t-lg bg-gray-50 dark:bg-neutral-800" style="height: 96px;">
     <template v-if="widgets.length > 0 && containerWidth > 0">
       <div
         v-for="(widget, i) in widgets"
@@ -59,7 +59,7 @@
           </template>
 
           <!-- Scatter chart illustration -->
-          <template v-else-if="widget.type === 'chart' && widget.chartType === 'scatter'">
+          <template v-else-if="widget.type === 'chart' && (widget.chartType === 'scatter' || widget.chartType === 'bubble')">
             <circle cx="12" cy="28" r="2.5" :fill="TYPE_STROKE.chart" opacity="0.8" />
             <circle cx="20" cy="20" r="2.5" :fill="TYPE_STROKE.chart" opacity="0.8" />
             <circle cx="28" cy="14" r="2.5" :fill="TYPE_STROKE.chart" opacity="0.8" />

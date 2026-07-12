@@ -40,7 +40,8 @@ class WidgetPendingManualRewrite(Base):
     __tablename__ = "widgets_pending_manual_rewrite"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    widget_id = Column(String(36), nullable=False)
+    # Widget ids are LLM-chosen and can exceed 36 chars (e.g. descriptive slugs).
+    widget_id = Column(String(255), nullable=False)
     connection_id = Column(Integer, ForeignKey("database_connections.id"), nullable=False)
     current_sql = Column(Text, nullable=False)
     suggested_old_table = Column(String(255), nullable=True)

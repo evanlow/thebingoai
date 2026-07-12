@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { SkillSuggestion } from '~/types/skillSuggestion'
+import { trackEvent } from '~/utils/analytics'
 
 export interface AgentStep {
   agent_type: string         // "orchestrator" | "data_agent" | "rag_agent"
@@ -28,6 +29,14 @@ export interface Message {
   skillSuggestions?: SkillSuggestion[]
   loop_detected?: boolean
   briefing_id?: number | null
+  query_files?: QueryFile[]  // downloadable datasets produced by this turn's queries
+}
+
+export interface QueryFile {
+  result_ref: string
+  label: string
+  row_count: number
+  col_count: number
 }
 
 export interface ThinkingStep {
@@ -199,6 +208,11 @@ export const useChatStore = defineStore('chat', {
     },
 
     addMessage(message: Message) {
+      // GA4 chat_message_sent / chat_response_received are NOT fired here — this is
+      // also hit by heartbeat relays, Telegram relays, skill suggestions, and the
+      // reconnect placeholder, which would inflate both events. chat_message_sent
+      // fires in useChatStreaming.sendMessage (where the in-app user message is
+      // created); chat_response_received fires once at stream completion there.
       this.messages.push(message)
     },
 
@@ -356,6 +370,7 @@ export const useChatStore = defineStore('chat', {
     },
 
     startNewChat() {
+      trackEvent('chat_start')
       this.currentThreadId = null
       this.messages = []
       this.inputText = ''

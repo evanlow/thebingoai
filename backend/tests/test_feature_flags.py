@@ -257,6 +257,7 @@ def test_known_flags_registry():
         "duckdb_widget_serving",
         "bulk_widget_loading",
         "widget_result_cache",
+        "metadata_only_llm",
     }
     assert KNOWN_FLAGS >= expected, f"Missing from KNOWN_FLAGS: {expected - KNOWN_FLAGS}"
 

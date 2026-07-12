@@ -1,26 +1,45 @@
 <template>
-  <div class="h-full overflow-y-auto bg-white dark:bg-neutral-900">
+  <div class="h-full flex flex-col bg-white dark:bg-neutral-900">
+    <!-- Back to originating dashboard — mirrors the chat briefing back bar; visible once dashboard_id is known -->
+    <div
+      v-if="briefing?.dashboard_id"
+      data-pdf-ignore="true"
+      class="flex items-center gap-2 px-4 py-2 border-b border-[var(--line)] flex-shrink-0"
+    >
+      <button
+        data-testid="briefing-back"
+        class="text-sm text-[var(--ink-2)] hover:text-[var(--ink-0)] flex items-center gap-1"
+        @click="goBack"
+      >
+        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        Back to dashboard
+      </button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
     <!-- Loading skeleton -->
     <div v-if="loading" class="max-w-3xl mx-auto px-6 py-10 space-y-4">
-      <div class="h-3 w-40 bg-neutral-200 rounded animate-pulse" />
-      <div class="h-10 w-3/4 bg-neutral-200 rounded animate-pulse" />
-      <div class="h-4 w-full bg-neutral-100 rounded animate-pulse" />
-      <div class="h-4 w-5/6 bg-neutral-100 rounded animate-pulse" />
+      <div class="h-3 w-40 bg-neutral-200 dark:bg-neutral-700 rounded animate-pulse" />
+      <div class="h-10 w-3/4 bg-neutral-200 dark:bg-neutral-700 rounded animate-pulse" />
+      <div class="h-4 w-full bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
+      <div class="h-4 w-5/6 bg-neutral-100 dark:bg-neutral-800 rounded animate-pulse" />
     </div>
 
     <!-- API error / not found (briefing is null) -->
     <div v-else-if="!briefing && error" class="max-w-3xl mx-auto px-6 py-10">
-      <div class="rounded-lg border border-rose-200 bg-rose-50 p-6">
-        <h2 class="text-lg font-semibold text-rose-900 mb-2">Could not load briefing</h2>
-        <p class="text-sm text-rose-700">{{ error }}</p>
+      <div class="rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-6">
+        <h2 class="text-lg font-semibold text-rose-900 dark:text-rose-200 mb-2">Could not load briefing</h2>
+        <p class="text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       </div>
     </div>
 
     <!-- Failed (briefing exists but status is failed) -->
     <div v-else-if="briefing.status === 'failed'" class="max-w-3xl mx-auto px-6 py-10">
-      <div class="rounded-lg border border-rose-200 bg-rose-50 p-6">
-        <h2 class="text-lg font-semibold text-rose-900 mb-2">Briefing failed</h2>
-        <p class="text-sm text-rose-700 mb-4">{{ briefing.error || 'Unknown error.' }}</p>
+      <div class="rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-6">
+        <h2 class="text-lg font-semibold text-rose-900 dark:text-rose-200 mb-2">Briefing failed</h2>
+        <p class="text-sm text-rose-700 dark:text-rose-300 mb-4">{{ briefing.error || 'Unknown error.' }}</p>
         <button class="px-3 py-1.5 rounded bg-rose-600 text-white text-sm" @click="retry">Retry</button>
       </div>
     </div>
@@ -87,7 +106,7 @@
           :class="{ 'border-l border-neutral-200 dark:border-neutral-700': i > 0 }"
         >
           <div class="text-sm uppercase tracking-wide text-neutral-500">{{ k.label }}</div>
-          <div class="text-2xl font-semibold mt-1">{{ k.value }}</div>
+          <div class="text-2xl font-semibold mt-1 text-neutral-900 dark:text-neutral-100">{{ k.value }}</div>
           <div v-if="k.delta_vs_prev" class="text-sm mt-1" :class="deltaClass(k.delta_direction)">
             {{ k.delta_vs_prev }}
           </div>
@@ -123,17 +142,23 @@
         </ul>
       </aside>
     </article>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { stripLeadingNumber } from '~/utils/stripLeadingNumber'
+import { trackEvent } from '~/utils/analytics'
 
 const route = useRoute()
 const briefingId = computed(() => parseInt(route.params.id as string))
-const { briefing, loading, refresh } = useBriefing(briefingId)
+const { briefing, loading, error, refresh } = useBriefing(briefingId)
 const articleRef = ref<HTMLElement | null>(null)
 const { exporting, markWidgetLoaded, resetWidgets, exportPdf } = useBriefingPdf()
+
+function goBack() {
+  if (briefing.value?.dashboard_id) navigateTo('/dashboard?id=' + briefing.value.dashboard_id)
+}
 
 const expectedWidgets = computed(
   () => briefing.value?.payload?.sections.filter((s) => s.widget_id).length ?? 0,
@@ -188,6 +213,7 @@ async function retry() {
   const resp = await fetchWithRefresh(`/api/dashboards/${briefing.value.dashboard_id}/brief`, {
     method: 'POST',
   })
+  trackEvent('briefing_create', { dashboard_id: briefing.value.dashboard_id })
   if (resp?.briefing_id && resp.briefing_id !== briefing.value.id) {
     await navigateTo(`/briefings/${resp.briefing_id}`)
   } else {

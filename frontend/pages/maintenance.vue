@@ -18,7 +18,7 @@
     >
       <div class="flex justify-center">
         <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" class="h-12 w-auto mb-10 dark:hidden" />
-        <img src="/logo/BINGO Logo Design_FA_Primary_W.png" alt="Bingo" class="h-12 w-auto mb-10 hidden dark:block" />
+        <img src="/logo/BINGO Logo Design_FA_Primary_M.png" alt="Bingo" class="h-12 w-auto mb-10 hidden dark:block" />
       </div>
 
       <h1 class="font-display text-[3rem] leading-[1.05] tracking-[-0.02em] text-neutral-900 dark:text-neutral-50 mb-6">

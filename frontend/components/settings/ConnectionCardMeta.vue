@@ -55,7 +55,7 @@ const status = computed<StatusSlot>(() => {
     case 'pending':
       return { icon: Loader2, label: 'Profiling', color: 'text-purple-600', spin: true }
     default:
-      return { icon: Activity, label: 'Unknown', color: 'text-gray-400' }
+      return { icon: Activity, label: 'Unknown', color: 'text-gray-400 dark:text-neutral-500' }
   }
 })
 

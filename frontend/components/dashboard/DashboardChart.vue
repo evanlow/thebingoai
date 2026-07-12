@@ -1,9 +1,9 @@
 <template>
-  <div ref="containerRef" class="flex flex-col rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+  <div ref="containerRef" class="flex flex-col rounded-xl border border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 shadow-sm">
     <div v-if="config.title" class="mb-3 flex items-start justify-between">
       <div>
-        <h3 class="text-sm font-medium text-gray-800">{{ config.title }}</h3>
-        <p v-if="config.description" class="mt-0.5 text-sm text-gray-400">{{ config.description }}</p>
+        <h3 class="text-sm font-medium text-gray-800 dark:text-neutral-200">{{ config.title }}</h3>
+        <p v-if="config.description" class="mt-0.5 text-sm text-gray-400 dark:text-neutral-500">{{ config.description }}</p>
       </div>
     </div>
     <div class="relative min-h-0 flex-1">

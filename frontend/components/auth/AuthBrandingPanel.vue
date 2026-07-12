@@ -4,7 +4,7 @@
       <!-- Logo -->
       <div>
         <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" style="height: 40px; width: auto;" class="dark:hidden" />
-        <img src="/logo/BINGO Logo Design_FA_Primary_W.png" alt="Bingo" style="height: 40px; width: auto;" class="hidden dark:block" />
+        <img src="/logo/BINGO Logo Design_FA_Primary_M.png" alt="Bingo" style="height: 40px; width: auto;" class="hidden dark:block" />
       </div>
 
       <!-- Marketing headline -->

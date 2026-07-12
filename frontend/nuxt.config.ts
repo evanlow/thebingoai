@@ -48,6 +48,7 @@ export default defineNuxtConfig({
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
       chatFileMaxSizeMb: Number(process.env.NUXT_PUBLIC_CHAT_FILE_MAX_SIZE_MB) || 50,
       workspaceName: process.env.NUXT_PUBLIC_WORKSPACE_NAME || 'your workspace',
+      ga4Id: process.env.NUXT_PUBLIC_GA4_ID || '',
     }
   },
 
@@ -135,8 +136,7 @@ export default defineNuxtConfig({
         { name: 'description', content: 'RAG system for indexing and querying markdown files' }
       ],
       link: [
-        { rel: 'icon', type: 'image/png', href: '/favicon/bingo_icon_b.png', media: '(prefers-color-scheme: light)' },
-        { rel: 'icon', type: 'image/png', href: '/favicon/bingo_icon_w.png', media: '(prefers-color-scheme: dark)' }
+        { rel: 'icon', type: 'image/png', href: '/favicon/bingo_icon_b.png' }
       ]
     }
   }

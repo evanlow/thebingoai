@@ -144,8 +144,8 @@ const legendItems = Object.entries(KIND_PALETTE).map(([kind, pal]) => ({
               {{ KIND_PALETTE[data.kind]?.label ?? data.kind?.toUpperCase() }}
             </p>
           </div>
-          <Handle type="target" :position="Position.Left" class="!w-1.5 !h-1.5 !border-0 !bg-gray-300" />
-          <Handle type="source" :position="Position.Right" class="!w-1.5 !h-1.5 !border-0 !bg-gray-300" />
+          <Handle type="target" :position="Position.Left" class="!w-1.5 !h-1.5 !border-0 !bg-gray-300 dark:!bg-neutral-600" />
+          <Handle type="source" :position="Position.Right" class="!w-1.5 !h-1.5 !border-0 !bg-gray-300 dark:!bg-neutral-600" />
         </div>
       </template>
     </VueFlow>

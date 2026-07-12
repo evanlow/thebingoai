@@ -38,7 +38,7 @@
                 type="checkbox"
                 :checked="allSelectedState(control) === 'all'"
                 :indeterminate.prop="allSelectedState(control) === 'some'"
-                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-300"
+                class="rounded border-gray-300 dark:border-neutral-600 text-indigo-600 focus:ring-indigo-300"
                 @change="toggleSelectAll(control)"
               />
               {{ allSelectedState(control) === 'all' ? 'Clear all' : 'Select all' }}
@@ -51,7 +51,7 @@
               <input
                 type="checkbox"
                 :checked="getSelectedMulti(control.key).includes(opt)"
-                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-300"
+                class="rounded border-gray-300 dark:border-neutral-600 text-indigo-600 focus:ring-indigo-300"
                 @change="toggleMultiOption(control.key, opt)"
               />
               {{ opt }}

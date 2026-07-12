@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { ref, computed, reactive } from 'vue'
+import { mount, flushPromises } from '@vue/test-utils'
+import { ref, computed, reactive, nextTick } from 'vue'
+import { toast } from 'vue-sonner'
+
+// vue-sonner is imported directly by the bubble — mock so we can assert error toasts
+vi.mock('vue-sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+
+// Handle for the query-result download fetch (wired into the useApi stub below)
+const mockFetchWithRefresh = vi.fn()
 
 vi.stubGlobal('ref', ref)
 vi.stubGlobal('computed', computed)
@@ -9,7 +16,7 @@ vi.stubGlobal('reactive', reactive)
 // Stub Nuxt auto-imported composables used by the bubble
 vi.stubGlobal('useChatStore', () => ({ isStreaming: false, messages: [], skillSuggestions: [] }))
 vi.stubGlobal('useAuthStore', () => ({ user: { email: 'test@example.com' } }))
-vi.stubGlobal('useApi', () => ({ skills: { respondToSuggestion: vi.fn() } }))
+vi.stubGlobal('useApi', () => ({ skills: { respondToSuggestion: vi.fn() }, fetchWithRefresh: mockFetchWithRefresh }))
 vi.stubGlobal('useMentions', () => ({ resolvedMentions: { value: new Map() } }))
 vi.stubGlobal('navigateTo', vi.fn())
 
@@ -206,5 +213,170 @@ describe('ChatMessageBubble — reasoning steps toggle', () => {
   it('renders no reasoning button when the message has no steps', () => {
     const wrapper = mountBubble({ ...assistantMsg })
     expect(reasoningButton(wrapper)).toBeUndefined()
+  })
+})
+
+describe('ChatMessageBubble — query result download', () => {
+  const withFiles = (overrides: Record<string, any> = {}) => ({
+    ...assistantMsg,
+    query_files: [{ result_ref: 'ref-1', label: 'Sales', row_count: 3, col_count: 2 }],
+    ...overrides,
+  })
+
+  function mountBubble(message: any) {
+    return mount(ChatMessageBubble, {
+      props: { message, showActions: false, actionType: null, isLast: false, agentName: 'Bingo' },
+    })
+  }
+
+  const buttonByText = (wrapper: any, text: string) =>
+    wrapper.findAll('button').find((b: any) => b.text() === text)
+
+  // CSV/Excel live inside a headlessui Menu (the "Data Export" dropdown) and only
+  // render once opened — click the trigger before reaching for them.
+  const exportTrigger = (wrapper: any) => buttonByText(wrapper, 'Data Export')
+  async function openExport(wrapper: any) {
+    await exportTrigger(wrapper)!.trigger('click')
+    await nextTick()
+    await flushPromises()
+  }
+
+  let realCreateElement: typeof document.createElement
+  let anchorClick: ReturnType<typeof vi.fn>
+  let fakeAnchor: any
+
+  beforeEach(() => {
+    // Restore any createElement spy from a prior test before re-binding the real one.
+    vi.restoreAllMocks()
+    vi.stubGlobal('useChatStore', () => ({ isStreaming: false, messages: [] }))
+    mockFetchWithRefresh.mockReset()
+    ;(toast.error as any).mockClear()
+    realCreateElement = document.createElement.bind(document)
+    anchorClick = vi.fn()
+    fakeAnchor = { href: '', download: '', click: anchorClick }
+    // happy-dom doesn't implement these
+    ;(URL as any).createObjectURL = vi.fn(() => 'blob:mock')
+    ;(URL as any).revokeObjectURL = vi.fn()
+  })
+
+  // Intercept the download anchor only — after mount, so Vue's own createElement is untouched.
+  function installAnchorSpy() {
+    vi.spyOn(document, 'createElement').mockImplementation((tag: any) =>
+      tag === 'a' ? (fakeAnchor as any) : realCreateElement(tag))
+  }
+
+  it('CSV download hits the export endpoint and triggers a blob download', async () => {
+    const blob = new Blob(['x'])
+    mockFetchWithRefresh.mockResolvedValue(blob)
+    const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
+    installAnchorSpy()
+
+    await buttonByText(wrapper, 'CSV')!.trigger('click')
+    await flushPromises()
+
+    expect(mockFetchWithRefresh).toHaveBeenCalledWith(
+      '/api/query-results/ref-1/export?format=csv',
+      { responseType: 'blob' },
+    )
+    expect((URL as any).createObjectURL).toHaveBeenCalledWith(blob)
+    expect(fakeAnchor.href).toBe('blob:mock')
+    expect(fakeAnchor.download).toBe('Sales.csv')
+    expect(anchorClick).toHaveBeenCalledTimes(1)
+    expect((URL as any).revokeObjectURL).toHaveBeenCalledWith('blob:mock')
+  })
+
+  it('Excel download requests xlsx and names the file .xlsx', async () => {
+    mockFetchWithRefresh.mockResolvedValue(new Blob(['x']))
+    const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
+    installAnchorSpy()
+
+    await buttonByText(wrapper, 'Excel')!.trigger('click')
+    await flushPromises()
+
+    expect(mockFetchWithRefresh).toHaveBeenCalledWith(
+      '/api/query-results/ref-1/export?format=xlsx',
+      { responseType: 'blob' },
+    )
+    expect(fakeAnchor.download).toBe('Sales.xlsx')
+  })
+
+  it('falls back to "query-export" when the file has no label', async () => {
+    mockFetchWithRefresh.mockResolvedValue(new Blob(['x']))
+    const wrapper = mountBubble(withFiles({
+      query_files: [{ result_ref: 'ref-1', label: '', row_count: 1, col_count: 1 }],
+    }))
+    await openExport(wrapper)
+    installAnchorSpy()
+
+    await buttonByText(wrapper, 'CSV')!.trigger('click')
+    await flushPromises()
+
+    expect(fakeAnchor.download).toBe('query-export.csv')
+  })
+
+  it('disables the trigger while downloading, re-enables after', async () => {
+    // The export-race guard lives as :disabled on the "Data Export" trigger. Real
+    // headlessui MenuButton (as="template") doesn't forward a reactive disabled in
+    // happy-dom, so swap UiDropdown for a passthrough that renders the trigger slot
+    // + items plainly — this exercises the bubble's own binding, not headlessui.
+    const UiDropdownPassthrough = {
+      name: 'UiDropdown',
+      props: ['items', 'align'],
+      template:
+        '<div><slot name="trigger" /><button v-for="(it,i) in items" :key="i" class="item" @click="it.onClick">{{ it.label }}</button></div>',
+    }
+    let resolveFetch!: (b: Blob) => void
+    mockFetchWithRefresh.mockReturnValue(new Promise<Blob>((r) => { resolveFetch = r }))
+    const wrapper = mount(ChatMessageBubble, {
+      props: { message: withFiles(), showActions: false, actionType: null, isLast: false, agentName: 'Bingo' },
+      global: { stubs: { UiDropdown: UiDropdownPassthrough } },
+    })
+    installAnchorSpy()
+
+    await buttonByText(wrapper, 'CSV')!.trigger('click')
+    await nextTick()
+    expect(exportTrigger(wrapper)!.attributes('disabled')).toBeDefined()
+
+    resolveFetch(new Blob(['x']))
+    await flushPromises()
+    expect(exportTrigger(wrapper)!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows an "expired" toast on 404', async () => {
+    mockFetchWithRefresh.mockRejectedValue({ statusCode: 404 })
+    const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
+    installAnchorSpy()
+
+    await buttonByText(wrapper, 'CSV')!.trigger('click')
+    await flushPromises()
+
+    expect(toast.error).toHaveBeenCalledWith('Export expired — re-run the query to download again')
+  })
+
+  it('shows the error message on a non-404 failure', async () => {
+    mockFetchWithRefresh.mockRejectedValue({ message: 'boom' })
+    const wrapper = mountBubble(withFiles())
+    await openExport(wrapper)
+    installAnchorSpy()
+
+    await buttonByText(wrapper, 'CSV')!.trigger('click')
+    await flushPromises()
+
+    expect(toast.error).toHaveBeenCalledWith('boom')
+  })
+
+  it('renders a Data Export trigger per query_file that opens to CSV + Excel', async () => {
+    const wrapper = mountBubble(withFiles())
+    // Trigger is present; CSV/Excel are hidden until the dropdown is opened.
+    expect(exportTrigger(wrapper)).toBeTruthy()
+    expect(buttonByText(wrapper, 'CSV')).toBeUndefined()
+    expect(buttonByText(wrapper, 'Excel')).toBeUndefined()
+
+    await openExport(wrapper)
+    expect(buttonByText(wrapper, 'CSV')).toBeTruthy()
+    expect(buttonByText(wrapper, 'Excel')).toBeTruthy()
   })
 })

@@ -20,7 +20,7 @@
           <!-- Image thumbnail -->
           <div
             v-if="isImageType(attachment.type)"
-            class="h-16 w-16 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 flex-shrink-0"
+            class="h-16 w-16 overflow-hidden rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-100 dark:bg-neutral-800 flex-shrink-0"
           >
             <img
               v-if="attachment.preview_url"
@@ -29,7 +29,7 @@
               class="h-full w-full object-cover"
             />
             <div v-else class="flex h-full w-full items-center justify-center">
-              <svg class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg class="h-6 w-6 text-gray-400 dark:text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
@@ -38,14 +38,14 @@
           <!-- Document pill -->
           <div
             v-else
-            class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 max-w-48"
+            class="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-100 dark:bg-neutral-800 px-3 py-2 max-w-48"
           >
-            <svg class="h-4 w-4 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium text-gray-700">{{ attachment.name }}</p>
-              <p class="text-sm text-gray-500">{{ formatAttachmentSize(attachment.size) }}</p>
+              <p class="truncate text-sm font-medium text-gray-700 dark:text-neutral-300">{{ attachment.name }}</p>
+              <p class="text-sm text-gray-500 dark:text-neutral-400">{{ formatAttachmentSize(attachment.size) }}</p>
             </div>
           </div>
         </template>
@@ -59,8 +59,8 @@
           <span class="text-white text-sm">&starf;</span>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="font-semibold text-gray-900 mb-1 text-sm">I noticed some patterns in your conversations</div>
-          <div class="text-gray-500 text-sm mb-3">
+          <div class="font-semibold text-gray-900 dark:text-neutral-100 mb-1 text-sm">I noticed some patterns in your conversations</div>
+          <div class="text-gray-500 dark:text-neutral-400 text-sm mb-3">
             Based on your recent activity, I have {{ pendingSuggestions.length }} skill suggestion{{ pendingSuggestions.length !== 1 ? 's' : '' }} that could save you time.
           </div>
           <TransitionGroup name="suggestion-list" tag="div" class="space-y-2">
@@ -89,7 +89,7 @@
         <div class="flex-1 min-w-0">
       <!-- Heartbeat source label -->
       <div v-if="message.source === 'heartbeat'" class="mb-1.5 flex items-center gap-1.5">
-        <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-500 uppercase tracking-wide">
+        <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-neutral-800 px-2 py-0.5 text-sm font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
           <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -99,6 +99,32 @@
 
       <!-- Assistant message with markdown -->
       <UiMarkdownRenderer :content="message.content" />
+
+      <!-- Downloadable query results (one row per dataset) -->
+      <div v-if="message.query_files?.length" class="mt-3 space-y-1.5">
+        <div
+          v-for="f in message.query_files"
+          :key="f.result_ref"
+          class="flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-400"
+        >
+          <svg class="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
+          <span class="font-medium text-gray-600 dark:text-neutral-300">{{ f.label }}</span>
+          <span>· {{ f.row_count }}×{{ f.col_count }}</span>
+          <UiDropdown :items="exportItems(f)" align="left">
+            <template #trigger>
+              <button
+                :disabled="downloadingRef === f.result_ref"
+                class="ml-1 inline-flex items-center gap-1 rounded border border-black bg-black px-2 py-0.5 text-white hover:bg-gray-800 disabled:opacity-50 dark:border-white dark:bg-white dark:text-black dark:hover:bg-gray-100"
+              >
+                Data Export
+                <ChevronDown class="h-3 w-3" />
+              </button>
+            </template>
+          </UiDropdown>
+        </div>
+      </div>
 
       <!-- Briefing card -->
       <div v-if="message.briefing_id" class="mt-3">
@@ -140,7 +166,7 @@
       <div v-if="hasSteps && !message.steps_log?.length" class="mt-3">
         <button
           @click="reasoningExpanded = !reasoningExpanded"
-          class="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+          class="inline-flex items-center gap-1.5 text-sm text-gray-400 dark:text-neutral-500 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
         >
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.15A4.98 4.98 0 0112 17a4.98 4.98 0 01-2.39-.606l-.347-.15z" />
@@ -213,8 +239,11 @@
 </template>
 
 <script setup lang="ts">
-import type { Message } from '~/stores/chat'
+import type { Message, QueryFile } from '~/stores/chat'
 import type { SkillSuggestion } from '~/types/skillSuggestion'
+import { toast } from 'vue-sonner'
+import { ChevronDown } from 'lucide-vue-next'
+import UiDropdown from '~/components/ui/UiDropdown.vue'
 import { useDashboardStore } from '~/stores/dashboard'
 import { parseUtcDate, formatDate } from '~/utils/format'
 import { IMAGE_MIME_TYPES } from '~/composables/_chatConstants'
@@ -238,6 +267,38 @@ const dashboardStore = useDashboardStore()
 const authStore = useAuthStore()
 const api = useApi()
 const { resolvedMentions } = useMentions()
+
+// ── Query result download (CSV / Excel) ─────────────────────
+const downloadingRef = ref<string | null>(null)
+
+const exportItems = (f: QueryFile) => [
+  { label: 'CSV',   onClick: () => downloadResult(f, 'csv')  },
+  { label: 'Excel', onClick: () => downloadResult(f, 'xlsx') },
+]
+
+async function downloadResult(file: QueryFile, format: 'csv' | 'xlsx') {
+  downloadingRef.value = file.result_ref
+  try {
+    const blob = await api.fetchWithRefresh<Blob>(
+      `/api/query-results/${file.result_ref}/export?format=${format}`,
+      { responseType: 'blob' },
+    )
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${file.label || 'query-export'}.${format === 'xlsx' ? 'xlsx' : 'csv'}`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err: any) {
+    if (err?.statusCode === 404 || err?.status === 404) {
+      toast.error('Export expired — re-run the query to download again')
+    } else {
+      toast.error(err?.data?.detail || err?.message || 'Download failed')
+    }
+  } finally {
+    downloadingRef.value = null
+  }
+}
 
 const isLoading = computed(() =>
   !props.message.content && chatStore.isStreaming && props.isLast
@@ -296,7 +357,7 @@ const renderMentions = (text: string): string => {
     }
 
     // Standard pill — use dark-bubble variant so it reads on ink-0 background
-    return `<span class="mention-pill mention-pill--${typeClass} mention-pill--dark">${icon}@${displayName}</span>`
+    return `<span class="mention-pill mention-pill--${typeClass} mention-pill--dark" title="@${displayName}">${icon}<span class="mention-pill__label">@${displayName}</span></span>`
   })
 }
 

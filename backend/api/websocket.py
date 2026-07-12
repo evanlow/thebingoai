@@ -224,6 +224,19 @@ async def _resolve_attachments(file_ids, chat_file_service, db: Session = None, 
                 if file_data is not None:
                     file_contents.append(file_data)
 
+    # Privacy: under metadata_only_llm, withhold the raw-row preview
+    # (truncated_text) that's shown before async profiling completes. The richer
+    # profile_text is already gated at generation time (profile_chat_file).
+    if file_contents and user is not None and db is not None:
+        from backend.services.llm_privacy import metadata_only_for_user
+        if metadata_only_for_user(db, getattr(user, "id", None)):
+            for f in file_contents:
+                if f.get("truncated_text"):
+                    f["truncated_text"] = (
+                        "[Data preview withheld by org privacy policy; the file is "
+                        "being profiled — describe shape from column names/types.]"
+                    )
+
     attachments = [
         {
             "file_id": f["file_id"],

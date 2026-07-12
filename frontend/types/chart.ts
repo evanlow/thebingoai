@@ -1,5 +1,5 @@
 // Chart type union
-export type ChartType = 'line' | 'bar' | 'pie' | 'doughnut' | 'area' | 'scatter' | 'funnel' | 'timeline'
+export type ChartType = 'line' | 'bar' | 'pie' | 'doughnut' | 'area' | 'scatter' | 'bubble' | 'funnel' | 'timeline'
 
 // Entrance animation types (Anime.js)
 export type EntranceAnimation = 'fadeIn' | 'slideUp' | 'grow' | 'none'

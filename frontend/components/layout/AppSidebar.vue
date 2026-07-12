@@ -10,7 +10,7 @@
       <!-- Logo row + collapse button -->
       <div class="flex h-14 items-center px-4 gap-2 flex-shrink-0">
         <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" style="height: 24px; width: auto;" class="dark:hidden" />
-        <img src="/logo/BINGO Logo Design_FA_Primary_W.png" alt="Bingo" style="height: 24px; width: auto;" class="hidden dark:block" />
+        <img src="/logo/BINGO Logo Design_FA_Primary_M.png" alt="Bingo" style="height: 24px; width: auto;" class="hidden dark:block" />
         <div class="flex-1" />
         <button
           @click="layoutStore.toggleSidebarCollapsed()"
@@ -70,6 +70,23 @@
           class="text-sm tracking-[-0.005em]"
           :class="route.path === '/dashboard' ? 'font-semibold text-[var(--ink-0)]' : 'font-medium text-[var(--ink-0)]'"
         >Dashboards</span>
+      </button>
+
+      <!-- Data Catalog -->
+      <button
+        @click="router.push('/data'); closeSidebarOnMobile()"
+        class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors duration-150 border-l-2"
+        :class="route.path === '/data' ? 'border-[var(--ember)] bg-[var(--ember-wash)]' : 'border-transparent hover:bg-[var(--paper-2)]'"
+      >
+        <span class="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-md"
+          :class="route.path === '/data' ? 'text-[var(--ember)]' : 'text-[var(--ink-1)]'"
+        >
+          <Database class="h-3.5 w-3.5" />
+        </span>
+        <span
+          class="text-sm tracking-[-0.005em]"
+          :class="route.path === '/data' ? 'font-semibold text-[var(--ink-0)]' : 'font-medium text-[var(--ink-0)]'"
+        >Data</span>
       </button>
 
       <!-- New Task -->
@@ -283,6 +300,16 @@
         <LayoutDashboard class="h-4 w-4" />
       </button>
 
+      <!-- Data Catalog icon -->
+      <button
+        @click="router.push('/data')"
+        class="flex h-10 w-full items-center justify-center transition-colors border-l-2"
+        :class="route.path === '/data' ? 'border-[var(--ember)] bg-[var(--ember-wash)] text-[var(--ember)]' : 'border-transparent hover:bg-[var(--paper-2)] text-[var(--ink-1)]'"
+        title="Data catalog"
+      >
+        <Database class="h-4 w-4" />
+      </button>
+
       <!-- New Task icon -->
       <button
         v-if="!ws.isViewer"
@@ -319,8 +346,8 @@
     style="width: 220px"
   >
     <div class="flex h-14 items-center px-4">
-      <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" style="height: 36px; width: auto;" class="hidden dark:block" />
-      <img src="/logo/BINGO Logo Design_FA_Primary_W.png" alt="Bingo" style="height: 36px; width: auto;" class="hidden dark:block" />
+      <img src="/logo/BINGO Logo Design_FA_Primary.png" alt="Bingo" style="height: 36px; width: auto;" class="dark:hidden" />
+      <img src="/logo/BINGO Logo Design_FA_Primary_M.png" alt="Bingo" style="height: 36px; width: auto;" class="hidden dark:block" />
       <div class="flex-1" />
       <button @click="layoutStore.setMainExpanded(true)" class="p-1 text-[var(--ink-3)] hover:text-[var(--ink-1)]">
         <X class="h-4 w-4" />
@@ -368,7 +395,7 @@
 </template>
 
 <script setup lang="ts">
-import { Settings, Plus, ChevronDown, ChevronRight, Sparkles, LayoutDashboard, Archive as ArchiveIcon, ArchiveRestore, PanelLeftClose, PanelLeftOpen, X, Bell } from 'lucide-vue-next'
+import { Settings, Plus, ChevronDown, ChevronRight, Sparkles, LayoutDashboard, Database, Archive as ArchiveIcon, ArchiveRestore, PanelLeftClose, PanelLeftOpen, X, Bell } from 'lucide-vue-next'
 import { formatDateLabel } from '~/utils/format'
 import type { Conversation } from '~/stores/chat'
 

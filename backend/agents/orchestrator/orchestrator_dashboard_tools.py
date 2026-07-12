@@ -63,7 +63,35 @@ async def _verify_and_retry(
     retry_result = await invoke_dashboard_agent(
         fix_request, context, db_session_factory, target_connection_id=target_connection_id,
     )
-    if not (retry_result or {}).get("dashboard_id"):
+    retry_id = (retry_result or {}).get("dashboard_id")
+    # The repair must edit the EXISTING dashboard in place. If the agent ignored
+    # the prompt and created a NEW dashboard (different id), delete the stray so
+    # the user isn't left with two rows — keep the original and surface the
+    # violations. This is the enforced guard behind the prompt-only instruction.
+    if retry_id and retry_id != dashboard_id:
+        logger.warning(
+            "Repair agent created stray dashboard %s instead of updating %s; deleting stray",
+            retry_id, dashboard_id,
+        )
+        from backend.models.dashboard import Dashboard
+        db = db_session_factory()
+        try:
+            stray = db.query(Dashboard).filter(
+                Dashboard.id == retry_id,
+                Dashboard.user_id == context.user_id,
+            ).first()
+            if stray is not None:
+                db.delete(stray)
+                db.commit()
+        finally:
+            db.close()
+        result["violations"] = violations
+        result["warning"] = (
+            "Dashboard saved with structural issues — see violations. "
+            "Ask me to fix it and I will retry."
+        )
+        return result
+    if not retry_id:
         retry_result["dashboard_id"] = dashboard_id
 
     # Guard: if the repair agent cleared the dashboard (or shrunk it absurdly

@@ -17,6 +17,8 @@ when the question is "metric by A and by B".
   on every value (sum/average/count/countDistinct/min/max/median/stdDev/variance).
 - The SQL returns GRANULAR rows; the pivot grouping + aggregation is done by the widget.
   Do NOT pre-aggregate with GROUP BY unless the data is already at the needed grain.
+- Bound the granular result: filter to the relevant window (date/status) and add
+  `LIMIT 10000` — the pivot aggregates client-side, so unbounded row dumps are slow.
 
 ### SQL pattern
 

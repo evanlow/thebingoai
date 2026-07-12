@@ -6,7 +6,7 @@
       class="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
     >
       <div class="flex items-center gap-1.5">
-        <span class="text-sm uppercase tracking-wider text-gray-400 font-semibold">Dashboards</span>
+        <span class="text-sm uppercase tracking-wider text-gray-400 dark:text-neutral-500 font-semibold">Dashboards</span>
         <span v-if="dashboards.length" class="text-sm bg-gray-100 dark:bg-neutral-700 text-gray-500 dark:text-neutral-300 px-1.5 py-px rounded-full">
           {{ dashboards.length }}
         </span>

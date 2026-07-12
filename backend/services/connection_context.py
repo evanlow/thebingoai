@@ -167,6 +167,13 @@ def build_connection_context(
                     "nullable": nullable,
                 }
 
+                # DB-catalog column comment → base-layer description. This is the
+                # lowest-precedence description source; the semantic-layer merge
+                # (human > confirmed-llm > db comment) overrides at read time.
+                comment = col.get("comment") if isinstance(col, dict) else None
+                if comment:
+                    col_out["description"] = comment
+
                 # Merge profile stats into the column entry
                 if col_profile and "error" not in col_profile:
                     if col_profile.get("type") == "numeric":

@@ -23,10 +23,13 @@ def discover_schema(connector: BaseConnector) -> Dict[str, Any]:
             table_schema = connector.get_table_schema(table_name, schema_name)
             foreign_keys = connector.get_foreign_keys(table_name, schema_name)
 
-            schema_data["schemas"][schema_name]["tables"][table_name] = {
+            table_entry = {
                 "row_count": table_schema.row_count,
                 "columns": table_schema.columns,
             }
+            if table_schema.comment:
+                table_entry["comment"] = table_schema.comment
+            schema_data["schemas"][schema_name]["tables"][table_name] = table_entry
 
             for fk in foreign_keys:
                 schema_data["relationships"].append({

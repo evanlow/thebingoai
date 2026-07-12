@@ -58,3 +58,6 @@ from backend.models.pipeline import Pipeline, PipelineRun, DltPipelineState, Pip
 
 # Phase 4: dbt Transforms
 from backend.models.transforms import DbtModel, DbtRun
+
+# Semantic layer (per-connection glossary / relationships / definitions)
+from backend.models.connection_semantics import ConnectionSemanticLayer

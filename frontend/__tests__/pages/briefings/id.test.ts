@@ -12,9 +12,10 @@ vi.stubGlobal('watch', watch)
 vi.stubGlobal('useRoute', () => ({ params: { id: '48' } }))
 
 let briefingValue: any = null
+let loadingValue = false
 vi.stubGlobal('useBriefing', () => ({
   briefing: ref(briefingValue),
-  loading: ref(false),
+  loading: ref(loadingValue),
   refresh: vi.fn(),
 }))
 vi.stubGlobal('useBriefingPdf', () => ({
@@ -23,6 +24,16 @@ vi.stubGlobal('useBriefingPdf', () => ({
   resetWidgets: vi.fn(),
   exportPdf: vi.fn(),
 }))
+
+const navigateToMock = vi.fn()
+vi.stubGlobal('navigateTo', navigateToMock)
+
+// retry() re-POSTs /brief via useApi
+const retryFetchMock = vi.fn()
+vi.stubGlobal('useApi', () => ({ fetchWithRefresh: retryFetchMock }))
+
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
 
 import BriefingPage from '~/pages/briefings/[id].vue'
 
@@ -35,6 +46,15 @@ const mountPage = () =>
 describe('briefings/[id]', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
+    loadingValue = false
+    navigateToMock.mockClear()
+  })
+
+  it('does not render the back button before the briefing loads', () => {
+    briefingValue = null
+    loadingValue = true
+    mountPage()
+    expect(document.body.querySelector('[data-testid="briefing-back"]')).toBeNull()
   })
 
   it('renders the generating skeleton without crashing when payload is null', () => {
@@ -57,5 +77,55 @@ describe('briefings/[id]', () => {
     mountPage()
     expect(document.body.textContent).toContain('Sales up 12%')
     expect(document.body.textContent).toContain('Compiled by Bingo')
+  })
+
+  it('renders a back-to-dashboard button once the briefing is ready', () => {
+    briefingValue = {
+      id: 48,
+      status: 'ready',
+      dashboard_id: 42,
+      created_at: '2026-06-19T00:00:00Z',
+      date_range_from: null,
+      date_range_to: null,
+      payload: { headline: 'Sales up 12%', deck: 'Strong quarter', kpis: [], sections: [], key_takeaways: ['Grow'] },
+    }
+    mountPage()
+    const backBtn = document.body.querySelector('[data-testid="briefing-back"]')
+    expect(backBtn).not.toBeNull()
+    expect(backBtn!.textContent).toMatch(/dashboard/i)
+  })
+
+  it('navigates to the originating dashboard when the back button is clicked', async () => {
+    briefingValue = {
+      id: 48,
+      status: 'ready',
+      dashboard_id: 42,
+      created_at: '2026-06-19T00:00:00Z',
+      date_range_from: null,
+      date_range_to: null,
+      payload: { headline: 'Sales up 12%', deck: 'Strong quarter', kpis: [], sections: [], key_takeaways: ['Grow'] },
+    }
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-back"]').trigger('click')
+    expect(navigateToMock).toHaveBeenCalledWith('/dashboard?id=42')
+  })
+
+  it('retry on a failed briefing fires GA4 briefing_create with the dashboard id', async () => {
+    trackEventMock.mockClear()
+    retryFetchMock.mockResolvedValue({ briefing_id: 49 })
+    briefingValue = {
+      id: 48,
+      status: 'failed',
+      dashboard_id: 42,
+      error: 'generation blew up',
+      payload: null,
+      created_at: '2026-06-19T00:00:00Z',
+    }
+    const wrapper = mountPage()
+    const retryBtn = wrapper.findAll('button').find((b) => b.text() === 'Retry')
+    expect(retryBtn).toBeDefined()
+    await retryBtn!.trigger('click')
+    expect(retryFetchMock).toHaveBeenCalledWith('/api/dashboards/42/brief', { method: 'POST' })
+    expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('briefing_create', { dashboard_id: 42 })
   })
 })

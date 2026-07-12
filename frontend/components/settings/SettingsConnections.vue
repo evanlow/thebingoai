@@ -99,6 +99,12 @@
                 <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
                 <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.host }}</span>
               </div>
+              <div v-else-if="connection.db_type === 'google_sheets'" class="flex items-center gap-1 mt-1">
+                <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
+                <!-- Sheets' `database` is the opaque spreadsheet id; show the
+                     user's connection name so cards are tellable apart. -->
+                <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.name }}</span>
+              </div>
               <div v-else-if="connection.database" class="flex items-center gap-1 mt-1">
                 <Database class="h-3 w-3 text-gray-400 dark:text-neutral-300 shrink-0" />
                 <span class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ connection.database }}</span>
@@ -215,7 +221,7 @@
                     <p class="text-sm font-medium text-gray-700 dark:text-neutral-200 truncate">{{ conn.name }}</p>
                     <p v-if="conn.source_filename" class="text-sm text-gray-400 dark:text-neutral-300 truncate">{{ conn.source_filename }}</p>
                   </div>
-                  <button @click.stop="openDeleteDialog(conn)" class="text-gray-400 hover:text-red-500 shrink-0">
+                  <button @click.stop="openDeleteDialog(conn)" class="text-gray-400 dark:text-neutral-500 hover:text-red-500 shrink-0">
                     <Trash2 class="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -240,9 +246,9 @@
     >
       <template #header>
         <div class="flex items-center justify-between w-full gap-4">
-          <span class="text-sm font-semibold text-gray-400 uppercase tracking-widest shrink-0">Connection · Step 1/3</span>
+          <span class="text-sm font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest shrink-0">Connection · Step 1/3</span>
           <div class="relative flex-1 max-w-sm">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-neutral-500 pointer-events-none" />
             <input
               v-model="typeSearchQuery"
               type="text"
@@ -460,7 +466,7 @@
                     class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <div v-if="!sqliteFile">
-                    <Database class="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                    <Database class="h-8 w-8 text-gray-400 dark:text-neutral-500 mx-auto mb-2" />
                     <p class="text-sm text-gray-600 dark:text-neutral-400">Drop a SQLite database file here</p>
                     <p class="text-sm text-gray-400 dark:text-neutral-500 mt-1">or click to browse</p>
                     <p class="text-sm text-gray-400 dark:text-neutral-500 mt-1">.sqlite or .db — max 50 MB</p>
@@ -748,13 +754,13 @@
       title="Select Ad Account"
     >
       <div class="space-y-4">
-        <p class="text-sm text-gray-600">Choose which Facebook Ads account to connect:</p>
+        <p class="text-sm text-gray-600 dark:text-neutral-400">Choose which Facebook Ads account to connect:</p>
         <div class="space-y-2">
           <label
             v-for="account in facebookAccounts"
             :key="account.account_id"
-            class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-            :class="{ 'border-blue-500 bg-blue-50': facebookSelectedAccount === account.account_id }"
+            class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+            :class="{ 'border-blue-500 bg-blue-50 dark:bg-blue-950/30': facebookSelectedAccount === account.account_id }"
           >
             <input
               type="radio"
@@ -763,8 +769,8 @@
               class="text-blue-600"
             />
             <div>
-              <p class="text-sm font-medium text-gray-900">{{ account.name }}</p>
-              <p class="text-sm text-gray-500">ID: {{ account.account_id }} · {{ account.currency }} · {{ account.timezone_name }}</p>
+              <p class="text-sm font-medium text-gray-900 dark:text-neutral-100">{{ account.name }}</p>
+              <p class="text-sm text-gray-500 dark:text-neutral-400">ID: {{ account.account_id }} · {{ account.currency }} · {{ account.timezone_name }}</p>
             </div>
           </label>
         </div>
@@ -786,9 +792,9 @@
       :title="`${changelogTypeName} Changelog`"
     >
       <div v-if="loadingChangelog" class="flex items-center justify-center py-12">
-        <Loader2 class="h-6 w-6 text-gray-400 animate-spin" />
+        <Loader2 class="h-6 w-6 text-gray-400 dark:text-neutral-500 animate-spin" />
       </div>
-      <pre v-else class="text-sm text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">{{ changelogContent }}</pre>
+      <pre v-else class="text-sm text-gray-700 dark:text-neutral-300 whitespace-pre-wrap font-mono leading-relaxed">{{ changelogContent }}</pre>
     </UiBottomSheet>
   </div>
   </div>
@@ -867,6 +873,7 @@ import connectorFacebookAds from '~/assets/icons/connector/facebook_ads.svg?raw'
 import connectorSqlite from '~/assets/icons/connector/sqlite.svg?raw'
 import connectorBigquery from '~/assets/icons/connector/bigquery.svg?raw'
 import connectorNotion from '~/assets/icons/connector/notion.svg?raw'
+import connectorGoogleSheets from '~/assets/icons/connector/google_sheets.svg?raw'
 
 function extractErrorMessage(err: any, fallback: string): string {
   const detail = err?.data?.detail
@@ -890,6 +897,7 @@ const connectorIcons: Record<string, string> = {
   sqlite:       connectorSqlite,
   bigquery_ga4: connectorBigquery,
   notion:       connectorNotion,
+  google_sheets: connectorGoogleSheets,
 }
 
 // Card top band colors keyed by connector type
@@ -904,6 +912,7 @@ const CARD_BAND: Record<string, string> = {
   dataset:      'bg-gray-100 dark:bg-neutral-400/60',
   facebook_ads: 'bg-blue-100 dark:bg-blue-500/70',
   notion:       'bg-gray-100 dark:bg-neutral-400/60',
+  google_sheets: 'bg-green-100 dark:bg-green-500/70',
 }
 
 // State
@@ -1646,6 +1655,11 @@ function validateForm(): boolean {
 
   // BigQuery (GA4): create form handled by plugin layer (GA4ConnectForm); skip generic validation.
   if (form.value.db_type === 'bigquery_ga4') {
+    return isValid
+  }
+
+  // Google Sheets: plugin connector with no host/port; creds via public URL or OAuth. Skip generic validation.
+  if (form.value.db_type === 'google_sheets') {
     return isValid
   }
 

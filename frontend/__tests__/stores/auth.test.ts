@@ -21,6 +21,9 @@ vi.stubGlobal('useChatStore', () => ({ reset: vi.fn() }))
 vi.stubGlobal('useDashboardStore', () => ({ $resetAll: vi.fn() }))
 vi.stubGlobal('useWebSocket', () => ({ disconnect: vi.fn(), clearHandlers: vi.fn() }))
 
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
+
 import { useAuthStore } from '~/stores/auth'
 
 describe('auth store', () => {
@@ -248,5 +251,94 @@ describe('auth store', () => {
     const store = useAuthStore()
     expect('isSSO' in store).toBe(false)
     expect('isSupabase' in store).toBe(false)
+  })
+
+  // ── GA4 auth events ───────────────────────────────────────────────
+  describe('GA4 events', () => {
+    const fakeUser = { id: '1', email: 'a@b.com', org_id: null, sso_id: 's1', auth_provider: 'sso', created_at: '' }
+
+    beforeEach(() => trackEventMock.mockClear())
+
+    it('register fires sign_up with password method on success', async () => {
+      vi.mocked($fetch).mockResolvedValueOnce({})
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      await store.register('a@b.com', 'pass123')
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('sign_up', { method: 'password' })
+    })
+
+    it('register fires nothing on failure', async () => {
+      vi.mocked($fetch).mockRejectedValueOnce({ data: { detail: 'taken' } })
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      await store.register('a@b.com', 'pass123')
+      expect(trackEventMock).not.toHaveBeenCalled()
+    })
+
+    it('login fires login with password method after the user is fetched', async () => {
+      vi.mocked($fetch)
+        .mockResolvedValueOnce({ access_token: 'at', refresh_token: 'rt' })
+        .mockResolvedValueOnce(fakeUser)
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      await store.login({ email: 'a@b.com', password: 'pass' })
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('login', { method: 'password' })
+    })
+
+    it('login fires nothing on failure', async () => {
+      vi.mocked($fetch).mockRejectedValueOnce({ data: { detail: 'bad creds' } })
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      await store.login({ email: 'a@b.com', password: 'nope' })
+      expect(trackEventMock).not.toHaveBeenCalled()
+    })
+
+    it('handleOAuthSuccess fires sign_up with google method on first login', async () => {
+      vi.mocked($fetch).mockResolvedValueOnce(fakeUser) // fetchUser
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      await store.handleOAuthSuccess('at', 'rt', true)
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('sign_up', { method: 'google' })
+    })
+
+    it('handleOAuthSuccess fires login with google method on returning login', async () => {
+      vi.mocked($fetch).mockResolvedValueOnce(fakeUser)
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      await store.handleOAuthSuccess('at', 'rt', false)
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('login', { method: 'google' })
+    })
+
+    it('verifyEmail fires login with password method', async () => {
+      vi.mocked($fetch)
+        .mockResolvedValueOnce({ access_token: 'at', refresh_token: 'rt' })
+        .mockResolvedValueOnce(fakeUser)
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      await store.verifyEmail('tok')
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('login', { method: 'password' })
+    })
+
+    it('logout fires once with an active session', async () => {
+      vi.mocked($fetch).mockResolvedValueOnce({})
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      store.token = 'at'
+      store.refreshToken = 'rt'
+      await store.logout()
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('logout')
+    })
+
+    it('a second logout after the session is cleared fires nothing (expiry double-call guard)', async () => {
+      vi.mocked($fetch).mockResolvedValue({})
+      const store = useAuthStore()
+      store.authConfig = { provider: 'sso' }
+      store.token = 'at'
+      store.refreshToken = 'rt'
+      await store.logout()
+      trackEventMock.mockClear()
+      await store.logout() // token/user already null — the fetchHelper 401 path re-calls this
+      expect(trackEventMock).not.toHaveBeenCalled()
+    })
   })
 })

@@ -78,13 +78,13 @@ function onClose() {
       <div class="flex flex-1 min-h-0">
         <!-- Graph -->
         <div class="flex-1 relative">
-          <div v-if="loading" class="absolute inset-0 flex items-center justify-center text-sm text-gray-500">
+          <div v-if="loading" class="absolute inset-0 flex items-center justify-center text-sm text-gray-500 dark:text-neutral-400">
             Loading lineage…
           </div>
           <div v-else-if="error" class="absolute inset-0 flex items-center justify-center text-sm text-red-600">
             {{ error }}
           </div>
-          <div v-else-if="!graph || graph.nodes.length === 0" class="absolute inset-0 flex items-center justify-center text-sm text-gray-500">
+          <div v-else-if="!graph || graph.nodes.length === 0" class="absolute inset-0 flex items-center justify-center text-sm text-gray-500 dark:text-neutral-400">
             No lineage data for this scope yet. Run a Pipeline or dbt model to populate the graph.
           </div>
           <LineageGraph

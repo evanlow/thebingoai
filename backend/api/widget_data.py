@@ -197,7 +197,12 @@ def _build_ast_condition(i: int, f: FilterParam, data_context: dict | None = Non
         'lt': exp.LT, 'lte': exp.LTE,
         'ilike': exp.ILike,
     }
-    cond = op_to_exp[f.op](this=col, expression=exp.Placeholder(this=pk))
+    # ILIKE only binds to text. A search control on a numeric column (e.g.
+    # item_code BIGINT) would otherwise raise a DuckDB binder error
+    # (~~*(BIGINT, STRING_LITERAL)) → the widget serve fails and falls back.
+    # Cast to text so ILIKE is valid regardless of column type (no-op for text).
+    this_col = exp.cast(col, to="TEXT") if f.op == 'ilike' else col
+    cond = op_to_exp[f.op](this=this_col, expression=exp.Placeholder(this=pk))
     return cond, {pk: f.value}
 
 
@@ -241,6 +246,26 @@ def _inject_via_sqlglot(
     target_select = target_scope.expression
     if not isinstance(target_select, exp.Select):
         raise ValueError(f"target scope is not a SELECT: {type(target_select).__name__}")
+
+    # A filter column that is an equi-join key (present on BOTH sides of a
+    # `JOIN ... ON a.x = b.x`) exists in 2+ tables, so an unqualified reference to
+    # it raises "ambiguous reference". Qualify those to the actual join-side alias
+    # (either side is equivalent for an equi-join). Non-join columns resolve
+    # unambiguously and are left untouched.
+    join_key_alias: dict[str, str] = {}
+    for eq in target_select.find_all(exp.EQ):
+        lhs, rhs = eq.this, eq.expression
+        if (isinstance(lhs, exp.Column) and isinstance(rhs, exp.Column)
+                and lhs.table and rhs.table
+                and lhs.name.lower() == rhs.name.lower()):
+            join_key_alias[lhs.name.lower()] = lhs.table
+    if join_key_alias:
+        for cond in conditions:
+            for colnode in cond.find_all(exp.Column):
+                if not colnode.table:
+                    alias = join_key_alias.get(colnode.name.lower())
+                    if alias:
+                        colnode.set("table", exp.to_identifier(alias))
 
     for cond in conditions:
         target_select.where(cond, append=True, copy=False)

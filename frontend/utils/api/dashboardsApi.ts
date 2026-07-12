@@ -1,3 +1,5 @@
+import { trackEvent } from '~/utils/analytics'
+
 export function createDashboardsApi(fetchWithRefresh: Function) {
   return {
     async list() {
@@ -70,9 +72,11 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
       return fetchWithRefresh(`/api/connections/datasets/${connectionId}/sqlite-url`, {}) as Promise<{ url: string; expires_in: number }>
     },
     async brief(id: number) {
-      return fetchWithRefresh(`/api/dashboards/${id}/brief`, {
+      const resp = await (fetchWithRefresh(`/api/dashboards/${id}/brief`, {
         method: 'POST',
-      }) as Promise<{ briefing_id: number; status: string }>
+      }) as Promise<{ briefing_id: number; status: string }>)
+      trackEvent('briefing_create', { dashboard_id: id })
+      return resp
     },
     async getBriefSchedule(id: number) {
       return fetchWithRefresh(`/api/dashboards/${id}/analysis-schedule`, {}) as Promise<

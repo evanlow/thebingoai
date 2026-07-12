@@ -8,9 +8,17 @@ vi.stubGlobal('localStorage', {
   removeItem: vi.fn(),
 })
 
-vi.mock('~/composables/useApi', () => ({
-  useApi: () => ({ dashboards: {}, connections: {} }),
+// Mutable so individual tests can stub api methods (create/get/refreshAll).
+const { apiDashboards, apiConnections } = vi.hoisted(() => ({
+  apiDashboards: {} as Record<string, any>,
+  apiConnections: {} as Record<string, any>,
 }))
+vi.mock('~/composables/useApi', () => ({
+  useApi: () => ({ dashboards: apiDashboards, connections: apiConnections }),
+}))
+
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
 
 import { useDashboardStore } from '~/stores/dashboard'
 import type { Dashboard, DashboardWidget } from '~/types/dashboard'
@@ -222,5 +230,53 @@ describe('dashboard store', () => {
     expect(store.dirty).toBe(false)
     expect(store.filterValues).toEqual({})
     expect(store.connectionTypes).toEqual({})
+  })
+
+  // ── GA4 events ────────────────────────────────────────────────────
+  describe('GA4 events', () => {
+    beforeEach(() => {
+      trackEventMock.mockClear()
+      for (const k of Object.keys(apiDashboards)) delete apiDashboards[k]
+      for (const k of Object.keys(apiConnections)) delete apiConnections[k]
+    })
+
+    it('createDashboard fires dashboard_create with the new id', async () => {
+      apiDashboards.create = vi.fn().mockResolvedValue({ id: 5, title: 't', widgets: [], created_at: '', updated_at: '' })
+      const store = useDashboardStore()
+      await store.createDashboard('t')
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('dashboard_create', { dashboard_id: 5 })
+    })
+
+    it('openDashboard fires dashboard_view with the id', async () => {
+      apiDashboards.get = vi.fn().mockResolvedValue({ id: 42, title: 'x', widgets: [], created_at: '', updated_at: '' })
+      apiDashboards.refreshAll = vi.fn().mockResolvedValue({ widgets: {} })
+      apiConnections.list = vi.fn().mockResolvedValue([])
+      const store = useDashboardStore()
+      await store.openDashboard(42)
+      expect(trackEventMock).toHaveBeenCalledWith('dashboard_view', { dashboard_id: 42 })
+      expect(trackEventMock.mock.calls.filter(c => c[0] === 'dashboard_view')).toHaveLength(1)
+    })
+
+    it('addWidget fires widget_add with the widget type', () => {
+      const store = useDashboardStore()
+      store.dashboards = [makeDashboard({ id: 1 })]
+      store.currentDashboardId = 1
+      store.editMode = true
+      store.addWidget('kpi')
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('widget_add', { widget_type: 'kpi' })
+    })
+
+    it('refreshAllWidgets fires widget_refresh once past the concurrent-dedup guard', async () => {
+      apiDashboards.refreshAll = vi.fn().mockResolvedValue({ widgets: {} })
+      const store = useDashboardStore()
+      store.dashboards = [makeDashboard({ id: 3, widgets: [] })]
+      store.currentDashboardId = 3
+      // Two concurrent identical bulk requests → dedup guard → one event
+      await Promise.all([store.refreshAllWidgets(), store.refreshAllWidgets()])
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('widget_refresh', {
+        dashboard_id: 3,
+        widget_count: 0,
+      })
+    })
   })
 })

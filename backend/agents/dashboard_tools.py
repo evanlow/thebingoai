@@ -129,10 +129,16 @@ def _validate_widgets(widgets: list) -> str | None:
     return None
 
 
-def _validate_widget_sql_schema(widgets: list) -> list[str]:
+def _validate_widget_sql_schema(widgets: list, extra_connection_ids: list | None = None) -> list[str]:
     """
     Cross-reference widget SQL mapping columns against the schema for each connectionId.
     Returns a list of warning strings. Empty list means no issues found.
+
+    ``extra_connection_ids`` — connections the agent can access but which may not
+    be any widget's declared connectionId. Their schemas are merged into the
+    table universe so a cross-connection JOIN (a connectionId=A widget that also
+    references connection B's table, both on the shared data plane) validates
+    instead of flagging B's table as "unknown".
     """
     from backend.services.schema_discovery import load_schema_file
     from backend.agents.sql_validation import (
@@ -146,6 +152,8 @@ def _validate_widget_sql_schema(widgets: list) -> list[str]:
         for w in widgets
         if "dataSource" in w
     }
+    if extra_connection_ids:
+        connection_ids |= set(extra_connection_ids)
     schemas: dict[int, dict] = {}
     for cid in connection_ids:
         try:
@@ -155,6 +163,27 @@ def _validate_widget_sql_schema(widgets: list) -> list[str]:
 
     if not schemas:
         return []
+
+    # Merge every loaded connection schema into one table universe. Data-plane-
+    # backed connections (google_sheets, dataset/CSV, data_plane) that share an
+    # owner scope are queryable together, so a single widget's SQL may JOIN tables
+    # from sibling connections — the connectionId only selects the shared scope.
+    # Validate against the union so those joins don't read as "unknown table/
+    # column". Live SQL connections simply won't share table names here, so this
+    # stays advisory for them.
+    from backend.agents.sql_validation import get_tables_dict
+    merged_tables: dict = {}
+    for _sj in schemas.values():
+        _t = get_tables_dict(_sj)
+        if isinstance(_t, list):
+            for _x in _t:
+                _nm = _x.get("name") if isinstance(_x, dict) else None
+                if _nm:
+                    merged_tables[_nm] = _x
+        elif isinstance(_t, dict):
+            merged_tables.update(_t)
+    merged_schema = {"tables": merged_tables}
+    all_schema_tables = get_all_tables(merged_schema)
 
     warnings: list[str] = []
     for w in widgets:
@@ -166,9 +195,9 @@ def _validate_widget_sql_schema(widgets: list) -> list[str]:
         mapping = ds.get("mapping", {})
         widget_id = w.get("id", "?")
 
-        schema_json = schemas.get(cid)
-        if not schema_json:
-            continue
+        # Validate against the merged scope universe, not just this widget's own
+        # connectionId, so cross-connection joins over the shared plane are allowed.
+        schema_json = merged_schema
 
         table_matches, table_aliases = extract_table_refs(sql)
         if not table_matches:
@@ -176,7 +205,6 @@ def _validate_widget_sql_schema(widgets: list) -> list[str]:
 
         cte_names = extract_cte_names(sql)
         known_virtual = cte_names | table_aliases
-        all_schema_tables = get_all_tables(schema_json)
         referenced_table = table_matches[0].split(".")[-1]
 
         # Validate tables
@@ -364,6 +392,33 @@ def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
                     ),
                 })
 
+            # Boundedness guard for scatter/bubble. Raw-row scatter SQL without
+            # GROUP BY/aggregates and without LIMIT can return the whole table —
+            # slow and unreadable (discrete metrics render as solid bands).
+            if chart_type in ("scatter", "bubble"):
+                _sc_sql = widget["dataSource"].get("sql") or ""
+                _sc_map = widget["dataSource"].get("mapping") or {}
+                _sc_has_agg = bool(
+                    _sc_map.get("xAggregation") not in (None, "none")
+                    or _sc_map.get("yAggregation") not in (None, "none")
+                )
+                if (not _is_aggregated_sql(_sc_sql) and not _sc_has_agg
+                        and "limit" not in _sc_sql.lower()):
+                    violations.append({
+                        "widget_id": wid,
+                        "code": "scatter_not_bounded",
+                        "message": (
+                            f"Chart '{cfg_title_for(wcfg, wid)}' (type={chart_type}) "
+                            "has no GROUP BY/aggregate and no LIMIT — the SQL will "
+                            "return every raw row."
+                        ),
+                        "fix_hint": (
+                            "Preferred: one point per entity — GROUP BY a dimension "
+                            "and aggregate both metrics (AVG/SUM). Otherwise add "
+                            "LIMIT 1000 for a raw-row sample."
+                        ),
+                    })
+
     for rule_msg in verify_dashboard_widgets(widgets):
         violations.append({
             "widget_id": None,
@@ -535,24 +590,29 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
             first_error_msg = str(e)
             logger.warning(f"Widget '{widget_id}': SQL execution failed, attempting LLM fix: {first_error_msg}")
 
-        # Gather sample data from referenced tables for better fix context
+        # Gather sample data from referenced tables for better fix context.
+        # Gather sample data from referenced tables for better fix context.
+        # Privacy: under metadata_only_llm, skip sampling entirely — the fix
+        # prompt keeps the error + schema + baseJoin, no real rows.
         sample_data = ""
-        try:
-            from backend.services.schema_utils import extract_table_names
-            tables = extract_table_names(sql)
-            for tbl in list(tables)[:2]:
-                try:
-                    sample_result = await asyncio.to_thread(
-                        _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
-                    )
-                    sample_data += f"\nTable '{tbl}' sample:\n"
-                    sample_data += f"  Columns: {sample_result.columns}\n"
-                    for srow in sample_result.rows[:3]:
-                        sample_data += f"  {list(srow)}\n"
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        from backend.services.llm_privacy import metadata_only_for_connection
+        if not metadata_only_for_connection(connection):
+            try:
+                from backend.services.schema_utils import extract_table_names
+                tables = extract_table_names(sql)
+                for tbl in list(tables)[:2]:
+                    try:
+                        sample_result = await asyncio.to_thread(
+                            _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
+                        )
+                        sample_data += f"\nTable '{tbl}' sample:\n"
+                        sample_data += f"  Columns: {sample_result.columns}\n"
+                        for srow in sample_result.rows[:3]:
+                            sample_data += f"  {list(srow)}\n"
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         # Attempt LLM-powered SQL fix with sample data + baseJoin context
         fixed_sql = await _attempt_sql_fix(
@@ -659,6 +719,28 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                   (filter has NO connectionId/sql/mapping at widget level)
                 * = required.
 
+                CROSS-CONNECTION JOINS: connections backed by the shared data
+                plane (google_sheets, dataset/CSV, data_plane) that belong to the
+                same user/org resolve to ONE query scope. A single widget MAY JOIN
+                tables from several such connections in one SQL — set connectionId
+                to any one of them (it selects the shared scope) and reference each
+                table by its real name. NEVER stub a joined table's columns as NULL
+                — write the real JOIN. The join executes; it is NOT a limitation.
+                This does NOT apply to live SQL connections (postgres, mysql).
+
+                WORKED EXAMPLE — table joining two Google Sheets connections
+                (Sales = gsheets_48_sheet1, Inventory = gsheets_49_sheet1):
+                  {"type": "table", "title": "Sales vs Inventory by Item",
+                   "columns": [{"column": "item_name", "label": "Item"},
+                               {"column": "buyer", "label": "Buyer"},
+                               {"column": "units_sold", "label": "Units Sold"},
+                               {"column": "stock_on_hand", "label": "Stock"},
+                               {"column": "price", "label": "Price", "format": "currency"}],
+                   "connectionId": 48,
+                   "sql": "SELECT i.item_name, s.buyer, s.quantity AS units_sold, i.quantity AS stock_on_hand, i.price FROM gsheets_48_sheet1 s JOIN gsheets_49_sheet1 i ON s.item_code = i.item_code",
+                   "sources": ["gsheets_48_sheet1", "gsheets_49_sheet1"]}
+                Note the real columns from BOTH tables in the SELECT — no NULLs.
+
                 Layout: emit widgets in the order they should read top-to-bottom
                 (filter → 3-5 KPIs → section header → 3-5 charts → 1-2 tables).
                 The backend packs each row to 12 columns. To emphasize ONE hero
@@ -704,6 +786,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
         # specific widgets and retry — no first-error-only opacity.
         violations = _verify_widgets(widgets, data_context)
         if violations:
+            logger.warning(
+                "create_dashboard rejected: %s",
+                "; ".join(f"{v.get('widget_id')}:{v.get('code')}" for v in violations),
+            )
             return json.dumps({
                 "success": False,
                 "violations": violations,
@@ -762,7 +848,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 _guard_db.close()
 
         # Validate mapping columns against schema (warnings only — SQL execution is the real test)
-        schema_warnings = _validate_widget_sql_schema(widgets)
+        schema_warnings = _validate_widget_sql_schema(widgets, getattr(context, "available_connections", None))
         if schema_warnings:
             logger.warning("Schema validation warnings for '%s': %s", title, "; ".join(schema_warnings))
 
@@ -871,6 +957,10 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
         # so updates can't bypass the KPI / structural rules.
         violations = _verify_widgets(widgets, data_context)
         if violations:
+            logger.warning(
+                "update_dashboard rejected: %s",
+                "; ".join(f"{v.get('widget_id')}:{v.get('code')}" for v in violations),
+            )
             return json.dumps({
                 "success": False,
                 "violations": violations,
@@ -901,7 +991,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     })
 
         # Validate mapping columns against schema (warnings only — SQL execution is the real test)
-        schema_warnings = _validate_widget_sql_schema(widgets)
+        schema_warnings = _validate_widget_sql_schema(widgets, getattr(context, "available_connections", None))
         if schema_warnings:
             logger.warning("Schema validation warnings for dashboard %d: %s", dashboard_id, "; ".join(schema_warnings))
 

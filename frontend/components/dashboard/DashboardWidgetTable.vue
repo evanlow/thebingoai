@@ -8,23 +8,23 @@
     </div>
 
     <!-- Empty state: all columns are metrics with no dimensions -->
-    <div v-if="isEmptyState" class="flex h-full items-center justify-center p-10 text-sm text-gray-400 text-center">
+    <div v-if="isEmptyState" class="flex h-full items-center justify-center p-10 text-sm text-gray-400 dark:text-neutral-500 text-center">
       Add at least one Dimension column to display grouped data.
     </div>
 
     <!-- Table wrapper: horizontal scroll is opt-in -->
     <div v-if="!isEmptyState" class="flex-1 overflow-auto" :class="config.horizontalScrolling ? 'overflow-x-auto' : ''">
       <table
-        class="w-full"
-        :class="[fontClass, (editMode || hasColWidths) ? 'table-fixed' : '']"
-        :style="config.fontColor ? { color: config.fontColor } : undefined"
+        class="table-fixed"
+        :class="[fontClass]"
+        :style="tableStyle"
       >
         <colgroup>
           <col v-if="config.showRowNumbers" class="w-8" />
           <col
             v-for="(col, i) in config.columns"
             :key="i"
-            :style="colWidth(i) != null ? { width: colWidth(i) + 'px' } : undefined"
+            :style="{ width: colWidth(i) + 'px' }"
           />
         </colgroup>
 
@@ -52,10 +52,10 @@
               @click="col.sortable && toggleSort(i)"
             >
               <div
-                class="flex items-center gap-1"
+                class="flex items-center gap-1 overflow-hidden"
                 :class="col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : ''"
               >
-                {{ col.label }}
+                <span class="truncate">{{ col.label }}</span>
                 <span v-if="col.sortable && sortKey === i" class="text-gray-500 dark:text-neutral-400">
                   {{ sortDir === 'asc' ? '↑' : '↓' }}
                 </span>
@@ -202,17 +202,33 @@ const store = useDashboardStore()
 // liveWidths holds the in-progress drag width per column index for instant
 // feedback; on mouseup we persist into config.columns[i].width.
 const MIN_COL_W = 48
+const DEFAULT_MIN_COL_W = 96
 const liveWidths = ref<Record<number, number>>({})
 
-const hasColWidths = computed(() => props.config.columns.some(c => c.width != null))
-
-function colWidth(i: number): number | undefined {
-  return liveWidths.value[i] ?? props.config.columns[i]?.width
+// Default width fits the header label on one line: ~7.5px/char for the
+// uppercase text-xs header + px-4 padding + sort icon / resize-grip slack.
+function estimateColWidth(label: string | undefined): number {
+  return Math.max(DEFAULT_MIN_COL_W, Math.round((label ?? '').length * 7.5) + 48)
 }
+
+function colWidth(i: number): number {
+  const col = props.config.columns[i]
+  return liveWidths.value[i] ?? col?.width ?? estimateColWidth(col?.label)
+}
+
+const totalWidth = computed(() =>
+  props.config.columns.reduce((sum, _c, i) => sum + colWidth(i), props.config.showRowNumbers ? 32 : 0)
+)
+
+const tableStyle = computed(() => ({
+  width: totalWidth.value + 'px',
+  minWidth: '100%',
+  ...(props.config.fontColor ? { color: props.config.fontColor } : {}),
+}))
 
 function startColResize(e: MouseEvent, i: number) {
   const startX = e.clientX
-  const startW = props.config.columns[i]?.width ?? (e.target as HTMLElement).closest('th')?.offsetWidth ?? 120
+  const startW = (e.target as HTMLElement).closest('th')?.offsetWidth ?? colWidth(i)
   const onMove = (ev: MouseEvent) => {
     liveWidths.value = { ...liveWidths.value, [i]: Math.max(MIN_COL_W, startW + ev.clientX - startX) }
   }

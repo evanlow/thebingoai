@@ -86,6 +86,38 @@ def test_duckdb_date_coercion_renders_cast():
     sqlglot.parse_one(out, read="duckdb", error_level=sqlglot.ErrorLevel.RAISE)
 
 
+def test_duckdb_ilike_casts_column_to_text():
+    # A search control on a numeric column would make DuckDB raise a binder error
+    # (~~*(BIGINT, STRING_LITERAL)). The predicate must cast the column to text so
+    # ILIKE binds regardless of column type.
+    sql = "SELECT * FROM gsheets_48_sheet1"
+    out, params = inject_filters(sql, [_f("item_code", "ilike", "%1%")], dialect="duckdb")
+    assert "CAST" in out.upper() and "ILIKE" in out.upper()
+    assert params == {"_f0": "%1%"}
+    sqlglot.parse_one(out, read="duckdb", error_level=sqlglot.ErrorLevel.RAISE)
+
+
+def test_duckdb_qualifies_ambiguous_join_key():
+    # item_code is an equi-join key present in both tables → an unqualified filter
+    # reference raises "ambiguous reference". The injector must qualify it to a
+    # join-side alias (s. or i.).
+    sql = ("SELECT s.item_code, i.item_name FROM gsheets_48_sheet1 s "
+           "JOIN gsheets_49_sheet1 i ON s.item_code = i.item_code")
+    out, params = inject_filters(sql, [_f("item_code", "ilike", "%1%")], dialect="duckdb")
+    assert "s.item_code" in out or "i.item_code" in out  # qualified, not bare
+    assert "CAST" in out.upper()
+    sqlglot.parse_one(out, read="duckdb", error_level=sqlglot.ErrorLevel.RAISE)
+
+
+def test_duckdb_non_join_column_left_unqualified():
+    # A filter on a column that is NOT a join key must stay unqualified — forcing
+    # a wrong alias would break resolution.
+    sql = "SELECT region, revenue FROM csv_1"
+    out, params = inject_filters(sql, [_f("region", "eq", "EMEA")], dialect="duckdb")
+    assert '"region" = $_f0' in out
+    sqlglot.parse_one(out, read="duckdb", error_level=sqlglot.ErrorLevel.RAISE)
+
+
 def test_no_filters_returns_sql_unchanged():
     sql = "SELECT * FROM csv_1"
     out, params = inject_filters(sql, [], dialect="duckdb")
