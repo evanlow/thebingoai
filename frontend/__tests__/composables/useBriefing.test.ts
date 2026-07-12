@@ -19,6 +19,9 @@ vi.stubGlobal('useApi', () => ({ fetchWithRefresh: mockFetch }))
 const mockCreditRefresh = vi.fn()
 vi.stubGlobal('useCreditBalance', () => ({ refresh: mockCreditRefresh }))
 
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
+vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
+
 import { useBriefing } from '~/composables/useBriefing'
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -150,6 +153,50 @@ describe('useBriefing', () => {
     await refresh()
     expect(briefing.value!.status).toBe('ready')
     expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  describe('GA4 briefing_view', () => {
+    beforeEach(() => trackEventMock.mockClear())
+
+    it('fires briefing_view once with briefing + dashboard ids when the briefing is ready', async () => {
+      mockFetch.mockResolvedValue(makeBriefing({ id: 7, dashboard_id: 40 }))
+      useBriefing(7)
+      await tick()
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('briefing_view', {
+        briefing_id: 7,
+        dashboard_id: 40,
+      })
+    })
+
+    it('does not fire again on refresh() of the same briefing', async () => {
+      mockFetch.mockResolvedValue(makeBriefing({ id: 7 }))
+      const { refresh } = useBriefing(7)
+      await tick()
+      await refresh()
+      await refresh()
+      expect(trackEventMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('fires nothing while the briefing is still generating', async () => {
+      mockFetch.mockResolvedValue(makeBriefing({ status: 'generating', payload: null }))
+      useBriefing(1)
+      await tick()
+      expect(trackEventMock).not.toHaveBeenCalled()
+    })
+
+    it('fires once the generating briefing turns ready via refresh', async () => {
+      mockFetch
+        .mockResolvedValueOnce(makeBriefing({ id: 3, status: 'generating', payload: null }))
+        .mockResolvedValue(makeBriefing({ id: 3, dashboard_id: 10 }))
+      const { refresh } = useBriefing(3)
+      await tick()
+      expect(trackEventMock).not.toHaveBeenCalled()
+      await refresh()
+      expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('briefing_view', {
+        briefing_id: 3,
+        dashboard_id: 10,
+      })
+    })
   })
 
 })

@@ -171,6 +171,7 @@ services:
       - BACKEND_INTERNAL_URL=http://backend:8000
       # Public API URL: used by the browser (must be reachable from the host)
       - NUXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      - NUXT_PUBLIC_GA4_ID=${NUXT_PUBLIC_GA4_ID:-}
     depends_on:
       backend:
         condition: service_healthy

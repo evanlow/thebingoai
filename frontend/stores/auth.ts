@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { trackEvent } from '~/utils/analytics'
 
 export interface User {
   id: string
@@ -117,6 +118,7 @@ export const useAuthStore = defineStore('auth', {
           headers: this._ssoHeaders(),
           body: { email, password, redirect_base_url: this._redirectBaseUrl() },
         })
+        trackEvent('sign_up', { method: 'password' })
         return { success: true }
       } catch (error: any) {
         this.error = this._parseSSOError(error, 'Registration failed')
@@ -146,6 +148,7 @@ export const useAuthStore = defineStore('auth', {
         this._isFirstLogin = data.is_first_login ?? false
         this._persistTokens()
         await this.fetchUser()
+        trackEvent('login', { method: 'password' })
         return { success: true }
       } catch (error: any) {
         const detail = error?.data?.detail ?? ''
@@ -185,6 +188,7 @@ export const useAuthStore = defineStore('auth', {
       this._isFirstLogin = isFirstLogin ?? false
       this._persistTokens()
       await this.fetchUser()
+      trackEvent(this._isFirstLogin ? 'sign_up' : 'login', { method: 'google' })
     },
 
     // ─── Email verification ────────────────────────────────────
@@ -211,6 +215,7 @@ export const useAuthStore = defineStore('auth', {
         this._isFirstLogin = data.is_first_login ?? false
         this._persistTokens()
         await this.fetchUser()
+        trackEvent('login', { method: 'password' })
         return { success: true }
       } catch (error: any) {
         this.error = this._parseSSOError(error, 'Email verification failed')
@@ -368,6 +373,12 @@ export const useAuthStore = defineStore('auth', {
     // ─── Logout ─────────────────────────────────────────────────
 
     async logout() {
+      // _doRefreshToken's catch calls logout() on refresh failure, then fetchHelper's
+      // 401 path calls logout() again after _clearLocalSession() already ran — guard
+      // so the second call (token/user already null) doesn't double-fire the event.
+      if (this.token || this.user) {
+        trackEvent('logout')
+      }
       if (this.token && this.refreshToken) {
         try {
           await $fetch('/api/auth/logout', {

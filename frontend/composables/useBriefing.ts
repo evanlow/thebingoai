@@ -5,6 +5,7 @@
  */
 
 import { POLL_INTERVAL_MS } from './_chatConstants'
+import { trackEvent } from '~/utils/analytics'
 
 export interface BriefingKpi {
   label: string
@@ -53,6 +54,8 @@ export function useBriefing(briefingId: number | Ref<number>) {
   const error = ref('')
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  // Dedup briefing_view: polling + refresh() re-run fetch for the same id.
+  let viewedId: number | null = null
 
   function stopPolling() {
     if (pollTimer !== null) {
@@ -76,7 +79,13 @@ export function useBriefing(briefingId: number | Ref<number>) {
         // Credits are charged by briefing_runner when status flips to 'ready'.
         // Refresh the shared balance so the sidebar reflects the spend without
         // a page reload (mirrors chat refreshing on the 'done' SSE event).
-        if (result.status === 'ready') useCreditBalance().refresh()
+        if (result.status === 'ready') {
+          useCreditBalance().refresh()
+          if (viewedId !== result.id) {
+            viewedId = result.id
+            trackEvent('briefing_view', { briefing_id: result.id, dashboard_id: result.dashboard_id })
+          }
+        }
       } else if (result.status === 'generating' && pollTimer === null) {
         pollTimer = setInterval(fetch, POLL_INTERVAL_MS)
       }

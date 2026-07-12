@@ -148,6 +148,7 @@
 
 <script setup lang="ts">
 import { stripLeadingNumber } from '~/utils/stripLeadingNumber'
+import { trackEvent } from '~/utils/analytics'
 
 const route = useRoute()
 const briefingId = computed(() => parseInt(route.params.id as string))
@@ -212,6 +213,7 @@ async function retry() {
   const resp = await fetchWithRefresh(`/api/dashboards/${briefing.value.dashboard_id}/brief`, {
     method: 'POST',
   })
+  trackEvent('briefing_create', { dashboard_id: briefing.value.dashboard_id })
   if (resp?.briefing_id && resp.briefing_id !== briefing.value.id) {
     await navigateTo(`/briefings/${resp.briefing_id}`)
   } else {

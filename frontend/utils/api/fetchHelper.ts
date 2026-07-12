@@ -1,3 +1,5 @@
+import { trackEvent } from '~/utils/analytics'
+
 export function createFetchHelper(authStore: any, router: any) {
   const getHeaders = (body?: any) => {
     const headers: Record<string, string> = {}
@@ -12,6 +14,13 @@ export function createFetchHelper(authStore: any, router: any) {
     }
 
     return headers
+  }
+
+  const reportApiError = (url: string, error: any) => {
+    trackEvent('api_error', {
+      status: error?.statusCode ?? error?.status ?? 0,
+      endpoint: url.split('?')[0],  // strip query — may carry user data
+    })
   }
 
   const fetchWithRefresh = async <T>(url: string, options: Parameters<typeof $fetch>[1] = {}): Promise<T> => {
@@ -38,12 +47,16 @@ export function createFetchHelper(authStore: any, router: any) {
             },
           })
         } else {
-          // Refresh failed - logout and redirect
+          // Refresh failed - logout and redirect. Report before logout so the
+          // error event still carries GA4 user identity (logout clears it via
+          // the user watcher).
+          reportApiError(url, error)
           await authStore.logout()
           await router.push('/login')
           throw error
         }
       }
+      reportApiError(url, error)
       throw error
     }
   }
