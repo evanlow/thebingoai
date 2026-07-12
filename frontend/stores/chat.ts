@@ -28,6 +28,14 @@ export interface Message {
   skillSuggestions?: SkillSuggestion[]
   loop_detected?: boolean
   briefing_id?: number | null
+  query_files?: QueryFile[]  // downloadable datasets produced by this turn's queries
+}
+
+export interface QueryFile {
+  result_ref: string
+  label: string
+  row_count: number
+  col_count: number
 }
 
 export interface ThinkingStep {

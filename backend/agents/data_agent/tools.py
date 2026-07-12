@@ -275,6 +275,12 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                 result.row_count,
                 connection_id,
             )
+
+            # Short label from the primary table ref, used to name export files.
+            from backend.utils.sql_refs import extract_table_refs
+            tables = extract_table_refs(sql)
+            label = tables[0] if tables else "query"
+
             # Build full result payload for frontend delivery
             full_result = {
                 "columns": result.columns,
@@ -282,6 +288,7 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                 "row_count": result.row_count,
                 "execution_time_ms": result.execution_time_ms,
                 "truncated": result.truncated,
+                "label": label,
                 "sql": sql,
                 "connection_id": connection_id,
             }

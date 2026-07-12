@@ -100,6 +100,32 @@
       <!-- Assistant message with markdown -->
       <UiMarkdownRenderer :content="message.content" />
 
+      <!-- Downloadable query results (one row per dataset) -->
+      <div v-if="message.query_files?.length" class="mt-3 space-y-1.5">
+        <div
+          v-for="f in message.query_files"
+          :key="f.result_ref"
+          class="flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-400"
+        >
+          <svg class="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
+          <span class="font-medium text-gray-600 dark:text-neutral-300">{{ f.label }}</span>
+          <span>· {{ f.row_count }}×{{ f.col_count }}</span>
+          <UiDropdown :items="exportItems(f)" align="left">
+            <template #trigger>
+              <button
+                :disabled="downloadingRef === f.result_ref"
+                class="ml-1 inline-flex items-center gap-1 rounded border border-black bg-black px-2 py-0.5 text-white hover:bg-gray-800 disabled:opacity-50 dark:border-white dark:bg-white dark:text-black dark:hover:bg-gray-100"
+              >
+                Data Export
+                <ChevronDown class="h-3 w-3" />
+              </button>
+            </template>
+          </UiDropdown>
+        </div>
+      </div>
+
       <!-- Briefing card -->
       <div v-if="message.briefing_id" class="mt-3">
         <BriefingCard :briefing-id="message.briefing_id" />
@@ -213,8 +239,11 @@
 </template>
 
 <script setup lang="ts">
-import type { Message } from '~/stores/chat'
+import type { Message, QueryFile } from '~/stores/chat'
 import type { SkillSuggestion } from '~/types/skillSuggestion'
+import { toast } from 'vue-sonner'
+import { ChevronDown } from 'lucide-vue-next'
+import UiDropdown from '~/components/ui/UiDropdown.vue'
 import { useDashboardStore } from '~/stores/dashboard'
 import { parseUtcDate, formatDate } from '~/utils/format'
 import { IMAGE_MIME_TYPES } from '~/composables/_chatConstants'
@@ -238,6 +267,38 @@ const dashboardStore = useDashboardStore()
 const authStore = useAuthStore()
 const api = useApi()
 const { resolvedMentions } = useMentions()
+
+// ── Query result download (CSV / Excel) ─────────────────────
+const downloadingRef = ref<string | null>(null)
+
+const exportItems = (f: QueryFile) => [
+  { label: 'CSV',   onClick: () => downloadResult(f, 'csv')  },
+  { label: 'Excel', onClick: () => downloadResult(f, 'xlsx') },
+]
+
+async function downloadResult(file: QueryFile, format: 'csv' | 'xlsx') {
+  downloadingRef.value = file.result_ref
+  try {
+    const blob = await api.fetchWithRefresh<Blob>(
+      `/api/query-results/${file.result_ref}/export?format=${format}`,
+      { responseType: 'blob' },
+    )
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${file.label || 'query-export'}.${format === 'xlsx' ? 'xlsx' : 'csv'}`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err: any) {
+    if (err?.statusCode === 404 || err?.status === 404) {
+      toast.error('Export expired — re-run the query to download again')
+    } else {
+      toast.error(err?.data?.detail || err?.message || 'Download failed')
+    }
+  } finally {
+    downloadingRef.value = null
+  }
+}
 
 const isLoading = computed(() =>
   !props.message.content && chatStore.isStreaming && props.isLast
