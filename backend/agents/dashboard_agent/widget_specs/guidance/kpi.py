@@ -3,7 +3,7 @@
 KPI_GUIDANCE = """### autoTrend vs Legacy Trend
 
 **autoTrend: true (recommended):** SQL returns multiple time-ordered rows. The system automatically:
-- Computes the headline value using the `aggregation` method (default: 'sum' — always set it explicitly to match the KPI's purpose: avg, countDistinct, last, ...)
+- Computes the headline value using the `aggregation` method — always set it explicitly to match the KPI's purpose (sum, avg, countDistinct, last, ...). If omitted, the backend falls back to the first row's value.
 - Derives trend direction and % change
 
 **Trend calculation is controlled by `periodLabel`:**

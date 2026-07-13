@@ -481,6 +481,10 @@ const editorComponent = computed(() =>
 async function fetchSourceColumns(force = false) {
   const ds = props.widget.dataSource
   if (!ds?.sql) return
+  // Capture the widget this fetch was issued for. The watch below re-fires on
+  // rapid widget switches; without this guard a slow response would overwrite
+  // the newly-selected widget's columns (cross-wiring).
+  const requestedId = props.widget.id
   if (!force) {
     const cached = store.widgetSourceData[props.widget.id]
     if (cached?.columns?.length) {
@@ -504,15 +508,19 @@ async function fetchSourceColumns(force = false) {
       widget_id: force ? undefined : props.widget.id,
       widget_sources: props.widget.sources ?? undefined,
     }) as { source_columns?: string[]; source_rows?: any[][] }
+    // A newer widget was selected while this request was in flight — drop the
+    // stale response rather than apply it to the wrong widget.
+    if (props.widget.id !== requestedId) return
     sourceColumns.value = response.source_columns ?? []
     previewRows.value = response.source_rows ?? []
     if (response.source_columns) {
-      store.setWidgetSourceData(props.widget.id, response.source_columns, response.source_rows ?? [])
+      store.setWidgetSourceData(requestedId, response.source_columns, response.source_rows ?? [])
     }
   } catch (err: any) {
+    if (props.widget.id !== requestedId) return
     columnsError.value = `Couldn't load source columns: ${err?.data?.detail ?? err?.message ?? 'Query failed'}`
   } finally {
-    columnsLoading.value = false
+    if (props.widget.id === requestedId) columnsLoading.value = false
   }
 }
 

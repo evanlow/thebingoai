@@ -251,13 +251,30 @@ const api = useApi()
 const connections = ref<{ id: number; name: string }[]>([])
 
 const filterConfig = computed(() => props.modelValue.config as FilterWidgetConfig)
-const localControls = ref<FilterControl[]>(
-  JSON.parse(JSON.stringify(filterConfig.value.controls)),
-)
+
+// Deep-clone and backfill a stable `key` on every control. Filter values are
+// stored per key, and the v-for keys on `control.key || i`; controls persisted
+// before keys existed would fall back to positional keys and cross-wire on
+// removal. Assigning a durable key up front removes that edge case.
+function hydrateControls(controls: FilterControl[]): FilterControl[] {
+  const seen = new Set<string>()
+  return JSON.parse(JSON.stringify(controls ?? [])).map((c: FilterControl, i: number) => {
+    let key = c.key
+    if (!key || seen.has(key)) {
+      let n = i
+      while (seen.has(`filter_${n}`)) n++
+      key = `filter_${n}`
+    }
+    seen.add(key)
+    return { ...c, key }
+  })
+}
+
+const localControls = ref<FilterControl[]>(hydrateControls(filterConfig.value.controls))
 
 // Resync local state when the parent switches to a different widget
 watch(() => props.modelValue, () => {
-  localControls.value = JSON.parse(JSON.stringify(filterConfig.value.controls))
+  localControls.value = hydrateControls(filterConfig.value.controls)
 })
 
 function emitUpdate() {

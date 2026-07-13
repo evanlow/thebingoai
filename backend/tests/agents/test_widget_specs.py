@@ -8,7 +8,7 @@ import pytest
 
 from backend.agents.dashboard_agent.widget_specs import get_available_types, get_widget_spec
 
-ALL_TYPES = ("kpi", "chart", "table", "pivot_table", "filter", "text")
+ALL_TYPES = ("kpi", "chart", "table", "pivot_table", "filter", "text", "section")
 
 
 def test_all_types_available():

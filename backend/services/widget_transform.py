@@ -524,8 +524,11 @@ def transform_kpi(result: QueryResult, mapping: Dict[str, Any]) -> Dict[str, Any
         logger.warning("KPI query returned 0 rows, returning null value")
         return {"value": None}
 
-    # Aggregate value across all rows
-    aggregation = mapping.get("aggregation", "sum")
+    # Aggregate value across all rows.
+    # Default "first" (first-row value) for backward compatibility: existing/agent
+    # mappings without an explicit aggregation must not silently change meaning.
+    # New/edited KPIs persist an explicit aggregation (e.g. "sum") from the editor.
+    aggregation = mapping.get("aggregation", "first")
     all_numeric = [
         v for v in (_to_json_safe(row[value_idx]) for row in result.rows)
         if isinstance(v, (int, float))
