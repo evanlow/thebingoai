@@ -26,6 +26,8 @@ export interface BriefingPayload {
   kpis: BriefingKpi[]
   sections: BriefingSection[]
   key_takeaways: string[]
+  // Absent on briefings generated before this shipped.
+  recommended_actions?: string[] | null
   // Rendered widget configs keyed by widget_id, snapshot at generation time.
   // Absent on briefings generated before this shipped → embed refreshes live.
   widget_snapshots?: Record<string, any>

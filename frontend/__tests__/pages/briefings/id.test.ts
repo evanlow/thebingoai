@@ -110,6 +110,43 @@ describe('briefings/[id]', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/dashboard?id=42')
   })
 
+  it('renders recommended actions when present in the payload', () => {
+    briefingValue = {
+      id: 48,
+      status: 'ready',
+      dashboard_id: 40,
+      created_at: '2026-06-19T00:00:00Z',
+      date_range_from: null,
+      date_range_to: null,
+      payload: {
+        headline: 'Sales up 12%',
+        deck: 'Strong quarter',
+        kpis: [],
+        sections: [],
+        key_takeaways: ['Grow'],
+        recommended_actions: ['Ship the fix', 'Review pricing'],
+      },
+    }
+    mountPage()
+    expect(document.body.textContent).toContain('Recommended actions')
+    expect(document.body.textContent).toContain('Ship the fix')
+    expect(document.body.textContent).toContain('Review pricing')
+  })
+
+  it('hides the recommended actions block on old briefings without the field', () => {
+    briefingValue = {
+      id: 48,
+      status: 'ready',
+      dashboard_id: 40,
+      created_at: '2026-06-19T00:00:00Z',
+      date_range_from: null,
+      date_range_to: null,
+      payload: { headline: 'Sales up 12%', deck: 'Strong quarter', kpis: [], sections: [], key_takeaways: ['Grow'] },
+    }
+    mountPage()
+    expect(document.body.textContent).not.toContain('Recommended actions')
+  })
+
   it('retry on a failed briefing fires GA4 briefing_create with the dashboard id', async () => {
     trackEventMock.mockClear()
     retryFetchMock.mockResolvedValue({ briefing_id: 49 })

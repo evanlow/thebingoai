@@ -65,6 +65,35 @@ def test_emit_briefing_persists_valid_payload():
     emit_ws.assert_called_once()
 
 
+def test_emit_briefing_persists_recommended_actions():
+    persisted = {}
+
+    def fake_factory():
+        s = MagicMock()
+        briefing = MagicMock(id=42, user_id="u1", dashboard_id=1, status="generating", payload=None)
+        s.query.return_value.filter.return_value.first.return_value = briefing
+        persisted["briefing"] = briefing
+        return s
+
+    tools = build_briefing_tools(_ctx(), db_session_factory=fake_factory, briefing_id=42)
+    emit = next(t for t in tools if t.name == "emit_briefing")
+
+    good = {
+        "headline": "Revenue held",
+        "deck": "Topline tracked.",
+        "kpis": [],
+        "sections": [{"heading": "1. Lift", "prose": "Strong."}],
+        "key_takeaways": ["a", "b", "c"],
+        "recommended_actions": ["Ship the fix", "Review pricing"],
+    }
+    with patch("backend.agents.orchestrator.orchestrator_briefing_tool._post_chat_message"), \
+         patch("backend.agents.orchestrator.orchestrator_briefing_tool._emit_ws"):
+        result = asyncio.run(emit.ainvoke({"payload": good}))
+
+    assert "ready" in result.lower()
+    assert persisted["briefing"].payload["recommended_actions"] == ["Ship the fix", "Review pricing"]
+
+
 def test_emit_briefing_injects_widget_snapshots():
     persisted = {}
 

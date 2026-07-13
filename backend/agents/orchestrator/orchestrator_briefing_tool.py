@@ -57,6 +57,7 @@ def build_briefing_tools(
                 kpis (list[Kpi]): 0–3 KPI tiles. Each: {label, value, delta_vs_prev?, delta_direction?}.
                 sections (list[Section]): ≥1 numbered sections. Each: {heading, prose, widget_id?}.
                 key_takeaways (list[str]): exactly 3 bullets.
+                recommended_actions (list[str]): 2–4 concrete next steps derived from the key findings.
         """
         try:
             validated = BriefingPayload.model_validate(payload)

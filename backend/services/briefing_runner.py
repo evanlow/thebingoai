@@ -17,7 +17,8 @@ _PROMPT = (
     "1. Use the analyze_dashboard tool to read the dashboard's KPIs and widgets.\n"
     "2. Reason about week-over-week (or period-over-period) change and what it means.\n"
     "3. Compose a coherent narrative: a sharp headline, a 1-2 sentence deck, up to 3 KPI tiles, "
-    "1+ numbered sections (each may reference a relevant widget by id), and exactly 3 key takeaways.\n"
+    "1+ numbered sections (each may reference a relevant widget by id), exactly 3 key takeaways, "
+    "and 2-4 recommended actions — concrete next steps that follow directly from the key findings.\n"
     "4. Call emit_briefing(payload=...) ONCE at the end with the structured payload. Do NOT write a prose response.\n\n"
     "{widget_catalog}\n"
     "The payload schema:\n"
@@ -26,13 +27,19 @@ _PROMPT = (
     "  deck: str,\n"
     "  kpis: [{{label, value, delta_vs_prev?, delta_direction?}}, ...] (<=3),\n"
     "  sections: [{{heading, prose, widget_id?}}, ...] (>=1),\n"
-    "  key_takeaways: [str, str, str]\n"
+    "  key_takeaways: [str, str, str],\n"
+    "  recommended_actions: [str, ...] (2-4)\n"
     "}}\n"
 )
 
 
 def _build_widget_catalog(widgets: list) -> str:
     """Produce a text catalog of widget ids and types for the orchestrator prompt."""
+    # Filter widgets are dashboard controls, not data — never reference them in a briefing.
+    widgets = [
+        w for w in widgets
+        if not (isinstance(w.get("widget"), dict) and w["widget"].get("type") == "filter")
+    ]
     if not widgets:
         return "This dashboard has no widgets."
     lines = ["Available widgets on this dashboard (use the exact widget_id in emit_briefing):"]

@@ -96,6 +96,13 @@
           <li v-for="(t, i) in briefing.payload.key_takeaways" :key="i" class="text-sm">{{ t }}</li>
         </ul>
       </aside>
+
+      <aside v-if="briefing.payload.recommended_actions?.length" data-pdf-block class="rounded-lg bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 p-5 mt-4">
+        <p class="text-sm uppercase tracking-wider font-semibold text-indigo-900 dark:text-indigo-200 mb-2">Recommended actions</p>
+        <ol class="list-decimal pl-5 space-y-1 text-indigo-950 dark:text-indigo-200">
+          <li v-for="(a, i) in briefing.payload.recommended_actions" :key="i" class="text-sm">{{ a }}</li>
+        </ol>
+      </aside>
     </article>
   </div>
 </template>
