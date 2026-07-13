@@ -71,7 +71,7 @@ Chart.register(
   legendSpacingPlugin
 )
 
-const DEFAULT_PALETTE = [
+export const DEFAULT_PALETTE = [
   '#6366f1', // indigo-500
   '#8b5cf6', // violet-500
   '#ec4899', // pink-500
@@ -335,6 +335,25 @@ function getChartColors() {
 
 // ── Annotation builder ────────────────────────────────────────────────────────
 
+// Reference bands always render translucent — a solid fill would cover the
+// series it's meant to annotate. User picks the hue; alpha is fixed.
+const BAND_ALPHA = 0.12
+
+function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith('#')) {
+    let h = color.slice(1)
+    if (h.length === 3) h = h.split('').map(c => c + c).join('')
+    const n = parseInt(h.slice(0, 6), 16)
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
+  }
+  const m = color.match(/^rgba?\(([^)]+)\)/)
+  if (m) {
+    const [r, g, b] = m[1].split(',').map(s => s.trim())
+    return `rgba(${r},${g},${b},${alpha})`
+  }
+  return color
+}
+
 function buildAnnotations(config: ChartConfig): Record<string, any> {
   const opts = config.options ?? {}
   const annotations: Record<string, any> = {}
@@ -365,7 +384,7 @@ function buildAnnotations(config: ChartConfig): Record<string, any> {
       ...(isY
         ? { yMin: rb.from, yMax: rb.to }
         : { xMin: rb.from, xMax: rb.to }),
-      backgroundColor: rb.color ?? 'rgba(99,102,241,0.10)',
+      backgroundColor: withAlpha(rb.color ?? '#6366f1', BAND_ALPHA),
       borderWidth: 0,
       label: {
         display: !!(rb.label),
@@ -492,6 +511,26 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
             family: getFontFamilyStr(opts.legendFontFamily ?? opts.fontFamily),
             size: getFontSizePx(opts.legendFontSize ?? opts.fontSize),
           },
+          // Marker mirrors what the series draws: line stroke (dashed if
+          // borderDash) for lines, rect for bars/areas, circle for scatter.
+          // Pie/doughnut keeps the default per-slice color boxes.
+          ...(isPieOrDoughnut ? {} : {
+            usePointStyle: true,
+            // Wide marker so dash patterns read as lines; scatter/bubble keep
+            // the default width — stretching turns their circles into ellipses.
+            ...(isScatter ? {} : { pointStyleWidth: 28 }),
+            generateLabels: (chart: Chart) => {
+              const items = Chart.defaults.plugins.legend.labels.generateLabels(chart)
+              for (const item of items) {
+                const ds = chart.data.datasets[item.datasetIndex!] as any
+                const effType = ds?.type ?? (chart.config as any).type
+                if (effType === 'scatter' || effType === 'bubble') item.pointStyle = 'circle'
+                else if (effType === 'line' && !ds?.fill) item.pointStyle = 'line'
+                else item.pointStyle = 'rect'
+              }
+              return items
+            },
+          }),
         },
       },
       tooltip: {
@@ -533,7 +572,7 @@ function buildChartJsOptions(config: ChartConfig, enableAnimation: boolean): Cha
       annotation: {
         annotations: buildAnnotations(config),
       },
-      legendSpacing: { gap: legendOnTop && anyDataLabels && !isPieOrDoughnut ? 20 : 0 },
+      legendSpacing: { gap: legendOnTop ? 20 : 0 },
       pieOuterLabels: isPieOrDoughnut
         ? {
             display: sliceMode !== 'none',

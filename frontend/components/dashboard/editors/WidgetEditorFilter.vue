@@ -17,7 +17,7 @@
     <div class="space-y-3">
       <div
         v-for="(control, i) in localControls"
-        :key="i"
+        :key="control.key || i"
         class="rounded-lg border border-gray-200 dark:border-neutral-700 p-3 space-y-2 bg-gray-50 dark:bg-neutral-900"
       >
         <!-- Row 1: Type + Label -->
@@ -251,13 +251,30 @@ const api = useApi()
 const connections = ref<{ id: number; name: string }[]>([])
 
 const filterConfig = computed(() => props.modelValue.config as FilterWidgetConfig)
-const localControls = ref<FilterControl[]>(
-  JSON.parse(JSON.stringify(filterConfig.value.controls)),
-)
+
+// Deep-clone and backfill a stable `key` on every control. Filter values are
+// stored per key, and the v-for keys on `control.key || i`; controls persisted
+// before keys existed would fall back to positional keys and cross-wire on
+// removal. Assigning a durable key up front removes that edge case.
+function hydrateControls(controls: FilterControl[]): FilterControl[] {
+  const seen = new Set<string>()
+  return JSON.parse(JSON.stringify(controls ?? [])).map((c: FilterControl, i: number) => {
+    let key = c.key
+    if (!key || seen.has(key)) {
+      let n = i
+      while (seen.has(`filter_${n}`)) n++
+      key = `filter_${n}`
+    }
+    seen.add(key)
+    return { ...c, key }
+  })
+}
+
+const localControls = ref<FilterControl[]>(hydrateControls(filterConfig.value.controls))
 
 // Resync local state when the parent switches to a different widget
 watch(() => props.modelValue, () => {
-  localControls.value = JSON.parse(JSON.stringify(filterConfig.value.controls))
+  localControls.value = hydrateControls(filterConfig.value.controls)
 })
 
 function emitUpdate() {
@@ -270,7 +287,11 @@ function emitUpdate() {
 }
 
 function addControl() {
-  const idx = localControls.value.length
+  // Unique across add/remove cycles — length-based keys collide after a removal,
+  // and filter values are stored per key, so a collision cross-wires two controls.
+  const existing = new Set(localControls.value.map(c => c.key))
+  let idx = localControls.value.length
+  while (existing.has(`filter_${idx}`)) idx++
   localControls.value.push({
     type: 'dropdown',
     label: '',

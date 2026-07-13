@@ -14,7 +14,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-_VALID_WIDGET_TYPES = {"kpi", "chart", "table", "text", "filter", "pivot_table"}
+_VALID_WIDGET_TYPES = {"kpi", "chart", "table", "text", "filter", "pivot_table", "section"}
 _DATA_WIDGET_TYPES = {"kpi", "chart", "table", "pivot_table"}
 _VALID_MAPPING_TYPES = {"kpi", "chart", "table", "pivot_table"}
 
@@ -697,7 +697,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                    "options": {"sortBy": "value", "sortDirection": "desc"},
                    "connectionId": 1, "sql": "SELECT o.region, SUM(o.amount) AS revenue FROM orders o GROUP BY o.region",
                    "sources": ["orders"]},
-                  {"type": "text", "content": "## Detail"},
+                  {"type": "section", "title": "Detail"},
                   {"type": "table", "title": "Top Orders",
                    "columns": [{"column": "order_id", "label": "Order"},
                                {"column": "amount", "label": "Amount", "sortable": true, "format": "currency"}],
@@ -714,7 +714,8 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                     title?, connectionId*, sql*, sources?
                 - pivot_table: rowDimensions* [{column,label}], columnDimensions? (max 2),
                     values* [{column, label, aggregation}], title?, connectionId*, sql*, sources?
-                - text: content* (markdown), alignment?
+                - section: title* (plain text section header), sectionColor?
+                - text: content* (markdown narrative only — headers use section), alignment?
                 - filter: controls* [{type, label, key, column*, optionsSource {connectionId, sql} for dropdown}]
                   (filter has NO connectionId/sql/mapping at widget level)
                 * = required.
@@ -742,7 +743,7 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 Note the real columns from BOTH tables in the SELECT — no NULLs.
 
                 Layout: emit widgets in the order they should read top-to-bottom
-                (filter → 3-5 KPIs → section header → 3-5 charts → 1-2 tables).
+                (filter → 3-5 KPIs → section → 3-5 charts → section → 1-2 tables).
                 The backend packs each row to 12 columns. To emphasize ONE hero
                 chart, optionally set its "width" (e.g. 8) and the next chart's
                 "width" (e.g. 4); otherwise omit width. To preserve a widget across

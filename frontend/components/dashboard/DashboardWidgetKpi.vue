@@ -16,16 +16,19 @@
       class="relative flex flex-col justify-between px-4 py-3 z-10 flex-1 min-h-0 min-w-0"
       :class="alignClass"
     >
-      <!-- Metric label -->
+      <!-- Metric label — flex-shrink-0: on a tight card the flex column would
+           otherwise squeeze this row's height and its own `truncate`
+           (overflow-hidden) clips the glyphs. Indicator rows below give way instead. -->
       <div
         v-if="!config.hideFieldName"
-        class="widget-label truncate max-w-full"
+        class="widget-label truncate max-w-full flex-shrink-0"
         :style="labelStyle"
         :title="config.label"
       >{{ config.label }}</div>
 
-      <!-- Main value -->
-      <div class="flex items-baseline gap-1 mt-2 max-w-full overflow-hidden" :class="justifyClass">
+      <!-- Main value — flex-shrink-0 so a tight card squeezes whitespace,
+           never the glyphs (overflow-hidden here would clip them) -->
+      <div class="flex flex-shrink-0 items-baseline gap-1 mt-2 max-w-full overflow-hidden" :class="justifyClass">
         <span v-if="config.prefix" class="text-sm font-medium text-[var(--ink-3)] flex-shrink-0">{{ config.prefix }}</span>
         <span
           class="kpi-value truncate"
@@ -38,21 +41,22 @@
 
       <!-- Progress visual (bar or circle) — shown when showAsProgress is on -->
       <template v-if="showProgress && progressPct !== null">
-        <!-- Bar -->
-        <div v-if="progressVisual !== 'circle' && progressVisual !== 'none'" class="mt-3 space-y-1">
-          <div class="h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-neutral-700">
+        <!-- Bar — bar and percentage sit side by side (one row, not stacked)
+             so the progress visual never pushes the value up into the label -->
+        <div v-if="progressVisual !== 'circle' && progressVisual !== 'none'" class="mt-2 flex flex-shrink-0 items-center gap-2 max-w-full">
+          <div class="h-2 flex-1 min-w-8 rounded-full overflow-hidden bg-gray-100 dark:bg-neutral-700">
             <div
               class="h-full rounded-full transition-all duration-500"
               :style="{ width: (progressPct * 100).toFixed(1) + '%', background: progressColor }"
             />
           </div>
-          <div v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)] tabular-nums">
+          <div v-if="!config.comparison?.hideComparisonLabel" class="text-sm text-[var(--ink-3)] tabular-nums flex-shrink-0 truncate max-w-[70%]">
             {{ (progressPct * 100).toFixed(1) }}% {{ comparisonLabel }}
           </div>
         </div>
 
         <!-- Circle -->
-        <div v-else-if="progressVisual === 'circle'" class="mt-3 flex items-center gap-3" :class="justifyClass">
+        <div v-else-if="progressVisual === 'circle'" class="mt-3 flex flex-shrink-0 items-center gap-3" :class="justifyClass">
           <svg width="48" height="48" viewBox="0 0 48 48" class="flex-shrink-0">
             <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="4" class="text-gray-100 dark:text-neutral-700" />
             <circle
@@ -75,7 +79,7 @@
       <!-- Comparison / trend row (shown when NOT showAsProgress) -->
       <div
         v-else-if="comparisonDisplay && !showProgress"
-        class="flex items-center gap-1.5 mt-1"
+        class="flex flex-shrink-0 items-center gap-1.5 mt-1"
         :class="justifyClass"
       >
         <component
@@ -374,7 +378,7 @@ const kpiValueClass = computed(() => {
   font-size: 36px;
   font-optical-sizing: auto;
   font-variation-settings: 'opsz' 72;
-  line-height: 1.25;
+  line-height: 1.1;
   letter-spacing: -0.5px;
   color: var(--ink-0);
 }

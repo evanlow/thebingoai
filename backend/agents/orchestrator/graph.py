@@ -1,7 +1,7 @@
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
-from backend.agents.orchestrator.prompts import build_orchestrator_prompt, build_lean_orchestrator_prompt
+from backend.agents.orchestrator.prompts import build_orchestrator_prompt, build_lean_orchestrator_prompt, render_mentions_block
 from backend.agents.orchestrator.skill_tools import build_skill_tools
 from backend.agents.orchestrator.soul_tools import build_soul_tools
 from backend.agents.orchestrator.profile_tools import build_profile_tools
@@ -262,18 +262,27 @@ async def _render_orchestrator_prompt(
             mesh_enabled=settings.agent_mesh_enabled,
             target_connection_id=context.target_connection_id,
         )
-        return ProfileRenderer.render(profile, rt_ctx)
-    logger.info("%s: using LEGACY hardcoded prompt (no profile)", log_prefix)
-    return build_orchestrator_prompt(
-        custom_agents,
-        memory_context=memory_context,
-        user_skills=user_skills,
-        user_memories_context=user_memories_context,
-        skill_suggestions=skill_suggestions,
-        soul_prompt=soul_prompt,
-        available_connections=context.available_connections,
-        connection_metadata=context.connection_metadata,
-    )
+        base_prompt = ProfileRenderer.render(profile, rt_ctx)
+    else:
+        logger.info("%s: using LEGACY hardcoded prompt (no profile)", log_prefix)
+        base_prompt = build_orchestrator_prompt(
+            custom_agents,
+            memory_context=memory_context,
+            user_skills=user_skills,
+            user_memories_context=user_memories_context,
+            skill_suggestions=skill_suggestions,
+            soul_prompt=soul_prompt,
+            available_connections=context.available_connections,
+            connection_metadata=context.connection_metadata,
+        )
+
+    # Per-turn @-mention block. The profile renderer and legacy prompt don't
+    # know about mentions (only the lean prompt does), so append it here so the
+    # model sees resolved page_ids / connection_ids and the routing bias.
+    mentions_block = render_mentions_block(mentions)
+    if mentions_block:
+        base_prompt = f"{base_prompt}\n\n{mentions_block}"
+    return base_prompt
 
 
 def _build_messages(
@@ -619,7 +628,11 @@ def build_orchestrator_tools(
         shared_tools = skill_tools + profile_tools_list + dashboard_tools + memory_tools + [ask_user_question]
 
         if custom_agents:
-            tools = _build_dynamic_tools(context, custom_agents, db_session_factory, llm_provider=llm_provider) + shared_tools
+            tools = (
+                _build_dynamic_tools(context, custom_agents, db_session_factory, llm_provider=llm_provider)
+                + shared_tools
+                + _build_plugin_tools(context, db_session_factory)
+            )
         else:
             tools = _build_legacy_tools(context, db_session_factory) + shared_tools
 
@@ -744,6 +757,31 @@ def _build_lean_tools(
     return primary
 
 
+def _build_plugin_tools(context: AgentContext, db_session_factory: Optional[Callable] = None) -> list:
+    """Build tools registered by plugins (e.g. read_notion_pages, facebook_ads_summary).
+
+    Bound in every orchestrator tool path — legacy, custom-agent, and mesh — so
+    plugin tools are available regardless of which path is active.
+    """
+    from backend.agents.tool_registry import _PLUGIN_TOOL_BUILDERS
+    plugin_tools: list = []
+    for _name, _builder in _PLUGIN_TOOL_BUILDERS.items():
+        try:
+            import inspect as _inspect
+            sig = _inspect.signature(_builder)
+            if "db_session_factory" in sig.parameters:
+                factory = db_session_factory
+                if factory is None:
+                    from backend.database.session import SessionLocal
+                    factory = SessionLocal
+                plugin_tools.extend(_builder(context, factory))
+            else:
+                plugin_tools.extend(_builder(context))
+        except Exception as exc:
+            logger.warning(f"Failed to build plugin tool '{_name}': {exc}")
+    return plugin_tools
+
+
 def _build_legacy_tools(context: AgentContext, db_session_factory: Optional[Callable] = None):
     """Legacy static tools used when no custom agents are configured."""
 
@@ -799,26 +837,7 @@ def _build_legacy_tools(context: AgentContext, db_session_factory: Optional[Call
             return json.dumps({"success": True, "memories": [], "message": "No relevant memories found"})
         return json.dumps({"success": True, "memories": context_str})
 
-    # Include plugin-registered tools so specialised tools (e.g.
-    # facebook_ads_summary) are available even in legacy mode.
-    from backend.agents.tool_registry import _PLUGIN_TOOL_BUILDERS
-    plugin_tools: list = []
-    for _name, _builder in _PLUGIN_TOOL_BUILDERS.items():
-        try:
-            import inspect as _inspect
-            sig = _inspect.signature(_builder)
-            if "db_session_factory" in sig.parameters:
-                factory = db_session_factory
-                if factory is None:
-                    from backend.database.session import SessionLocal
-                    factory = SessionLocal
-                plugin_tools.extend(_builder(context, factory))
-            else:
-                plugin_tools.extend(_builder(context))
-        except Exception as exc:
-            logger.warning(f"Failed to build plugin tool '{_name}': {exc}")
-
-    return [data_agent, rag_agent, recall_memory] + plugin_tools
+    return [data_agent, rag_agent, recall_memory] + _build_plugin_tools(context, db_session_factory)
 
 
 def _build_mesh_tools(context: AgentContext, db_session_factory: Optional[Callable] = None):
@@ -930,7 +949,7 @@ def _build_mesh_tools(context: AgentContext, db_session_factory: Optional[Callab
         registry=registry,
     )
 
-    return [data_agent, rag_agent, recall_memory] + comm_tools
+    return [data_agent, rag_agent, recall_memory] + comm_tools + _build_plugin_tools(context, db_session_factory)
 
 
 def _build_dynamic_tools(

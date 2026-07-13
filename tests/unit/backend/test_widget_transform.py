@@ -213,12 +213,13 @@ class TestTransformKpi:
         assert out["trend"]["direction"] == "neutral"
         assert out["trend"]["value"] == "N/A"
 
-    def test_sparkline_from_all_rows(self):
+    def test_value_defaults_to_first_row(self):
+        # Sparkline is computed frontend-side (widgetTransform.ts), not by transform_kpi.
+        # Here we pin the backend contract: with no explicit aggregation the headline
+        # value falls back to the first row (backward compatibility).
         result = _qr(["total", "spark"], [(100, 10), (200, 20), (300, 30)])
         mapping = {"valueColumn": "total", "sparklineYColumn": "spark"}
         out = transform_kpi(result, mapping)
-        assert out["sparkline"] == [10, 20, 30]
-        # value should still come from first row only
         assert out["value"] == 100
 
 

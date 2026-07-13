@@ -1,6 +1,6 @@
 import type { ChartConfig, ChartType } from './chart'
 
-export type WidgetType = 'kpi' | 'chart' | 'table' | 'text' | 'filter' | 'pivot_table'
+export type WidgetType = 'kpi' | 'chart' | 'table' | 'text' | 'filter' | 'pivot_table' | 'section'
 
 // 12-column grid position
 export interface GridPosition {
@@ -195,6 +195,38 @@ export interface PivotTableWidgetConfig {
 export interface TextWidgetConfig {
   content: string
   alignment?: 'left' | 'center' | 'right'
+  /** Marks this text widget as a dashboard section header. When undefined,
+   *  headers are inferred from content starting with a markdown heading. */
+  isSection?: boolean
+  /** Section band color token — key of SECTION_COLORS. */
+  sectionColor?: SectionColor
+}
+
+// Dedicated section widget — slim colored title bar that anchors a band
+export interface SectionWidgetConfig {
+  title: string
+  sectionColor?: SectionColor
+}
+
+/** Section band color tokens → CSS vars defined in assets/css/main.css. */
+export const SECTION_COLORS = ['default', 'violet', 'blue', 'green', 'amber', 'rose'] as const
+export type SectionColor = typeof SECTION_COLORS[number]
+
+/** Clamp an untrusted config value to a known color token — config values are
+ *  interpolated into style bindings, so never let arbitrary strings through. */
+export function sectionColorToken(c?: string): SectionColor {
+  return (SECTION_COLORS as readonly string[]).includes(c ?? '') ? c as SectionColor : 'default'
+}
+
+/** True when a widget anchors a dashboard section: the dedicated section
+ *  widget, or a legacy heading text widget (explicit flag / markdown-heading
+ *  heuristic for dashboards saved before the section type existed). */
+export function isSectionHeader(w: DashboardWidget): boolean {
+  if (w.widget.type === 'section') return true
+  if (w.widget.type !== 'text') return false
+  const config = w.widget.config as TextWidgetConfig
+  if (config.isSection !== undefined) return config.isSection
+  return (config.content ?? '').trimStart().startsWith('#')
 }
 
 // Filter widget
@@ -312,6 +344,7 @@ export type WidgetConfig =
   | { type: 'pivot_table'; config: PivotTableWidgetConfig }
   | { type: 'text'; config: TextWidgetConfig }
   | { type: 'filter'; config: FilterWidgetConfig }
+  | { type: 'section'; config: SectionWidgetConfig }
 
 // A single widget placed in the grid
 export interface DashboardWidget {
@@ -393,6 +426,7 @@ export const WIDGET_DEFAULTS: Record<WidgetType, GridPosition> = {
   pivot_table: { x: 0, y: 0, w: 8, h: 5, minW: 4, minH: 3 },
   text:   { x: 0, y: 0, w: 4,  h: 3, minW: 2, minH: 2 },
   filter: { x: 0, y: 0, w: 12, h: 2, minW: 4, minH: 2 },
+  section: { x: 0, y: 0, w: 12, h: 1, minW: 2, minH: 1 },
 }
 
 // Derive a DashboardListItem from a full Dashboard

@@ -92,8 +92,9 @@ def render_mentions_block(mentions: "Optional[List[ResolvedMention]]") -> str:
         "                            (read_dashboard / update_dashboard / analyze_dashboard),",
         "                            passing `dashboard_id`.",
         "- @connection mentioned  → call `data_agent`, pass `connection_ids`.",
-        "- @notion_page mentioned → prefer `read_notion_pages(connection_id=…)`",
-        "                            (or `rag_agent` with `page_ids` if the plugin is unavailable).",
+        "- @notion_page mentioned → call `read_notion_pages(connection_id=…, page_ids=[…])`,",
+        "                            passing the exact page_id shown above (do NOT omit page_ids —",
+        "                            calling with connection_id alone only lists pages, not content).",
         "Mentions never go through `manage`.",
     ]
     return "\n".join(lines)
