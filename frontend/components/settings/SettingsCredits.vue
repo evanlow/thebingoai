@@ -141,7 +141,7 @@
           <h3 class="text-base font-medium text-gray-900 dark:text-white">Usage History</h3>
           <button
             @click="handleExportCsv"
-            class="text-sm px-3 py-1.5 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors"
+            class="text-sm px-3 py-1.5 rounded-md bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 transition-colors"
           >
             Export CSV
           </button>

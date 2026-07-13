@@ -36,7 +36,7 @@
 
       <div class="mt-4 pt-4 border-t border-gray-100 dark:border-neutral-700 flex justify-end">
         <UiButton
-          variant="outline"
+          variant="primary"
           size="sm"
           @click="showDeleteAllDialog = true"
         >
@@ -67,7 +67,7 @@
           <span class="text-sm text-gray-400 dark:text-neutral-500">{{ entries.length }} / 50</span>
           <UiButton
             size="sm"
-            variant="outline"
+            variant="primary"
             @click="openAddDialog"
             :disabled="entries.length >= 50"
           >
