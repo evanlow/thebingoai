@@ -20,7 +20,14 @@ engine = create_engine(
     echo=settings.log_level == "DEBUG",
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# expire_on_commit=False: chat.py / websocket.py hand ORM rows (history Messages,
+# custom agents, skills) to the orchestrator and close the session before the run
+# (see the comment there). With the default True, add_message()'s commit blanks
+# those rows, and the first attribute read inside the agent — on a now-detached
+# instance — raises DetachedInstanceError.
+SessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, expire_on_commit=False, bind=engine
+)
 
 
 def get_db() -> Session:

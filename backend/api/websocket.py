@@ -578,10 +578,12 @@ async def _handle_chat_send(
 
         # Return the pooled connection before the (minutes-long) stream — held open it
         # sits idle-in-transaction, the pooler reaps it, and the post-stream writes die
-        # with "SSL connection has been closed unexpectedly". The session re-opens
-        # lazily (pre-pinged) on the next statement; the orchestrator has its own
-        # session factory (_SF) and does not use this one.
-        db.refresh(conversation)  # populate attrs so the detached object stays readable
+        # with "SSL connection has been closed unexpectedly". Rows loaded above
+        # (conversation, history, ctx.custom_agents, ctx.user_skills) survive as
+        # detached-but-populated objects because SessionLocal sets expire_on_commit=False
+        # — only their column attrs are safe past this point, never a lazy relationship.
+        # The session re-opens lazily (pre-pinged) on the next statement; the orchestrator
+        # has its own session factory (_SF) and does not use this one.
         db.close()
 
         final_message = ""

@@ -86,9 +86,11 @@ async def chat(
 
     # Return the pooled connection before the (minutes-long) run — held open it sits
     # idle-in-transaction, the pooler reaps it, and the post-run writes die with
-    # "SSL connection has been closed unexpectedly". The session re-opens lazily
-    # (pre-pinged) on the next statement; the orchestrator uses its own factory.
-    db.refresh(conversation)  # populate attrs so the detached object stays readable
+    # "SSL connection has been closed unexpectedly". Rows loaded above (conversation,
+    # history, ctx) survive as detached-but-populated objects because SessionLocal sets
+    # expire_on_commit=False — only their column attrs are safe past this point, never a
+    # lazy relationship. The session re-opens lazily (pre-pinged) on the next statement;
+    # the orchestrator uses its own factory.
     db.close()
 
     result = await run_orchestrator(
@@ -110,7 +112,7 @@ async def chat(
     )
 
     # Save assistant message
-    assistant_msg = ConversationService.add_message(
+    ConversationService.add_message(
         db, conversation.id, "assistant", result["message"]
     )
 
