@@ -141,7 +141,7 @@
             <span>context: <b class="text-[var(--ink-0)]">—</b></span>
           </template>
           <div class="flex-1" />
-          <span v-if="featureConfig?.credits_enabled !== false">{{ Math.round(remaining) }} credits left today</span>
+          <span v-if="featureConfig?.credits_enabled !== false">{{ Math.round(remaining) }} workspace credits</span>
         </div>
       </div>
     </div>
