@@ -247,7 +247,7 @@
           </div>
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-[var(--ink-0)] truncate">{{ authStore.user?.email }}</p>
-            <p v-if="featureConfig?.credits_enabled !== false" class="font-mono text-sm text-[var(--ink-2)]">
+            <p v-if="featureConfig?.credits_enabled !== false" class="font-mono whitespace-nowrap text-[var(--ink-2)]" :class="creditSizeClass">
               <span class="text-[var(--ember)]">●</span> {{ Math.round(remaining) }} credits
             </p>
           </div>
@@ -386,7 +386,7 @@
       <div class="h-8 w-8 rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] flex items-center justify-center text-sm font-semibold flex-shrink-0">{{ userInitial }}</div>
       <div class="min-w-0">
         <span class="text-sm text-[var(--ink-0)] truncate block">{{ authStore.user?.email }}</span>
-        <span v-if="featureConfig?.credits_enabled !== false" class="font-mono text-sm text-[var(--ink-2)]">
+        <span v-if="featureConfig?.credits_enabled !== false" class="font-mono whitespace-nowrap text-[var(--ink-2)]" :class="creditSizeClass">
           <span class="text-[var(--ember)]">●</span> {{ Math.round(remaining) }} credits
         </span>
       </div>
@@ -444,6 +444,14 @@ const handleAcceptInvite = async (invite: IncomingInvite) => {
   }
 }
 const { remaining } = useCreditBalance()
+// Keep the credit line on one row: step the font down as the workspace total
+// grows so a 6-digit balance still fits the ~150px sidebar slot without wrapping.
+const creditSizeClass = computed(() => {
+  const digits = String(Math.round(remaining.value || 0)).length
+  if (digits <= 4) return 'text-sm'     // ≤ 9,999
+  if (digits === 5) return 'text-xs'    // ≤ 99,999
+  return 'text-[10px]'                  // 100,000+
+})
 const { config: featureConfig } = useFeatureConfig()
 const layoutStore = useLayoutStore()
 

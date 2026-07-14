@@ -88,6 +88,41 @@ def spend_org_pool(db: Session, org_id: str, amount: int) -> Optional[int]:
     return int(row[0])
 
 
+def debit_org_pool_clamped(db: Session, org_id: str, amount: int) -> Optional[int]:
+    """Post-hoc per-turn debit — recurring-first, clamped at zero.
+
+    Unlike spend_org_pool this has no ``credit_balance >= :amt`` gate: the turn
+    already ran (called from CreditContextManager._exit), so we drain what's
+    left rather than refuse. The pre-flight org-pool check in _check_credits is
+    what blocks a turn on an already-empty pool. Clamps the spend to the current
+    balance so the pool never goes negative. Returns the new total, or None if
+    the column is missing (pre-Phase-0 community schema). Caller owns the txn.
+    """
+    # LEAST(:amt, credit_balance) clamps the debit to what's left so the pool
+    # never goes negative; recurring (credit_balance - topup_balance) drains
+    # before topup, matching spend_org_pool / the retired daily task.
+    try:
+        result = db.execute(
+            text(
+                "UPDATE organizations "
+                "SET topup_balance = CASE "
+                "        WHEN (credit_balance - topup_balance) >= LEAST(:amt, credit_balance) "
+                "            THEN topup_balance "
+                "            ELSE topup_balance - (LEAST(:amt, credit_balance) - (credit_balance - topup_balance)) END, "
+                "    credit_balance = credit_balance - LEAST(:amt, credit_balance) "
+                "WHERE id = :org "
+                "RETURNING credit_balance"
+            ),
+            {"amt": int(amount), "org": str(org_id)},
+        )
+    except Exception:
+        return None
+    row = result.fetchone()
+    if row is None:
+        return None
+    return int(row[0])
+
+
 def read_org_pool_breakdown(db: Session, org_id: str) -> Optional[dict]:
     """Return {recurring, topup, total} or None when the columns are missing.
     recurring is derived: total - topup."""

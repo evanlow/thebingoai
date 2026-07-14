@@ -307,22 +307,8 @@ class CreditContextManager:
         return int(row[0]) if row else 0
 
     def _check(self):
-        daily_limit = self._ensure_balance_row()
-        used = self._today_usage()
-        credit_logger.info(
-            "[credit] user %s: daily_limit=%d, used_today=%d, block_on_insufficient=%s",
-            self.user_id, daily_limit, used, self.block_on_insufficient,
-        )
-        if daily_limit == 0 or used >= daily_limit:
-            credit_logger.warning(
-                "[credit] user %s: daily limit %d reached (used=%d), block=%s",
-                self.user_id, daily_limit, used, self.block_on_insufficient,
-            )
-            if self.block_on_insufficient:
-                raise InsufficientCreditsError(
-                    f"Daily credit limit of {daily_limit} reached.",
-                    reason="user_daily",
-                )
+        # Per-user daily credit cap removed — spending is gated solely on the
+        # workspace (org) credit pool below.
 
         # Phase 4 of multi-user-org: refuse the turn early when the org's
         # credit pool is already empty. The atomic decrement in _record()

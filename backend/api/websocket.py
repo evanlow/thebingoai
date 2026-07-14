@@ -609,6 +609,21 @@ async def _handle_chat_send(
                 collected_retry_succeeded = event.pop("retry_succeeded", None)
                 collected_judge_metadata = event.pop("judge_metadata", None)
 
+                # Finalize credit usage BEFORE forwarding `done`, so the client's
+                # post-`done` balance refresh reads the debited pool instead of
+                # racing ahead of the debit (which otherwise lands in __aexit__
+                # below, after persist). Void first if the Layer-4 retry failed so
+                # the user isn't charged. _credit_mgr is nulled so the finalize at
+                # the end of the turn doesn't run again (_exit is idempotent anyway).
+                if _credit_mgr is not None:
+                    if collected_retry_succeeded is False and hasattr(_credit_mgr, "void"):
+                        _credit_mgr.void("layer4_retry_failed")
+                    try:
+                        await _credit_mgr.__aexit__(None, None, None)
+                    except Exception as _credit_err:
+                        logger.warning("Credit usage recording failed: %s", _credit_err)
+                    _credit_mgr = None
+
             await send({
                 "type": ws_type,
                 "request_id": request_id,

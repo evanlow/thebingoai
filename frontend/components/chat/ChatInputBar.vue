@@ -8,7 +8,7 @@
         class="mb-3 rounded-xl border border-[var(--warn)] bg-[color-mix(in_oklch,var(--warn)_8%,var(--paper-0))] px-4 py-3 text-sm text-[var(--ink-0)] flex items-center justify-between gap-3"
       >
         <span v-if="orgExhausted">Workspace credits exhausted. Contact your admin.</span>
-        <span v-else>Daily credits used up. Resets at midnight.</span>
+        <span v-else>Out of credits.</span>
         <NuxtLink v-if="!orgExhausted" to="/settings?tab=credits" class="font-medium underline hover:opacity-80 whitespace-nowrap">
           Add your own API key →
         </NuxtLink>
