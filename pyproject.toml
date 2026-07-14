@@ -10,7 +10,9 @@ urls = { Homepage = "https://thebingo.ai", Repository = "https://github.com/theb
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["backend/tests"]
+testpaths = ["tests", "backend/tests"]
+# Repo root only — never backend/, which would shadow langgraph (see addopts).
+pythonpath = ["."]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
