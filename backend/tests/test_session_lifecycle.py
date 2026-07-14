@@ -9,6 +9,12 @@ the whole run, and the orchestrator still reads from it (graph.py `_build_messag
 The sessions here are built from the *production* SessionLocal kwargs, so a revert
 of `expire_on_commit=False` in backend/database/session.py fails these tests rather
 than silently passing on conftest's own session config.
+
+Prerequisites (the image ships neither):
+
+    docker exec thebingo-backend pip install -r requirements-dev.txt
+    docker exec thebingo-postgres psql -U thebingo_user -d thebingo \
+        -c "CREATE DATABASE thebingo_test OWNER thebingo_user;"
 """
 import asyncio
 import uuid
@@ -116,8 +122,10 @@ def test_custom_agents_carry_their_profile_after_the_session_closes(prod_session
     ))
     db.commit()
 
+    # query="": memory retrieval is gated on a truthy query (heartbeat_context.py),
+    # and it would embed via OpenAI + search Qdrant. The custom_agents path is identical.
     ctx = asyncio.run(build_orchestrator_context(
-        db=db, user=user, query="hi", connection_ids=None, thread_id=None,
+        db=db, user=user, query="", connection_ids=None, thread_id=None,
     ))
     db.close()  # what chat.py / websocket.py do before the orchestrator run
 
