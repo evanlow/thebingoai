@@ -6,9 +6,10 @@ reaped by the pooler. Every ORM row loaded beforehand is therefore detached for
 the whole run, and the orchestrator still reads from it (graph.py `_build_messages`,
 `_build_dynamic_tools`). These tests pin the two properties that make that safe.
 
-The sessions here are built from the *production* SessionLocal kwargs, so a revert
-of `expire_on_commit=False` in backend/database/session.py fails these tests rather
-than silently passing on conftest's own session config.
+The sessions here are built from the *production* DetachedReadSessionLocal kwargs —
+the factory those two handlers use — so a revert of `expire_on_commit=False` in
+backend/database/session.py fails these tests rather than silently passing on
+conftest's own session config.
 
 Prerequisites (the image ships neither):
 
@@ -23,7 +24,7 @@ import pytest
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import sessionmaker
 
-from backend.database.session import SessionLocal
+from backend.database.session import DetachedReadSessionLocal
 from backend.models.agent_profile import AgentProfile
 from backend.models.custom_agent import CustomAgent
 from backend.models.organization import Organization
@@ -36,8 +37,8 @@ from backend.services.heartbeat_context import build_orchestrator_context
 
 @pytest.fixture
 def prod_session(test_engine):
-    """A session configured exactly like production's, bound to the test engine."""
-    prod_kwargs = {k: v for k, v in SessionLocal.kw.items() if k != "bind"}
+    """A session configured exactly like the chat handlers', bound to the test engine."""
+    prod_kwargs = {k: v for k, v in DetachedReadSessionLocal.kw.items() if k != "bind"}
     Session = sessionmaker(bind=test_engine, **prod_kwargs)
     session = Session()
     try:

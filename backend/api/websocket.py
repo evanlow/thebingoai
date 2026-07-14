@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from backend.database.session import SessionLocal
+from backend.database.session import SessionLocal, DetachedReadSessionLocal
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
 from backend.schemas.chat import ResolvedMention
@@ -400,6 +400,12 @@ async def _wait_for_file_processing(
 
     elapsed = 0
     while pending:
+        # Don't hold the pooled connection across the sleep: profiling can run for
+        # minutes, and a connection left idle-in-transaction gets reaped by the
+        # pooler. Closing also drops the identity map, so the query below opens a
+        # fresh transaction and reads the Celery worker's committed write directly —
+        # no refresh() needed.
+        db.close()
         await asyncio.sleep(POLL_INTERVAL_S)
         elapsed += POLL_INTERVAL_S
 
@@ -412,7 +418,6 @@ async def _wait_for_file_processing(
             if conn is None:
                 resolved.append(cid)
                 continue
-            db.refresh(conn)  # see updates from Celery worker session
             if conn.profiling_status == "ready":
                 resolved.append(cid)
             elif conn.profiling_status == "failed":
@@ -467,7 +472,7 @@ async def _handle_chat_send(
 
     import redis as sync_redis
     redis_client = sync_redis.from_url(settings.redis_url, decode_responses=True)
-    db: Session = SessionLocal()
+    db: Session = DetachedReadSessionLocal()
     active_thread_id: Optional[str] = thread_id  # tracks actual thread_id for cleanup
 
     async def send(payload: dict) -> None:
@@ -580,7 +585,8 @@ async def _handle_chat_send(
         # sits idle-in-transaction, the pooler reaps it, and the post-stream writes die
         # with "SSL connection has been closed unexpectedly". Rows loaded above
         # (conversation, history, ctx.custom_agents, ctx.user_skills) survive as
-        # detached-but-populated objects because SessionLocal sets expire_on_commit=False
+        # detached-but-populated objects because this handler's session comes from
+        # DetachedReadSessionLocal (expire_on_commit=False)
         # — only their column attrs are safe past this point, never a lazy relationship.
         # The session re-opens lazily (pre-pinged) on the next statement; the orchestrator
         # has its own session factory (_SF) and does not use this one.

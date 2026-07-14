@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from backend.database.session import get_db
+from backend.database.session import get_db, get_detached_read_db
 from backend.auth.dependencies import get_current_user, forbid_viewer
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[Depends(forbid_v
 async def chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_detached_read_db)
 ):
     """
     Process a chat message through the orchestrator agent.
@@ -87,10 +87,11 @@ async def chat(
     # Return the pooled connection before the (minutes-long) run — held open it sits
     # idle-in-transaction, the pooler reaps it, and the post-run writes die with
     # "SSL connection has been closed unexpectedly". Rows loaded above (conversation,
-    # history, ctx) survive as detached-but-populated objects because SessionLocal sets
-    # expire_on_commit=False — only their column attrs are safe past this point, never a
-    # lazy relationship. The session re-opens lazily (pre-pinged) on the next statement;
-    # the orchestrator uses its own factory.
+    # history, ctx) survive as detached-but-populated objects because this handler's
+    # session comes from get_detached_read_db (expire_on_commit=False) — only their
+    # column attrs are safe past this point, never a lazy relationship. The session
+    # re-opens lazily (pre-pinged) on the next statement; the orchestrator uses its
+    # own factory.
     db.close()
 
     result = await run_orchestrator(
