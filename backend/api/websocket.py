@@ -21,6 +21,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
 
 
+async def _finalize_credit_turn(credit_mgr, retry_succeeded) -> None:
+    """Close a turn's credit context: record usage + debit the org pool.
+
+    Called on the `done` event *before* it's forwarded to the client, so the
+    client's post-`done` balance refresh reads the debited pool instead of
+    racing ahead of the debit. Voids first when the Layer-4 retry failed so the
+    user isn't charged for an unresolved turn. No-op when credit_mgr is None;
+    the underlying `__aexit__` is idempotent, so a second call is harmless.
+    """
+    if credit_mgr is None:
+        return
+    if retry_succeeded is False and hasattr(credit_mgr, "void"):
+        credit_mgr.void("layer4_retry_failed")
+    try:
+        await credit_mgr.__aexit__(None, None, None)
+    except Exception as credit_err:
+        logger.warning("Credit usage recording failed: %s", credit_err)
+
+
 async def _get_user_from_token(token: str) -> Optional[User]:
     """Validate auth token and return User, or None on failure."""
     from backend.auth.sso import validate_token
@@ -609,20 +628,11 @@ async def _handle_chat_send(
                 collected_retry_succeeded = event.pop("retry_succeeded", None)
                 collected_judge_metadata = event.pop("judge_metadata", None)
 
-                # Finalize credit usage BEFORE forwarding `done`, so the client's
-                # post-`done` balance refresh reads the debited pool instead of
-                # racing ahead of the debit (which otherwise lands in __aexit__
-                # below, after persist). Void first if the Layer-4 retry failed so
-                # the user isn't charged. _credit_mgr is nulled so the finalize at
-                # the end of the turn doesn't run again (_exit is idempotent anyway).
-                if _credit_mgr is not None:
-                    if collected_retry_succeeded is False and hasattr(_credit_mgr, "void"):
-                        _credit_mgr.void("layer4_retry_failed")
-                    try:
-                        await _credit_mgr.__aexit__(None, None, None)
-                    except Exception as _credit_err:
-                        logger.warning("Credit usage recording failed: %s", _credit_err)
-                    _credit_mgr = None
+                # Finalize credits BEFORE forwarding `done` (see helper docstring)
+                # so the client's balance refresh reads the debited pool. Null the
+                # manager so the end-of-turn finalize below doesn't run again.
+                await _finalize_credit_turn(_credit_mgr, collected_retry_succeeded)
+                _credit_mgr = None
 
             await send({
                 "type": ws_type,

@@ -20,9 +20,6 @@
             <span class="text-5xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ Math.round(remaining) }}</span>
             <span class="text-sm text-gray-500 dark:text-neutral-400">credits remaining</span>
           </div>
-          <p class="text-sm text-gray-400 dark:text-neutral-500">
-            {{ Math.round(usedToday) }} used today
-          </p>
         </div>
 
         <!-- Consumption -->
@@ -197,7 +194,7 @@
 import { parseUtcDate } from '~/utils/format'
 
 const {
-  usedToday, remaining,
+  remaining,
   historyItems, historyPage, historyTotalPages, historyLoading, nextPage, prevPage,
   dailyTotals, dailyTotalsLoading,
   apiKeys, saveApiKey, deleteApiKey,

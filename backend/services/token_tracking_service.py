@@ -275,37 +275,6 @@ class CreditContextManager:
     # Internal helpers (sync, safe to call from both async and sync paths)
     # ------------------------------------------------------------------
 
-    def _ensure_balance_row(self) -> int:
-        """Return daily_limit for this user, creating a balance row if absent."""
-        row = self.db.execute(
-            text("SELECT daily_limit FROM user_credit_balances WHERE user_id = :uid"),
-            {"uid": self.user_id},
-        ).fetchone()
-        if row is None:
-            default_limit = _default_user_daily_credits()
-            self.db.execute(
-                text(
-                    "INSERT INTO user_credit_balances (user_id, daily_limit, created_at) "
-                    "VALUES (:uid, :limit, :now)"
-                ),
-                {"uid": self.user_id, "limit": default_limit, "now": datetime.utcnow()},
-            )
-            self.db.commit()
-            credit_logger.info("[credit] user %s: no balance row found — created with daily_limit=%d", self.user_id, default_limit)
-            return default_limit
-        return int(row[0])
-
-    def _today_usage(self) -> int:
-        """Sum of credits_used for this user today."""
-        row = self.db.execute(
-            text(
-                "SELECT COALESCE(SUM(credits_used), 0) FROM credit_usage "
-                "WHERE user_id = :uid AND date = :today"
-            ),
-            {"uid": self.user_id, "today": date.today()},
-        ).fetchone()
-        return int(row[0]) if row else 0
-
     def _check(self):
         # Per-user daily credit cap removed — spending is gated solely on the
         # workspace (org) credit pool below.
