@@ -1,15 +1,13 @@
 """Org-level credit pool helpers.
 
-Phase 4 of multi-user-org. Each chat turn debits both:
-
-  - the per-user daily credit balance (legacy, owned by token_tracking_service),
-  - and the per-org credit balance (this module).
-
-Either exhausted → block the turn. Both succeed → record + commit atomically.
+The per-user daily credit cap has been removed — spending is now gated solely on
+the per-org credit balance (this module). Each chat turn debits the org pool once,
+post-hoc, via ``debit_org_pool_clamped`` from the enterprise plugin's
+CreditContextManager._exit; the pre-flight ``check_org_pool`` gate is what blocks a
+turn on an already-empty pool.
 
 The org pool defaults to 5000 credits per org (set in alembic migration
-h0i1j2k3l4m5_org_credits_and_role_rename); BingoAdmin tops it up via the
-forthcoming Phase 5 admin UI.
+h0i1j2k3l4m5_org_credits_and_role_rename); BingoAdmin tops it up via the admin UI.
 """
 from __future__ import annotations
 
@@ -117,9 +115,17 @@ def debit_org_pool_clamped(db: Session, org_id: str, amount: int) -> Optional[in
             {"amt": int(amount), "org": str(org_id)},
         )
     except Exception:
+        # A failed statement leaves the Postgres transaction in an aborted state;
+        # without a rollback the caller's subsequent commit/persist on the SAME
+        # session fails with "current transaction is aborted". Roll back and log
+        # so a genuine DB failure is diagnosable instead of a silent free turn.
+        logger.exception("Failed to debit org %s credit pool", org_id)
+        db.rollback()
         return None
     row = result.fetchone()
     if row is None:
+        # No org row matched (e.g. bad org_id) — nothing debited. Distinct from
+        # the DB-error path above: the transaction is intact, no rollback needed.
         return None
     return int(row[0])
 

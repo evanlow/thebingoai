@@ -247,7 +247,7 @@
           </div>
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-[var(--ink-0)] truncate">{{ authStore.user?.email }}</p>
-            <p v-if="featureConfig?.credits_enabled !== false" class="font-mono whitespace-nowrap text-[var(--ink-2)]" :class="creditSizeClass">
+            <p v-if="featureConfig?.credits_enabled !== false && !isUnlimited" class="font-mono whitespace-nowrap text-[var(--ink-2)]" :class="creditSizeClass">
               <span class="text-[var(--ember)]">●</span> {{ Math.round(remaining) }} credits
             </p>
           </div>
@@ -328,7 +328,7 @@
       <button
         @click="router.push('/settings')"
         class="flex h-12 w-full items-center justify-center border-t border-[var(--line)] bg-[var(--paper-0)] hover:bg-[var(--paper-1)] transition-colors flex-shrink-0"
-        :title="featureConfig?.credits_enabled !== false ? `${Math.round(remaining)} credits` : 'Settings'"
+        :title="featureConfig?.credits_enabled !== false && !isUnlimited ? `${Math.round(remaining)} credits` : 'Settings'"
       >
         <div class="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] text-sm font-semibold">
           {{ userInitial }}
@@ -386,7 +386,7 @@
       <div class="h-8 w-8 rounded-full bg-[var(--ink-0)] text-[var(--paper-0)] flex items-center justify-center text-sm font-semibold flex-shrink-0">{{ userInitial }}</div>
       <div class="min-w-0">
         <span class="text-sm text-[var(--ink-0)] truncate block">{{ authStore.user?.email }}</span>
-        <span v-if="featureConfig?.credits_enabled !== false" class="font-mono whitespace-nowrap text-[var(--ink-2)]" :class="creditSizeClass">
+        <span v-if="featureConfig?.credits_enabled !== false && !isUnlimited" class="font-mono whitespace-nowrap text-[var(--ink-2)]" :class="creditSizeClass">
           <span class="text-[var(--ember)]">●</span> {{ Math.round(remaining) }} credits
         </span>
       </div>
@@ -443,7 +443,7 @@ const handleAcceptInvite = async (invite: IncomingInvite) => {
     acceptingInviteId.value = null
   }
 }
-const { remaining } = useCreditBalance()
+const { remaining, isUnlimited } = useCreditBalance()
 // Keep the credit line on one row: step the font down as the workspace total
 // grows so a 6-digit balance still fits the ~150px sidebar slot without wrapping.
 const creditSizeClass = computed(() => {

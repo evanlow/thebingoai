@@ -206,3 +206,25 @@ class TestDebitOrgPoolClamped:
         org = self._org(db_session, recurring=1, topup=1)
         assert debit_org_pool_clamped(db_session, org.id, 5) == 0
         assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 0, "topup": 0, "total": 0}
+
+    def test_db_error_rolls_back_and_returns_none(self):
+        # A failed UPDATE aborts the PG transaction; without a rollback the
+        # caller's subsequent commit/persist on the same session would fail. The
+        # helper must roll back (unpoison the session) and return None, not
+        # silently leave the txn aborted.
+        from unittest.mock import MagicMock
+        from backend.services.org_credit_pool import debit_org_pool_clamped
+        db = MagicMock()
+        db.execute.side_effect = Exception("statement failed")
+        assert debit_org_pool_clamped(db, "org-1", 5) is None
+        db.rollback.assert_called_once()
+
+    def test_missing_org_returns_none_without_rollback(self):
+        # No row matched (bad org_id) — the transaction is intact, so no rollback
+        # is issued; distinct from the DB-error path above.
+        from unittest.mock import MagicMock
+        from backend.services.org_credit_pool import debit_org_pool_clamped
+        db = MagicMock()
+        db.execute.return_value.fetchone.return_value = None
+        assert debit_org_pool_clamped(db, "missing", 5) is None
+        db.rollback.assert_not_called()

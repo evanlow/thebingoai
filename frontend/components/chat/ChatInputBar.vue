@@ -141,7 +141,7 @@
             <span>context: <b class="text-[var(--ink-0)]">—</b></span>
           </template>
           <div class="flex-1" />
-          <span v-if="featureConfig?.credits_enabled !== false">{{ Math.round(remaining) }} workspace credits</span>
+          <span v-if="featureConfig?.credits_enabled !== false && !isUnlimited">{{ Math.round(remaining) }} workspace credits</span>
         </div>
       </div>
     </div>
@@ -186,7 +186,7 @@ const chatStore = useChatStore()
 const ws = useWorkspaceStore()
 const emit = defineEmits<{ send: []; reset: [] }>()
 
-const { isExhausted, remaining, orgExhausted } = useCreditBalance()
+const { isExhausted, remaining, orgExhausted, isUnlimited } = useCreditBalance()
 const { config: featureConfig } = useFeatureConfig()
 
 const isPermanentThread = computed(() =>

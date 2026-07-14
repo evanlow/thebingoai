@@ -213,12 +213,14 @@ class TokenTrackingService:
 
 
 class InsufficientCreditsError(Exception):
-    """Raised when a user has exhausted their daily credit limit.
+    """Raised when a user cannot pay for a turn.
 
-    The optional ``reason`` attribute distinguishes which cap fired
-    (``"user_daily"`` — default — vs ``"org_pool"``). API layers surface
-    that key as ``cap`` in the 402 envelope so the frontend can render the
-    right copy.
+    The per-user daily cap has been removed; spending is gated on the workspace
+    (org) credit pool. The optional ``reason`` attribute distinguishes which
+    shortfall fired (``"user_daily"`` — default, a per-request minimum shortfall
+    from provider_wrapper, kept for envelope compatibility — vs ``"org_pool"``
+    exhaustion). API layers surface that key as ``cap`` in the 402 envelope so
+    the frontend can render the right copy.
     """
 
     def __init__(self, message: str = "", *, reason: str = "user_daily") -> None:
@@ -230,10 +232,11 @@ class CreditContextManager:
     """
     Community-edition credit context manager.
 
-    Checks the user's daily credit limit on entry and records one credit of
-    usage on successful exit.  Mirrors the interface expected by chat.py,
-    websocket.py, and the Celery task files so that the enterprise bingo_admin
-    plugin can drop in as a replacement without any call-site changes.
+    Gates a turn on the workspace (org) credit pool on entry (the per-user daily
+    cap has been removed) and records one credit of usage on successful exit.
+    Mirrors the interface expected by chat.py, websocket.py, and the Celery task
+    files so that the enterprise bingo_admin plugin can drop in as a replacement
+    without any call-site changes.
 
     Supports both async (FastAPI handlers) and sync (Celery tasks) protocols.
     """
