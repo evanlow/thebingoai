@@ -236,12 +236,12 @@
         size="sm"
       >
         <div class="space-y-4">
-          <p class="text-sm text-gray-600 dark:text-neutral-400">
-            This will permanently delete <span class="font-medium text-gray-900 dark:text-neutral-100">{{ store.currentDashboard?.title }}</span> and all its widgets. This action cannot be undone.
+          <p class="text-sm text-gray-600 dark:text-neutral-300">
+            This will permanently delete <span class="font-medium text-gray-900 dark:text-white">{{ store.currentDashboard?.title }}</span> and all its widgets. This action cannot be undone.
           </p>
           <div>
             <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
-              Type <span class="font-semibold">{{ store.currentDashboard?.title }}</span> to confirm
+              Type <span class="font-semibold text-gray-900 dark:text-white">{{ store.currentDashboard?.title }}</span> to confirm
             </label>
             <input
               v-model="deleteConfirmText"

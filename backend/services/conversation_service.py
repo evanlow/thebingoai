@@ -92,6 +92,9 @@ class ConversationService:
         )
         db.commit()
         db.refresh(message)
+        # refresh() opens a read transaction — end it so callers don't hold the
+        # pooled connection idle-in-transaction (e.g. across an LLM stream).
+        db.commit()
 
         return message
 

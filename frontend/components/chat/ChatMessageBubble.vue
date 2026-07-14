@@ -143,7 +143,7 @@
           </svg>
           {{ message.steps_log.length }} steps
         </button>
-        <div v-if="message.steps_log_expanded" class="mt-1.5 whitespace-pre-wrap">{{ message.steps_log.join('\n') }}
+        <div v-if="message.steps_log_expanded" class="mt-1.5 whitespace-pre-wrap [overflow-wrap:anywhere]">{{ message.steps_log.join('\n') }}
           <div v-if="chatStore.isStreaming && props.isLast" class="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-700">
             <span class="text-sm text-glow-orange">working...</span>
           </div>

@@ -575,6 +575,15 @@ async def _handle_chat_send(
 
         # Stream orchestrator
         from backend.database.session import SessionLocal as _SF
+
+        # Return the pooled connection before the (minutes-long) stream — held open it
+        # sits idle-in-transaction, the pooler reaps it, and the post-stream writes die
+        # with "SSL connection has been closed unexpectedly". The session re-opens
+        # lazily (pre-pinged) on the next statement; the orchestrator has its own
+        # session factory (_SF) and does not use this one.
+        db.refresh(conversation)  # populate attrs so the detached object stays readable
+        db.close()
+
         final_message = ""
         collected_steps = []
         collected_retry_succeeded = None
