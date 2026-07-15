@@ -16,6 +16,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_patterns(response: str):
+    """Parse the LLM's JSON-array reply (optionally markdown-fenced).
+
+    Returns the list of pattern dicts, or None when the output is unusable —
+    the caller voids the credit turn on None so garbage isn't billed.
+    """
+    try:
+        text = response.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1]) if len(lines) > 2 else text
+        patterns = json.loads(text)
+        return patterns if isinstance(patterns, list) else None
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
 _DETECTION_PROMPT = """Analyze these user messages and identify repeated patterns that could become reusable skills.
 
 User messages:
@@ -293,56 +311,55 @@ def _process_user(db, user, cutoff: datetime):
             _credit_mgr = None
 
         from contextlib import nullcontext
+        created_suggestions = []
         with (_credit_mgr if _credit_mgr is not None else nullcontext()):
             response = asyncio.run(_analyze())
+
+            # Parse + persist INSIDE the credit context: a persist failure
+            # raises out of the block (turn unbilled), and unusable LLM output
+            # voids the turn — the user isn't charged for garbage (mirrors the
+            # websocket Layer-4 void).
+            patterns = _parse_patterns(response)
+            if patterns is None:
+                logger.warning(f"Failed to parse LLM pattern response for user {user.id}")
+                if _credit_mgr is not None:
+                    _credit_mgr.void("unparseable skill-pattern response")
+                return
+
+            for pattern in patterns:
+                name = pattern.get("suggested_name", "")
+                confidence = float(pattern.get("confidence", 0))
+
+                if not name or confidence < 0.7:
+                    continue
+
+                # Dedup against existing and pending
+                if name in all_existing:
+                    continue
+
+                suggestion = SkillSuggestion(
+                    id=str(uuid.uuid4()),
+                    user_id=user.id,
+                    suggested_name=name,
+                    suggested_description=pattern.get("suggested_description"),
+                    suggested_skill_type=pattern.get("suggested_skill_type", "instruction"),
+                    suggested_instructions=pattern.get("suggested_instructions"),
+                    pattern_summary=pattern.get("pattern_summary"),
+                    source_conversation_ids=pattern.get("source_conversation_ids"),
+                    confidence=confidence,
+                    status="pending",
+                )
+                db.add(suggestion)
+                created_suggestions.append(suggestion)
+                all_existing.append(name)
+
+            if created_suggestions:
+                db.commit()
     except Exception as e:
         logger.error(f"LLM analysis failed for user {user.id}: {e}")
         return
 
-    # Parse suggestions
-    try:
-        text = response.strip()
-        # Handle possible markdown code blocks
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1]) if len(lines) > 2 else text
-        patterns = json.loads(text)
-        if not isinstance(patterns, list):
-            return
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(f"Failed to parse LLM pattern response for user {user.id}: {e}")
-        return
-
-    created_suggestions = []
-    for pattern in patterns:
-        name = pattern.get("suggested_name", "")
-        confidence = float(pattern.get("confidence", 0))
-
-        if not name or confidence < 0.7:
-            continue
-
-        # Dedup against existing and pending
-        if name in all_existing:
-            continue
-
-        suggestion = SkillSuggestion(
-            id=str(uuid.uuid4()),
-            user_id=user.id,
-            suggested_name=name,
-            suggested_description=pattern.get("suggested_description"),
-            suggested_skill_type=pattern.get("suggested_skill_type", "instruction"),
-            suggested_instructions=pattern.get("suggested_instructions"),
-            pattern_summary=pattern.get("pattern_summary"),
-            source_conversation_ids=pattern.get("source_conversation_ids"),
-            confidence=confidence,
-            status="pending",
-        )
-        db.add(suggestion)
-        created_suggestions.append(suggestion)
-        all_existing.append(name)
-
     if created_suggestions:
-        db.commit()
         logger.info(f"Created {len(created_suggestions)} skill suggestion(s) for user {user.id}")
 
         # Evaluate each new suggestion
