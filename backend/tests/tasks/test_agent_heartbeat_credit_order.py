@@ -15,9 +15,17 @@ from backend.tasks.heartbeat_tasks import execute_agent_heartbeat_job
 
 
 class _FakeMgr:
+    instance = None
+
     def __init__(self, order, exit_raises=None, **kwargs):
         self.order = order
         self._exit_raises = exit_raises
+        self.voids = []
+        _FakeMgr.instance = self
+
+    def void(self, reason="unresolved"):
+        self.voids.append(reason)
+        self.order.append(("void", reason))
 
     def __enter__(self):
         self.order.append("enter")
@@ -84,15 +92,22 @@ def _run(order, *, commit_fail_on=None, exit_raises=None, deliver_raises=None):
     return run_box.get("run"), deliver
 
 
-def test_delivery_failure_leaves_the_turn_unbilled():
+def test_delivery_failure_voids_the_turn_and_keeps_the_run_completed():
     # The permanent-conversation message is the only copy the user ever sees, so
-    # a failed insert must reach __exit__ with the exception. Charging here would
-    # bill for an answer that never arrived — the run row is internal.
+    # a failed insert must not be billed. It is voided rather than raised out of
+    # the credit block: letting it escape hands the exception to
+    # record_run_failure, which either clobbers the already-committed COMPLETED
+    # row or — when the delivery failed DB-side — dies on InFailedSqlTransaction
+    # and loses the error entirely. Verified against real Postgres.
     order = []
     run, _ = _run(order, deliver_raises=RuntimeError("permanent conv insert failed"))
-    assert ("exit", RuntimeError) in order
-    assert ("exit", None) not in order
-    assert run.status == HeartbeatRunStatus.FAILED.value
+    assert _FakeMgr.instance.voids == ["heartbeat delivery failed"]
+    # Void precedes the exit, so the manager skips billing on a clean close.
+    assert order.index(("void", "heartbeat delivery failed")) < order.index(("exit", None))
+    # The answer was produced and the run row is already committed — leave it
+    # COMPLETED and record WHY the user never saw it.
+    assert run.status == HeartbeatRunStatus.COMPLETED.value
+    assert "permanent conv insert failed" in run.error
 
 
 def test_success_persists_and_delivers_before_charge():

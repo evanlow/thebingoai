@@ -140,13 +140,50 @@ def execute_heartbeat_job(job_id: str):
 
                 # Deliver inside the context too: the permanent-conversation
                 # message is the only copy the user ever sees, so a failed insert
-                # must reach __exit__ and leave the turn unbilled rather than
-                # charge for an answer that never arrived.
-                _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
+                # must void the turn rather than charge for an answer that never
+                # arrived.
+                _deliver_or_void(db, job=job, run=run, credit_mgr=_credit_mgr, response=response)
 
             logger.info(f"Heartbeat job {job_id} run {run.id} completed in {duration_ms}ms")
     finally:
         db.close()
+
+
+def _deliver_or_void(db, *, job: HeartbeatJob, run, credit_mgr, response: str) -> None:
+    """Deliver the answer; on failure void the turn and record why on the run.
+
+    The run row is COMMITTED as COMPLETED before we get here, so it must not be
+    reopened as FAILED: a non-DB delivery error would clobber a committed row,
+    and a DB one aborts the transaction so `record_run_failure`'s commit dies
+    with InFailedSqlTransaction and the error is lost entirely. Roll back first,
+    then stamp `run.error` on the still-COMPLETED row — the answer exists, it
+    just never reached the user.
+
+    Voiding here (rather than letting the exception escape into the credit
+    block) keeps the "nobody pays for an answer they never got" rule without
+    routing a delivery problem through the run-failure machinery.
+    """
+    try:
+        _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
+    except Exception as deliver_err:
+        logger.error(
+            "Heartbeat job %s run %s: result produced but delivery failed: %s",
+            job.id, run.id, deliver_err,
+        )
+        if credit_mgr is not None and hasattr(credit_mgr, "void"):
+            credit_mgr.void("heartbeat delivery failed")
+        # A DB-side delivery failure leaves the session aborted; clear it before
+        # touching the run row or this write dies too.
+        db.rollback()
+        try:
+            run.error = f"delivery failed: {deliver_err}"
+            db.commit()
+        except Exception:
+            logger.exception(
+                "Heartbeat job %s run %s: could not record the delivery error",
+                job.id, run.id,
+            )
+            db.rollback()
 
 
 def _deliver_heartbeat_result(db, *, job: HeartbeatJob, run_id: str, user_id: str, response: str) -> None:
@@ -158,10 +195,9 @@ def _deliver_heartbeat_result(db, *, job: HeartbeatJob, run_id: str, user_id: st
 
     The permanent-conversation insert PROPAGATES on failure: writing that message
     *is* the delivery — it is the only place the user ever sees the answer, since
-    the run row is internal. Callers run this inside the credit context so a
-    failure reaches __exit__ and the turn goes unbilled, honouring the rule that
-    nobody pays for an answer that wasn't saved. Swallowing it here would charge
-    for a result the user never received.
+    the run row is internal. `_deliver_or_void` is what turns that exception into
+    a voided turn, honouring the rule that nobody pays for an answer they never
+    received; call through it rather than calling this directly.
 
     The notification stays best-effort: the message is already committed, so a
     dead Redis only delays it until the client's next fetch.
@@ -329,7 +365,7 @@ def execute_agent_heartbeat_job(job_id: str):
                 db.commit()
 
                 # Deliver inside the context (see the orchestrator-run variant).
-                _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
+                _deliver_or_void(db, job=job, run=run, credit_mgr=_credit_mgr, response=response)
     finally:
         db.close()
 

@@ -21,25 +21,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
 
 
-async def _finalize_credit_turn(credit_mgr, retry_succeeded) -> None:
+async def _finalize_credit_turn(credit_mgr, retry_succeeded, orchestrator_errored=False) -> None:
     """Close a turn's credit context: record usage + debit the org pool.
 
     Called after the answer is persisted and before `done` is forwarded, so the
     client's post-`done` balance refresh reads the debited pool while a persist
-    failure still aborts the turn uncharged. Voids first when the Layer-4 retry
-    failed so the user isn't charged for an unresolved turn. No-op when
+    failure still aborts the turn uncharged. Voids first when the turn didn't
+    resolve the user's question so they aren't charged for it. No-op when
     credit_mgr is None. The caller nulls credit_mgr after this returns so it is
     invoked exactly once per turn — `__aexit__` is not itself idempotent.
+
+    ``orchestrator_errored`` is the streaming counterpart of the REST path's
+    ``success=False``: stream_orchestrator catches its own exceptions and
+    reports them as an ``error`` EVENT rather than raising, so nothing here
+    sees a failure unless the caller flags it. Same precedence as chat.py — an
+    outright failure outranks an unresolved retry.
 
     The void/charge decision itself lives in `finalize_credit_turn` so the REST
     path (chat.py) applies the identical rules; this wrapper only pins the
     websocket-specific ordering described above.
     """
     from backend.services.token_tracking_service import finalize_credit_turn
-    await finalize_credit_turn(
-        credit_mgr,
-        "layer4_retry_failed" if retry_succeeded is False else None,
-    )
+    if orchestrator_errored:
+        void_reason = "orchestrator reported failure"
+    elif retry_succeeded is False:
+        void_reason = "layer4_retry_failed"
+    else:
+        void_reason = None
+    await finalize_credit_turn(credit_mgr, void_reason)
 
 
 async def _complete_turn(
@@ -57,6 +66,7 @@ async def _complete_turn(
     request_id: str,
     user: User,
     active_thread_id: str,
+    orchestrator_errored: bool = False,
 ) -> None:
     """Finish a turn after the orchestrator's `done`, in strict order:
     persist → capture → charge → forward `done` → best-effort post-process.
@@ -93,9 +103,9 @@ async def _complete_turn(
         except Exception as _capture_err:
             logger.warning("Layer-4 capture failed: %s", _capture_err)
 
-    # 3. Charge now that the answer is safe (voids first if the retry failed),
-    #    then forward `done`.
-    await _finalize_credit_turn(credit_mgr, retry_succeeded)
+    # 3. Charge now that the answer is safe (voids first if the turn failed or
+    #    the retry never resolved), then forward `done`.
+    await _finalize_credit_turn(credit_mgr, retry_succeeded, orchestrator_errored)
     if pending_done_event is not None:
         await send(pending_done_event)
 
@@ -698,6 +708,7 @@ async def _handle_chat_send(
         collected_retry_succeeded = None
         collected_judge_metadata = None
         pending_done_event = None
+        orchestrator_errored = False
 
         async for event in stream_orchestrator(
             message,
@@ -739,6 +750,12 @@ async def _handle_chat_send(
                 }
                 continue  # `done` is terminal; forward it after persist + charge
 
+            # stream_orchestrator reports its own failures as an `error` event
+            # and then stops without a `done` (graph.py) — nothing raises, so
+            # this flag is the only signal that the turn produced no answer.
+            if event_type == "error":
+                orchestrator_errored = True
+
             await send({
                 "type": ws_type,
                 "request_id": request_id,
@@ -758,6 +775,7 @@ async def _handle_chat_send(
             db, conversation, is_new_conversation, message, final_message,
             collected_steps, collected_retry_succeeded, collected_judge_metadata,
             _credit_mgr, pending_done_event, send, request_id, user, active_thread_id,
+            orchestrator_errored,
         )
         _credit_mgr = None
 
