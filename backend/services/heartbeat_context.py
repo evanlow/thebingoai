@@ -7,7 +7,7 @@ reuse the same context-building logic without duplicating it.
 
 from dataclasses import dataclass, field
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
 from backend.agents.context import AgentContext, ConnectionInfo
@@ -83,7 +83,12 @@ async def build_orchestrator_context(
         team_allowed_connections = PolicyService.get_team_allowed_connections(db, team_id)
         if team_allowed_connections:
             team_connection_ids = [c for c in accessible_ids if c in team_allowed_connections]
-        custom_agents = db.query(CustomAgentModel).filter(
+        # joinedload(profile): _build_dynamic_tools reads agent.profile after the
+        # chat/websocket handlers close the session, and a lazy load on a detached
+        # row raises DetachedInstanceError.
+        custom_agents = db.query(CustomAgentModel).options(
+            joinedload(CustomAgentModel.profile)
+        ).filter(
             CustomAgentModel.user_id == user.id,
             CustomAgentModel.team_id == team_id,
             CustomAgentModel.is_active == True,

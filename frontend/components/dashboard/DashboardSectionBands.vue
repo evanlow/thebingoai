@@ -38,8 +38,8 @@ function bandStyle(section: DashboardSection) {
 }
 .section-band {
   position: absolute;
-  left: -6px;
-  right: -6px;
+  left: 0;
+  right: 0;
   border: 1px solid;
   border-radius: 14px;
   transition: top 0.2s ease, height 0.2s ease;

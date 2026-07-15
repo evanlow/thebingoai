@@ -91,7 +91,6 @@ class ConversationService:
             {"updated_at": datetime.utcnow()}
         )
         db.commit()
-        db.refresh(message)
 
         return message
 

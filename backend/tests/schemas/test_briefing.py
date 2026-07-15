@@ -73,3 +73,12 @@ def test_recommended_actions_max_four():
     data["recommended_actions"] = ["a"] * 5
     with pytest.raises(ValidationError):
         BriefingPayload.model_validate(data)
+
+
+def test_recommended_actions_min_two():
+    """The prompt and the tool docstring both promise 2-4; the schema is the only
+    thing enforcing it."""
+    data = _valid_payload()
+    data["recommended_actions"] = ["just the one"]
+    with pytest.raises(ValidationError):
+        BriefingPayload.model_validate(data)

@@ -33,13 +33,19 @@ _PROMPT = (
 )
 
 
-def _build_widget_catalog(widgets: list) -> str:
-    """Produce a text catalog of widget ids and types for the orchestrator prompt."""
-    # Filter widgets are dashboard controls, not data — never reference them in a briefing.
-    widgets = [
+def non_filter_widgets(widgets: list) -> list:
+    """Drop filter widgets — they're dashboard controls, not data, so a briefing
+    must never reference one. Also called by emit_briefing, which is the enforcing
+    end: the orchestrator can still see filters through analyze_dashboard."""
+    return [
         w for w in widgets
         if not (isinstance(w.get("widget"), dict) and w["widget"].get("type") == "filter")
     ]
+
+
+def _build_widget_catalog(widgets: list) -> str:
+    """Produce a text catalog of widget ids and types for the orchestrator prompt."""
+    widgets = non_filter_widgets(widgets)
     if not widgets:
         return "This dashboard has no widgets."
     lines = ["Available widgets on this dashboard (use the exact widget_id in emit_briefing):"]

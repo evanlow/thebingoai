@@ -32,7 +32,7 @@ class BriefingPayload(BaseModel):
     key_takeaways: conlist(str, min_length=3, max_length=3)  # type: ignore[valid-type]
     # Concrete next steps derived from the key findings. Optional so briefings
     # generated before this shipped still validate.
-    recommended_actions: Optional[conlist(str, min_length=1, max_length=4)] = None  # type: ignore[valid-type]
+    recommended_actions: Optional[conlist(str, min_length=2, max_length=4)] = None  # type: ignore[valid-type]
     # Rendered widget data configs keyed by widget_id, snapshot at generation
     # time so the briefing view renders instantly without re-running each
     # widget's SQL. Injected by emit_briefing, not the LLM. Absent on briefings

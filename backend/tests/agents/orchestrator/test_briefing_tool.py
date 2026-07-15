@@ -94,18 +94,32 @@ def test_emit_briefing_persists_recommended_actions():
     assert persisted["briefing"].payload["recommended_actions"] == ["Ship the fix", "Review pricing"]
 
 
-def test_emit_briefing_injects_widget_snapshots():
-    persisted = {}
+_DASHBOARD_WIDGETS = [
+    {"id": "chart_x", "widget": {"type": "chart", "title": "Revenue"}},
+    {"id": "flt_region", "widget": {"type": "filter", "title": "Region"}},
+]
 
+
+def _factory_with_dashboard(persisted: dict):
+    """Every lookup (briefing, dashboard, user) resolves to one truthy mock, so the
+    snapshot block runs and reads `.widgets` off it."""
     def fake_factory():
         s = MagicMock()
-        briefing = MagicMock(id=42, user_id="u1", dashboard_id=1, status="generating", payload=None)
-        # Dashboard + User lookups both resolve truthy so the snapshot block runs.
-        s.query.return_value.filter.return_value.first.return_value = briefing
-        persisted["briefing"] = briefing
+        row = MagicMock(
+            id=42, user_id="u1", dashboard_id=1, status="generating", payload=None,
+            widgets=_DASHBOARD_WIDGETS,
+        )
+        s.query.return_value.filter.return_value.first.return_value = row
+        persisted["briefing"] = row
         return s
+    return fake_factory
 
-    tools = build_briefing_tools(_ctx(), db_session_factory=fake_factory, briefing_id=42)
+
+def test_emit_briefing_injects_widget_snapshots():
+    persisted = {}
+    tools = build_briefing_tools(
+        _ctx(), db_session_factory=_factory_with_dashboard(persisted), briefing_id=42
+    )
     emit = next(t for t in tools if t.name == "emit_briefing")
 
     good = {
@@ -128,3 +142,35 @@ def test_emit_briefing_injects_widget_snapshots():
     # Only the referenced widget id is passed to the renderer.
     assert render.await_args.args[1] == ["chart_x"]
     assert persisted["briefing"].payload["widget_snapshots"] == {"chart_x": {"series": [1, 2]}}
+
+
+def test_emit_briefing_drops_sections_pointing_at_a_filter_widget():
+    """The prompt catalog hides filter widgets, but analyze_dashboard still shows them,
+    so emit_briefing is the enforcing end: a filter reference is stripped, not rendered."""
+    persisted = {}
+    tools = build_briefing_tools(
+        _ctx(), db_session_factory=_factory_with_dashboard(persisted), briefing_id=42
+    )
+    emit = next(t for t in tools if t.name == "emit_briefing")
+
+    payload = {
+        "headline": "Revenue held",
+        "deck": "Topline tracked.",
+        "kpis": [],
+        "sections": [
+            {"heading": "1. Lift", "prose": "Strong.", "widget_id": "chart_x"},
+            {"heading": "2. Region", "prose": "Mixed.", "widget_id": "flt_region"},
+        ],
+        "key_takeaways": ["a", "b", "c"],
+    }
+    render = AsyncMock(return_value={"chart_x": {"series": [1, 2]}})
+    with patch("backend.agents.orchestrator.orchestrator_briefing_tool._post_chat_message"), \
+         patch("backend.agents.orchestrator.orchestrator_briefing_tool._emit_ws"), \
+         patch("backend.api.widget_data.render_widget_snapshots", render):
+        result = asyncio.run(emit.ainvoke({"payload": payload}))
+
+    assert "ready" in result.lower()
+    sections = persisted["briefing"].payload["sections"]
+    assert sections[0]["widget_id"] == "chart_x"
+    assert sections[1]["widget_id"] is None  # filter reference stripped
+    assert render.await_args.args[1] == ["chart_x"]  # and never snapshotted
