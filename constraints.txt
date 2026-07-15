@@ -143,7 +143,7 @@ propcache==0.5.2
 proto-plus==1.28.0
 protobuf==6.33.6
 psutil==7.2.2
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.10
 pyarrow==24.0.0
 pyasn1_modules==0.4.2
 pyasn1==0.6.3
