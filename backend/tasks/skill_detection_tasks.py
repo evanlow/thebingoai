@@ -21,7 +21,10 @@ def _parse_patterns(response: str):
     """Parse the LLM's JSON-array reply (optionally markdown-fenced).
 
     Returns the list of pattern dicts, or None when the output is unusable —
-    the caller voids the credit turn on None so garbage isn't billed.
+    the caller voids the credit turn on None so garbage isn't billed. "Usable"
+    means every element is a dict: a bare `["summarize", "chart"]` is valid JSON
+    and a valid list, but the caller reads each element with `.get`, so letting
+    it through trades a clean void for an AttributeError.
     """
     try:
         text = response.strip()
@@ -29,9 +32,13 @@ def _parse_patterns(response: str):
             lines = text.split("\n")
             text = "\n".join(lines[1:-1]) if len(lines) > 2 else text
         patterns = json.loads(text)
-        return patterns if isinstance(patterns, list) else None
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, AttributeError):
         return None
+    if not isinstance(patterns, list):
+        return None
+    if not all(isinstance(p, dict) for p in patterns):
+        return None
+    return patterns
 
 
 _DETECTION_PROMPT = """Analyze these user messages and identify repeated patterns that could become reusable skills.
@@ -328,7 +335,16 @@ def _process_user(db, user, cutoff: datetime):
 
             for pattern in patterns:
                 name = pattern.get("suggested_name", "")
-                confidence = float(pattern.get("confidence", 0))
+                # A single malformed entry (confidence: null / "high") must not
+                # sink the whole batch — skip it and keep the good suggestions.
+                try:
+                    confidence = float(pattern.get("confidence", 0) or 0)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Skipping pattern %r with unparseable confidence %r for user %s",
+                        name, pattern.get("confidence"), user.id,
+                    )
+                    continue
 
                 if not name or confidence < 0.7:
                     continue
@@ -356,7 +372,11 @@ def _process_user(db, user, cutoff: datetime):
             if created_suggestions:
                 db.commit()
     except Exception as e:
-        logger.error(f"LLM analysis failed for user {user.id}: {e}")
+        # Covers the LLM call *and* the parse/persist that now share this block,
+        # so the message can't claim "LLM analysis" for a failed db.commit().
+        # exc_info keeps the persist path diagnosable — pre-credit-wiring it
+        # propagated to Celery and got a traceback for free.
+        logger.error(f"Skill detection failed for user {user.id}: {e}", exc_info=True)
         return
 
     if created_suggestions:

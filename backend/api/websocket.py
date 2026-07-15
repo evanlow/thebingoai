@@ -30,15 +30,16 @@ async def _finalize_credit_turn(credit_mgr, retry_succeeded) -> None:
     failed so the user isn't charged for an unresolved turn. No-op when
     credit_mgr is None. The caller nulls credit_mgr after this returns so it is
     invoked exactly once per turn — `__aexit__` is not itself idempotent.
+
+    The void/charge decision itself lives in `finalize_credit_turn` so the REST
+    path (chat.py) applies the identical rules; this wrapper only pins the
+    websocket-specific ordering described above.
     """
-    if credit_mgr is None:
-        return
-    if retry_succeeded is False and hasattr(credit_mgr, "void"):
-        credit_mgr.void("layer4_retry_failed")
-    try:
-        await credit_mgr.__aexit__(None, None, None)
-    except Exception as credit_err:
-        logger.warning("Credit usage recording failed: %s", credit_err)
+    from backend.services.token_tracking_service import finalize_credit_turn
+    await finalize_credit_turn(
+        credit_mgr,
+        "layer4_retry_failed" if retry_succeeded is False else None,
+    )
 
 
 async def _complete_turn(
@@ -662,7 +663,10 @@ async def _handle_chat_send(
                 if cap == "org_pool":
                     msg = "Organization credit pool exhausted. Contact your bingo admin."
                 else:
-                    msg = "Daily credits used up. Resets at midnight."
+                    # Not a daily cap — that was removed. A "user_daily" reason
+                    # is now a per-request minimum shortfall from
+                    # provider_wrapper, which no midnight reset will fix.
+                    msg = "Not enough credits to run this request."
                 await send({
                     "type": "chat.error",
                     "request_id": request_id,

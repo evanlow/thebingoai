@@ -138,10 +138,13 @@ def execute_heartbeat_job(job_id: str):
                 run.duration_ms = duration_ms
                 db.commit()
 
-            logger.info(f"Heartbeat job {job_id} run {run.id} completed in {duration_ms}ms")
+                # Deliver inside the context too: the permanent-conversation
+                # message is the only copy the user ever sees, so a failed insert
+                # must reach __exit__ and leave the turn unbilled rather than
+                # charge for an answer that never arrived.
+                _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
 
-            # Deliver result to user's permanent conversation
-            _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
+            logger.info(f"Heartbeat job {job_id} run {run.id} completed in {duration_ms}ms")
     finally:
         db.close()
 
@@ -152,25 +155,35 @@ def _deliver_heartbeat_result(db, *, job: HeartbeatJob, run_id: str, user_id: st
     publish a WebSocket notification via Redis Pub/Sub.
 
     This is a synchronous helper (Celery workers are sync).
+
+    The permanent-conversation insert PROPAGATES on failure: writing that message
+    *is* the delivery — it is the only place the user ever sees the answer, since
+    the run row is internal. Callers run this inside the credit context so a
+    failure reaches __exit__ and the turn goes unbilled, honouring the rule that
+    nobody pays for an answer that wasn't saved. Swallowing it here would charge
+    for a result the user never received.
+
+    The notification stays best-effort: the message is already committed, so a
+    dead Redis only delays it until the client's next fetch.
     """
     from backend.services.conversation_service import ConversationService
     from backend.models.message import Message
     from backend.services.ws_connection_manager import ConnectionManager
 
+    perm_conv = ConversationService.get_or_create_permanent_conversation(db, user_id)
+
+    msg = Message(
+        conversation_id=perm_conv.id,
+        role="assistant",
+        content=response,
+        source="heartbeat",
+        heartbeat_job_id=job.id,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+
     try:
-        perm_conv = ConversationService.get_or_create_permanent_conversation(db, user_id)
-
-        msg = Message(
-            conversation_id=perm_conv.id,
-            role="assistant",
-            content=response,
-            source="heartbeat",
-            heartbeat_job_id=job.id,
-        )
-        db.add(msg)
-        db.commit()
-        db.refresh(msg)
-
         payload = {
             "type": "heartbeat.message",
             "thread_id": perm_conv.thread_id,
@@ -186,9 +199,8 @@ def _deliver_heartbeat_result(db, *, job: HeartbeatJob, run_id: str, user_id: st
         }
         ConnectionManager.publish_to_user_sync(user_id, payload)
         logger.info(f"Heartbeat result delivered to permanent conv for user {user_id}")
-
     except Exception as e:
-        logger.error(f"Failed to deliver heartbeat result to user {user_id}: {e}")
+        logger.error(f"Saved heartbeat result but failed to notify user {user_id}: {e}")
 
 
 async def _run_orchestrator_for_job(job: HeartbeatJob, user: User) -> str:
@@ -316,7 +328,8 @@ def execute_agent_heartbeat_job(job_id: str):
                 run.duration_ms = duration_ms
                 db.commit()
 
-            _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
+                # Deliver inside the context (see the orchestrator-run variant).
+                _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
     finally:
         db.close()
 

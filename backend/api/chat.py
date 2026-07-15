@@ -34,7 +34,9 @@ async def chat(
     from backend.agents import run_orchestrator
     from backend.services.heartbeat_context import build_orchestrator_context
 
-    # Get or create conversation
+    # Resolve an existing conversation up front. This is read-only: a bad
+    # thread_id is a 404 that has nothing to do with credits, and creating a new
+    # conversation is deferred until after the gate below.
     if request.thread_id:
         conversation = ConversationService.get_conversation_by_thread(
             db, request.thread_id, current_user.id
@@ -42,51 +44,14 @@ async def chat(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
-        conversation = ConversationService.create_conversation(
-            db, current_user.id, title="Untitled"
-        )
-
-    # Save user message
-    ConversationService.add_message(db, conversation.id, "user", request.message)
-
-    # Validate requested connection access
-    if request.connection_ids:
-        accessible = db.query(DatabaseConnection.id).filter(
-            DatabaseConnection.id.in_(request.connection_ids),
-            DatabaseConnection.user_id == current_user.id
-        ).all()
-        if len(accessible) != len(request.connection_ids):
-            raise HTTPException(status_code=403, detail="Access denied to one or more connections")
-
-    # Build orchestrator context (connections, teams, skills, memories)
-    ctx = await build_orchestrator_context(
-        db=db,
-        user=current_user,
-        query=request.message,
-        connection_ids=request.connection_ids or None,
-        thread_id=conversation.thread_id,
-    )
-
-    # Fetch conversation history (exclude the just-saved user message)
-    history = ConversationService.get_conversation_history(db, conversation.thread_id, current_user.id)
-    history = history[:-1]
-    # Truncate at last context reset boundary
-    for i in range(len(history) - 1, -1, -1):
-        if history[i].source == "context_reset":
-            history = history[i + 1:]
-            break
-
-    # Resolve provider + LLM call settings from the published agent profile
-    # (draft edits stay confined to settings until publish).
-    from backend.agents.profile_llm import resolve_published_llm
-    user_provider, profile_temperature, profile_max_tokens = resolve_published_llm(ctx.profile)
+        conversation = None
 
     # --- Credit context setup (mirrors backend/api/websocket.py) ---
-    # Entered BEFORE db.close() below so the pre-flight pool check runs on the
-    # live session instead of re-opening a transaction that would then idle
-    # through the minutes-long orchestrator run.
-    _credit_mgr = None
-    _InsufficientCreditsError = None
+    # Runs BEFORE the first write. add_message() commits immediately, so gating
+    # after it would leave a rejected prompt permanently in the user's history —
+    # fed back as context on their next successful turn — plus an orphan
+    # "Untitled" conversation holding nothing else when no thread_id was given.
+    _credit_mgr, _InsufficientCreditsError = None, None
     try:
         from backend.plugins.loader import get_loaded_plugins
         if "bingo-admin" in get_loaded_plugins():
@@ -97,8 +62,10 @@ async def chat(
             db=db,
             user_id=current_user.id,
             title=request.message[:80],
+            # The conversation may not exist yet; set once it does, below. Both
+            # managers only read conversation_id at billing time.
+            conversation_id=conversation.id if conversation else None,
             provider_name=settings.default_llm_provider,
-            conversation_id=conversation.id,
             block_on_insufficient=True,
         )
         await _credit_mgr.__aenter__()
@@ -113,30 +80,77 @@ async def chat(
                     "message": (
                         "Organization credit pool exhausted. Contact your bingo admin."
                         if cap == "org_pool"
-                        else "Daily credits used up. Resets at midnight."
+                        # Not a daily cap — that was removed. A "user_daily"
+                        # reason is now a per-request minimum shortfall from
+                        # provider_wrapper, which no midnight reset will fix.
+                        else "Not enough credits to run this request."
                     ),
                 },
             )
         logger.warning("Credit context setup failed: %s", _credit_setup_err)
         _credit_mgr = None
 
-    # Run orchestrator
-    from backend.database.session import SessionLocal
-
-    # Return the pooled connection before the (minutes-long) run — held open it sits
-    # idle-in-transaction, the pooler reaps it, and the post-run writes die with
-    # "SSL connection has been closed unexpectedly". Rows loaded above (conversation,
-    # history, ctx) survive as detached-but-populated objects because this handler's
-    # session comes from get_detached_read_db (expire_on_commit=False) — only their
-    # column attrs are safe past this point, never a lazy relationship. The session
-    # re-opens lazily (pre-pinged) on the next statement; the orchestrator uses its
-    # own factory.
-    db.close()
-
-    # Run + persist BEFORE the charge (same order as the websocket path): a
-    # failure in either raises out through __aexit__(exc), which skips billing —
-    # the user is never charged for an answer that wasn't produced or saved.
+    # Everything from here to the answer runs under the credit context: any
+    # failure exits it with the exception, which skips billing.
     try:
+        if conversation is None:
+            conversation = ConversationService.create_conversation(
+                db, current_user.id, title="Untitled"
+            )
+            if _credit_mgr is not None:
+                _credit_mgr.conversation_id = conversation.id
+
+        # Save user message
+        ConversationService.add_message(db, conversation.id, "user", request.message)
+
+        # Validate requested connection access
+        if request.connection_ids:
+            accessible = db.query(DatabaseConnection.id).filter(
+                DatabaseConnection.id.in_(request.connection_ids),
+                DatabaseConnection.user_id == current_user.id
+            ).all()
+            if len(accessible) != len(request.connection_ids):
+                raise HTTPException(status_code=403, detail="Access denied to one or more connections")
+
+        # Build orchestrator context (connections, teams, skills, memories)
+        ctx = await build_orchestrator_context(
+            db=db,
+            user=current_user,
+            query=request.message,
+            connection_ids=request.connection_ids or None,
+            thread_id=conversation.thread_id,
+        )
+
+        # Fetch conversation history (exclude the just-saved user message)
+        history = ConversationService.get_conversation_history(db, conversation.thread_id, current_user.id)
+        history = history[:-1]
+        # Truncate at last context reset boundary
+        for i in range(len(history) - 1, -1, -1):
+            if history[i].source == "context_reset":
+                history = history[i + 1:]
+                break
+
+        # Resolve provider + LLM call settings from the published agent profile
+        # (draft edits stay confined to settings until publish).
+        from backend.agents.profile_llm import resolve_published_llm
+        user_provider, profile_temperature, profile_max_tokens = resolve_published_llm(ctx.profile)
+
+        # Run orchestrator
+        from backend.database.session import SessionLocal
+
+        # Return the pooled connection before the (minutes-long) run — held open it sits
+        # idle-in-transaction, the pooler reaps it, and the post-run writes die with
+        # "SSL connection has been closed unexpectedly". Rows loaded above (conversation,
+        # history, ctx) survive as detached-but-populated objects because this handler's
+        # session comes from get_detached_read_db (expire_on_commit=False) — only their
+        # column attrs are safe past this point, never a lazy relationship. The session
+        # re-opens lazily (pre-pinged) on the next statement; the orchestrator uses its
+        # own factory.
+        db.close()
+
+        # Run + persist BEFORE the charge (same order as the websocket path): a
+        # failure in either raises out through __aexit__(exc), which skips billing —
+        # the user is never charged for an answer that wasn't produced or saved.
         result = await run_orchestrator(
             user_question=request.message,
             context=ctx.agent_context,
@@ -161,16 +175,29 @@ async def chat(
         )
     except Exception as e:
         if _credit_mgr is not None:
-            await _credit_mgr.__aexit__(type(e), e, e.__traceback__)
+            try:
+                await _credit_mgr.__aexit__(type(e), e, e.__traceback__)
+            except Exception:
+                pass  # never let billing teardown mask the real failure
         raise
 
-    # Answer is safe — charge the turn. A billing failure is logged inside the
-    # manager and must not fail the request.
-    if _credit_mgr is not None:
-        try:
-            await _credit_mgr.__aexit__(None, None, None)
-        except Exception as _credit_err:
-            logger.warning("Credit usage recording failed: %s", _credit_err)
+    # Decide the charge. run_orchestrator catches its own exceptions and reports
+    # failure in its *return value* (success=False, message=_friendly_error(e)),
+    # so the handler above never sees them — billing on the strength of "no
+    # exception" would charge a credit for an error message. Void the same cases
+    # the websocket path voids, so a turn that is free over the socket is free
+    # over REST too.
+    if not result.get("success", False):
+        void_reason = "orchestrator reported failure"
+    elif result.get("retry_succeeded") is False:
+        void_reason = "layer4_retry_failed"
+    else:
+        void_reason = None
+
+    # Answer is safe — close the turn. A billing failure is logged inside the
+    # helper and must not fail the request.
+    from backend.services.token_tracking_service import finalize_credit_turn
+    await finalize_credit_turn(_credit_mgr, void_reason)
 
     # TODO: Save agent steps when orchestrator implements step tracking
     # Current orchestrator implementation doesn't return "steps" key
@@ -187,14 +214,20 @@ async def chat(
     prompt_tokens = int(len(request.message.split()) * 1.3)  # Rough word-to-token ratio
     completion_tokens = int(len(result["message"].split()) * 1.3)
 
-    TokenTrackingService.track_usage(
-        db=db,
-        user_id=current_user.id,
-        operation=OperationType.CHAT,
-        model=settings.default_llm_model or "gpt-4o",
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens
-    )
+    # Best-effort: the answer is persisted and the turn is already charged, so a
+    # failure in secondary analytics must not turn a completed chat into a 500 —
+    # the client would retry and pay for the same answer twice.
+    try:
+        TokenTrackingService.track_usage(
+            db=db,
+            user_id=current_user.id,
+            operation=OperationType.CHAT,
+            model=settings.default_llm_model or "gpt-4o",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens
+        )
+    except Exception as _track_err:
+        logger.warning("Token usage tracking failed: %s", _track_err)
 
     return ChatResponse(
         thread_id=conversation.thread_id,

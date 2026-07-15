@@ -45,10 +45,14 @@ async def get_balance(
     ).fetchone()
     used_today = int(used_row.used)
 
-    # Daily limit removed — the bottom-left balance now reflects the workspace
-    # (org) credit pool. `remaining` = org_total (recurring + topup); it drops
-    # live per turn as _exit debits the pool. daily_limit/used_today stay in the
-    # payload for the settings page but no longer gate spending.
+    # Daily limit removed — the bottom-left balance reflects the workspace (org)
+    # credit pool, but ONLY where something actually debits that pool. Gating and
+    # per-turn debit live exclusively in the enterprise bingo-admin manager; the
+    # community manager is stats-only (it pays its own LLM provider via its own
+    # API keys). Reporting "workspace" without a debiting manager would render a
+    # balance that never moves and an org_exhausted that never trips, so the
+    # scope is decided by whether that plugin is loaded.
+    from backend.plugins.loader import get_loaded_plugins
     from backend.services.org_credit_pool import read_org_pool_breakdown, lookup_user_org_id
     org_exhausted = False
     org_recurring = org_topup = org_total = 0
@@ -58,7 +62,11 @@ async def get_balance(
     # balance_scope == "unlimited". Enterprise users always resolve to a pool.
     remaining = max(0, daily_limit - used_today)
     balance_scope = "unlimited"
-    org_id = lookup_user_org_id(db, current_user.id)
+    org_id = (
+        lookup_user_org_id(db, current_user.id)
+        if "bingo-admin" in get_loaded_plugins()
+        else None
+    )
     if org_id is not None:
         breakdown = read_org_pool_breakdown(db, org_id)
         if breakdown is not None:

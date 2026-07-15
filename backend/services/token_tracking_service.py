@@ -3,7 +3,7 @@
 import logging
 import os
 from datetime import datetime, timedelta, date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -307,6 +307,33 @@ class CreditContextManager:
             self.user_id, self.title, today,
         )
 
+    def _record_safe(self):
+        """Record usage without ever failing the turn.
+
+        Billing is bookkeeping that runs *after* the answer is produced and
+        persisted, so a DB hiccup on the INSERT must not propagate. Left
+        unguarded it escapes the credit block and hits whatever wraps it — in
+        the heartbeat tasks that is ``record_run_failure``, which would flip an
+        already-committed COMPLETED run to FAILED and skip delivering a result
+        the user never got charged for anyway. Roll back and swallow: the turn
+        stays free but the caller's session is left usable (mirrors the
+        enterprise bingo_admin manager's ``_bill``).
+        """
+        try:
+            self._record()
+        except Exception:
+            credit_logger.exception(
+                "[credit] user %s: failed to record 1 credit — turn goes unbilled",
+                self.user_id,
+            )
+            try:
+                self.db.rollback()
+            except Exception:
+                credit_logger.exception(
+                    "[credit] user %s: rollback failed after a record error",
+                    self.user_id,
+                )
+
     # ------------------------------------------------------------------
     # Async context manager (FastAPI / chat / websocket)
     # ------------------------------------------------------------------
@@ -317,7 +344,7 @@ class CreditContextManager:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None and not self._voided:
-            self._record()
+            self._record_safe()
         return False
 
     # ------------------------------------------------------------------
@@ -330,5 +357,28 @@ class CreditContextManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None and not self._voided:
-            self._record()
+            self._record_safe()
         return False
+
+
+async def finalize_credit_turn(credit_mgr, void_reason: Optional[str] = None) -> None:
+    """Close a turn's credit context: void when given a reason, then charge.
+
+    Shared by the REST (``chat.py``) and websocket paths so both decide billing
+    identically — a turn that is free over the websocket must be free over POST
+    /api/chat too. ``void_reason`` is None for a clean turn; pass a string to
+    skip the charge (orchestrator failure, unresolved Layer-4 retry, …).
+
+    No-op when ``credit_mgr`` is None. Call exactly once per turn: ``__aexit__``
+    is not itself idempotent. Works with either manager (the community one here
+    or the enterprise bingo_admin drop-in) — ``void`` is probed, not assumed, so
+    a third-party replacement without it still charges rather than crashing.
+    """
+    if credit_mgr is None:
+        return
+    if void_reason and hasattr(credit_mgr, "void"):
+        credit_mgr.void(void_reason)
+    try:
+        await credit_mgr.__aexit__(None, None, None)
+    except Exception as credit_err:
+        credit_logger.warning("Credit usage recording failed: %s", credit_err)

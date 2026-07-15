@@ -57,7 +57,7 @@ class TestOrgCreditPoolHelpers:
 
 
 @pytest.fixture
-def credit_usage_table(test_engine):
+def credit_usage_table(test_engine, db_session):
     # credit_usage is created by alembic, not by a community ORM model, so the
     # models-only test schema lacks it. Minimal DDL matching _record()'s INSERT.
     with test_engine.begin() as conn:
@@ -68,6 +68,15 @@ def credit_usage_table(test_engine):
             "output_tokens INTEGER, date DATE, created_at TIMESTAMP)"
         ))
     yield
+    # Drop it again: test_engine is shared, so leaving the table (and the rows
+    # _record() writes into it) behind would leak this file's schema into every
+    # test collected after it. Roll the test session back first — its SELECTs
+    # hold an AccessShareLock that would block DROP's exclusive lock, and this
+    # fixture is finalized before db_session is, so the two would deadlock until
+    # the statement timeout. Depending on db_session is what orders it here.
+    db_session.rollback()
+    with test_engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS credit_usage"))
 
 
 class TestCreditContextManagerOrgPool:
