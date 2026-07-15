@@ -3,7 +3,7 @@
 import logging
 import os
 from datetime import datetime, timedelta, date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -232,11 +232,13 @@ class CreditContextManager:
     """
     Community-edition credit context manager.
 
-    Gates a turn on the workspace (org) credit pool on entry (the per-user daily
-    cap has been removed) and records one credit of usage on successful exit.
-    Mirrors the interface expected by chat.py, websocket.py, and the Celery task
-    files so that the enterprise bingo_admin plugin can drop in as a replacement
-    without any call-site changes.
+    Community is self-hosted: users pay their LLM provider directly with their
+    own API keys, so there is nothing to gate or debit — this manager records a
+    one-credit usage row on successful exit (usage history/stats only) and never
+    blocks a turn. The org credit pool is an enterprise concept; when the
+    bingo_admin plugin is loaded it drops in as a replacement at every call site
+    (chat.py, websocket.py, the Celery task files) and does the real gating and
+    per-turn debit.
 
     Supports both async (FastAPI handlers) and sync (Celery tasks) protocols.
     """
@@ -248,7 +250,7 @@ class CreditContextManager:
         title: str,
         provider_name,
         conversation_id,
-        block_on_insufficient: bool = True,
+        block_on_insufficient: bool = True,  # kept for call-site compat; community never blocks
     ):
         self.db = db
         self.user_id = user_id
@@ -258,10 +260,6 @@ class CreditContextManager:
         self.block_on_insufficient = block_on_insufficient
         self._voided = False
         self._void_reason: str = ""
-        # Phase 4 of multi-user-org: resolve the user's org once at setup so
-        # _check / _record can debit the org pool alongside the daily counter.
-        from backend.services.org_credit_pool import lookup_user_org_id
-        self.org_id: Optional[str] = lookup_user_org_id(db, user_id)
 
     def void(self, reason: str = "unresolved") -> None:
         """Skip credit recording on exit.
@@ -279,56 +277,16 @@ class CreditContextManager:
     # ------------------------------------------------------------------
 
     def _check(self):
-        # Per-user daily credit cap removed — spending is gated solely on the
-        # workspace (org) credit pool below.
-
-        # Phase 4 of multi-user-org: refuse the turn early when the org's
-        # credit pool is already empty. The atomic decrement in _record()
-        # still guards against TOCTOU races; this check just provides a
-        # fast pre-flight so we don't insert a credit_usage row we'd have
-        # to roll back.
-        if self.org_id is not None:
-            from backend.services.org_credit_pool import check_org_pool
-            balance = check_org_pool(self.db, self.org_id)
-            if balance is not None and balance <= 0:
-                credit_logger.warning(
-                    "[credit] org %s: pool exhausted (balance=%d), block=%s",
-                    self.org_id, balance, self.block_on_insufficient,
-                )
-                if self.block_on_insufficient:
-                    raise InsufficientCreditsError(
-                        "Organization credit pool exhausted.",
-                        reason="org_pool",
-                    )
+        # Self-hosted community pays the LLM provider directly (own API keys) —
+        # there is no balance to gate on. Enterprise gating lives in the
+        # bingo_admin drop-in replacement.
+        return
 
     def _record(self):
         today = date.today()
-        # Phase 4 of multi-user-org: decrement the org pool inside the same
-        # transaction as the credit_usage insert. If the atomic update can't
-        # match (race with another worker, balance just hit zero), abort the
-        # whole record path so we don't double-bill the user-side counter.
-        if self.org_id is not None:
-            from backend.services.org_credit_pool import try_decrement_org_pool
-            new_balance = try_decrement_org_pool(self.db, self.org_id, amount=1)
-            if new_balance is None:
-                # try_decrement_org_pool returns None when the column is
-                # missing (community pre-Phase-0) OR when the row had < 1
-                # credit. Differentiate by re-reading: a missing column
-                # also returns None from check_org_pool, but a column-present
-                # exhaustion returns 0.
-                from backend.services.org_credit_pool import check_org_pool
-                balance_after = check_org_pool(self.db, self.org_id)
-                if balance_after is not None:
-                    credit_logger.warning(
-                        "[credit] org %s: pool decrement lost race (balance=%d)",
-                        self.org_id, balance_after,
-                    )
-                    self.db.rollback()
-                    raise InsufficientCreditsError(
-                        "Organization credit pool exhausted.",
-                        reason="org_pool",
-                    )
-
+        # Stats only — no org-pool decrement. The pool is billed per-turn by the
+        # enterprise manager; community keeps the usage-history row so the
+        # credit-history UI stays populated.
         self.db.execute(
             text(
                 "INSERT INTO credit_usage "

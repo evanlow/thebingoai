@@ -144,9 +144,3 @@ def read_org_pool_breakdown(db: Session, org_id: str) -> Optional[dict]:
         return None
     total, topup = int(row[0]), int(row[1])
     return {"recurring": total - topup, "topup": topup, "total": total}
-
-
-def try_decrement_org_pool(db: Session, org_id: str, amount: int = 1) -> Optional[int]:
-    """Per-turn community debit — recurring-first. Thin wrapper over spend_org_pool
-    for back-compat with token_tracking_service._record."""
-    return spend_org_pool(db, org_id, amount)

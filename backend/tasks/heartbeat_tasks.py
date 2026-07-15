@@ -125,14 +125,18 @@ def execute_heartbeat_job(job_id: str):
             with (_credit_mgr if _credit_mgr is not None else nullcontext()):
                 response = asyncio.run(_run_orchestrator_for_job(job, user))
 
-            completed_at = datetime.utcnow()
-            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+                # Persist the run BEFORE the charge lands at __exit__ — a
+                # persist failure raises out of the block so the user is never
+                # billed for a run whose result wasn't saved (same order as the
+                # websocket chat path).
+                completed_at = datetime.utcnow()
+                duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-            run.status = HeartbeatRunStatus.COMPLETED.value
-            run.response = response
-            run.completed_at = completed_at
-            run.duration_ms = duration_ms
-            db.commit()
+                run.status = HeartbeatRunStatus.COMPLETED.value
+                run.response = response
+                run.completed_at = completed_at
+                run.duration_ms = duration_ms
+                db.commit()
 
             logger.info(f"Heartbeat job {job_id} run {run.id} completed in {duration_ms}ms")
 
@@ -301,14 +305,16 @@ def execute_agent_heartbeat_job(job_id: str):
                     _run_agent_for_job(job, user)
                 )
 
-            completed_at = datetime.utcnow()
-            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+                # Persist BEFORE the charge lands at __exit__ (see the
+                # orchestrator-run variant above).
+                completed_at = datetime.utcnow()
+                duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-            run.status = HeartbeatRunStatus.COMPLETED.value
-            run.response = response
-            run.completed_at = completed_at
-            run.duration_ms = duration_ms
-            db.commit()
+                run.status = HeartbeatRunStatus.COMPLETED.value
+                run.response = response
+                run.completed_at = completed_at
+                run.duration_ms = duration_ms
+                db.commit()
 
             _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
     finally:
