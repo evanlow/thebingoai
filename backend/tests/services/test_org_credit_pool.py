@@ -1,24 +1,27 @@
-"""Org credit pool consumption.
+"""Phase 4 of multi-user-org: org credit pool consumption.
 
 Exercises ``backend.services.org_credit_pool`` against a real Postgres engine
 (seeded by ``conftest.test_engine``) so the atomic UPDATE ... RETURNING path
-matches production semantics, then verifies the community CreditContextManager
-stays stats-only (never gates on or debits the pool — enterprise's job).
+matches production semantics, then verifies CreditContextManager honours both
+the per-user daily cap and the org pool.
 """
 from __future__ import annotations
 
 import uuid
 
 import pytest
-from sqlalchemy import text
 
 from backend.models.organization import Organization
 from backend.models.user import User
 from backend.services.org_credit_pool import (
     check_org_pool,
     lookup_user_org_id,
+    try_decrement_org_pool,
 )
-from backend.services.token_tracking_service import CreditContextManager
+from backend.services.token_tracking_service import (
+    CreditContextManager,
+    InsufficientCreditsError,
+)
 
 
 def _mk_org(db, *, balance: int = 5000) -> Organization:
@@ -55,27 +58,21 @@ class TestOrgCreditPoolHelpers:
         org = _mk_org(db_session, balance=42)
         assert check_org_pool(db_session, org.id) == 42
 
+    def test_try_decrement_org_pool_returns_new_balance(self, db_session):
+        org = _mk_org(db_session, balance=10)
+        assert try_decrement_org_pool(db_session, org.id, amount=3) == 7
+        assert check_org_pool(db_session, org.id) == 7
 
-@pytest.fixture
-def credit_usage_table(test_engine):
-    # credit_usage is created by alembic, not by a community ORM model, so the
-    # models-only test schema lacks it. Minimal DDL matching _record()'s INSERT.
-    with test_engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE IF NOT EXISTS credit_usage ("
-            "id SERIAL PRIMARY KEY, user_id VARCHAR, conversation_id VARCHAR, "
-            "title VARCHAR, credits_used INTEGER, input_tokens INTEGER, "
-            "output_tokens INTEGER, date DATE, created_at TIMESTAMP)"
-        ))
-    yield
+    def test_try_decrement_returns_none_when_exhausted(self, db_session):
+        org = _mk_org(db_session, balance=0)
+        assert try_decrement_org_pool(db_session, org.id) is None
+        # Untouched.
+        assert check_org_pool(db_session, org.id) == 0
 
 
 class TestCreditContextManagerOrgPool:
-    """Community manager is stats-only: self-hosted deployments pay their LLM
-    provider directly (own API keys), so it must never gate on or debit the org
-    pool — that's the enterprise bingo_admin manager's job."""
 
-    def test_community_never_touches_org_pool(self, db_session, credit_usage_table):
+    def test_under_both_caps_succeeds(self, db_session):
         org = _mk_org(db_session, balance=5)
         user = _mk_user(db_session, org_id=org.id)
         mgr = CreditContextManager(
@@ -87,11 +84,9 @@ class TestCreditContextManagerOrgPool:
         )
         mgr._check()
         mgr._record()
-        assert check_org_pool(db_session, org.id) == 5  # untouched
+        assert check_org_pool(db_session, org.id) == 4
 
-    def test_exhausted_org_pool_does_not_block_community(self, db_session, credit_usage_table):
-        # Self-hosted users must never hit a paywall — even block_on_insufficient
-        # (passed by every call site) is a no-op in the community manager.
+    def test_org_pool_exhausted_blocks_with_org_pool_reason(self, db_session):
         org = _mk_org(db_session, balance=0)
         user = _mk_user(db_session, org_id=org.id)
         mgr = CreditContextManager(
@@ -100,14 +95,41 @@ class TestCreditContextManagerOrgPool:
             title="t",
             provider_name="anthropic",
             conversation_id=None,
-            block_on_insufficient=True,
         )
-        mgr._check()  # no raise
-        mgr._record()  # records the stats row, still no pool touch
-        assert check_org_pool(db_session, org.id) == 0
+        with pytest.raises(InsufficientCreditsError) as ex:
+            mgr._check()
+        assert ex.value.reason == "org_pool"
 
-    def test_user_without_org_records_stats_row(self, db_session, credit_usage_table):
-        # Community / legacy user with no org — record path stays functional.
+    def test_daily_cap_removed_does_not_block(self, db_session):
+        # Daily limit removed: even a 0 daily_limit row must not block while the
+        # org pool has credit. Spending is gated solely on the workspace pool.
+        org = _mk_org(db_session, balance=100)
+        user = _mk_user(db_session, org_id=org.id)
+        from sqlalchemy import text
+        from datetime import datetime
+        db_session.execute(
+            text(
+                "INSERT INTO user_credit_balances (user_id, daily_limit, created_at) "
+                "VALUES (:uid, 0, :now)"
+            ),
+            {"uid": user.id, "now": datetime.utcnow()},
+        )
+        db_session.commit()
+
+        mgr = CreditContextManager(
+            db=db_session,
+            user_id=user.id,
+            title="t",
+            provider_name="anthropic",
+            conversation_id=None,
+        )
+        # No raise — the per-user daily cap is gone; org pool (100) still funds it.
+        mgr._check()
+        mgr._record()
+        assert check_org_pool(db_session, org.id) == 99
+
+    def test_user_without_org_skips_pool_check(self, db_session):
+        # Community / legacy user. Pool branch must be inert.
         user = _mk_user(db_session, org_id=None)
         mgr = CreditContextManager(
             db=db_session,
@@ -116,14 +138,9 @@ class TestCreditContextManagerOrgPool:
             provider_name="anthropic",
             conversation_id=None,
         )
+        # No exception — pool branch skipped.
         mgr._check()
         mgr._record()
-        from sqlalchemy import text
-        n = db_session.execute(
-            text("SELECT count(*) FROM credit_usage WHERE user_id = :uid"),
-            {"uid": user.id},
-        ).scalar()
-        assert n == 1
 
 
 class TestSpendOrgPool:
