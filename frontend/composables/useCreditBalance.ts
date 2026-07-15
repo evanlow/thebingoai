@@ -11,6 +11,7 @@ interface BalanceResponse {
   remaining: number
   resets_at: string
   org_exhausted?: boolean
+  balance_scope?: 'workspace' | 'unlimited'
 }
 
 export const useCreditBalance = () => {
@@ -26,8 +27,14 @@ export const useCreditBalance = () => {
   // Workspace (org) credit pool drained — distinct from the daily quota so the
   // banner can show a workspace-specific message instead of "resets at midnight".
   const orgExhausted = useState<boolean>('credit:orgExhausted', () => false)
+  // "workspace" → `remaining` is the org pool total and gates spending.
+  // "unlimited" → no org pool; nothing gates the user, so the number is not a
+  // real cap and the chat UI hides it.
+  const balanceScope = useState<'workspace' | 'unlimited'>('credit:scope', () => 'workspace')
 
-  const isExhausted = computed(() => remaining.value <= 0)
+  const isUnlimited = computed(() => balanceScope.value === 'unlimited')
+  // Never "exhausted" when unlimited — there is no cap to hit.
+  const isExhausted = computed(() => !isUnlimited.value && remaining.value <= 0)
 
   async function fetchBalance(): Promise<void> {
     loading.value = true
@@ -41,6 +48,7 @@ export const useCreditBalance = () => {
       remaining.value = data.remaining
       resetsAt.value = data.resets_at
       orgExhausted.value = data.org_exhausted ?? false
+      balanceScope.value = data.balance_scope ?? 'workspace'
     } catch (err: any) {
       error.value = err?.message ?? 'Failed to fetch credit balance'
     } finally {
@@ -60,6 +68,8 @@ export const useCreditBalance = () => {
     resetsAt,
     isExhausted,
     orgExhausted,
+    balanceScope,
+    isUnlimited,
     loading,
     error,
     refresh: fetchBalance,

@@ -213,12 +213,14 @@ class TokenTrackingService:
 
 
 class InsufficientCreditsError(Exception):
-    """Raised when a user has exhausted their daily credit limit.
+    """Raised when a user cannot pay for a turn.
 
-    The optional ``reason`` attribute distinguishes which cap fired
-    (``"user_daily"`` — default — vs ``"org_pool"``). API layers surface
-    that key as ``cap`` in the 402 envelope so the frontend can render the
-    right copy.
+    The per-user daily cap has been removed; spending is gated on the workspace
+    (org) credit pool. The optional ``reason`` attribute distinguishes which
+    shortfall fired (``"user_daily"`` — default, a per-request minimum shortfall
+    from provider_wrapper, kept for envelope compatibility — vs ``"org_pool"``
+    exhaustion). API layers surface that key as ``cap`` in the 402 envelope so
+    the frontend can render the right copy.
     """
 
     def __init__(self, message: str = "", *, reason: str = "user_daily") -> None:
@@ -230,10 +232,11 @@ class CreditContextManager:
     """
     Community-edition credit context manager.
 
-    Checks the user's daily credit limit on entry and records one credit of
-    usage on successful exit.  Mirrors the interface expected by chat.py,
-    websocket.py, and the Celery task files so that the enterprise bingo_admin
-    plugin can drop in as a replacement without any call-site changes.
+    Gates a turn on the workspace (org) credit pool on entry (the per-user daily
+    cap has been removed) and records one credit of usage on successful exit.
+    Mirrors the interface expected by chat.py, websocket.py, and the Celery task
+    files so that the enterprise bingo_admin plugin can drop in as a replacement
+    without any call-site changes.
 
     Supports both async (FastAPI handlers) and sync (Celery tasks) protocols.
     """
@@ -275,54 +278,9 @@ class CreditContextManager:
     # Internal helpers (sync, safe to call from both async and sync paths)
     # ------------------------------------------------------------------
 
-    def _ensure_balance_row(self) -> int:
-        """Return daily_limit for this user, creating a balance row if absent."""
-        row = self.db.execute(
-            text("SELECT daily_limit FROM user_credit_balances WHERE user_id = :uid"),
-            {"uid": self.user_id},
-        ).fetchone()
-        if row is None:
-            default_limit = _default_user_daily_credits()
-            self.db.execute(
-                text(
-                    "INSERT INTO user_credit_balances (user_id, daily_limit, created_at) "
-                    "VALUES (:uid, :limit, :now)"
-                ),
-                {"uid": self.user_id, "limit": default_limit, "now": datetime.utcnow()},
-            )
-            self.db.commit()
-            credit_logger.info("[credit] user %s: no balance row found — created with daily_limit=%d", self.user_id, default_limit)
-            return default_limit
-        return int(row[0])
-
-    def _today_usage(self) -> int:
-        """Sum of credits_used for this user today."""
-        row = self.db.execute(
-            text(
-                "SELECT COALESCE(SUM(credits_used), 0) FROM credit_usage "
-                "WHERE user_id = :uid AND date = :today"
-            ),
-            {"uid": self.user_id, "today": date.today()},
-        ).fetchone()
-        return int(row[0]) if row else 0
-
     def _check(self):
-        daily_limit = self._ensure_balance_row()
-        used = self._today_usage()
-        credit_logger.info(
-            "[credit] user %s: daily_limit=%d, used_today=%d, block_on_insufficient=%s",
-            self.user_id, daily_limit, used, self.block_on_insufficient,
-        )
-        if daily_limit == 0 or used >= daily_limit:
-            credit_logger.warning(
-                "[credit] user %s: daily limit %d reached (used=%d), block=%s",
-                self.user_id, daily_limit, used, self.block_on_insufficient,
-            )
-            if self.block_on_insufficient:
-                raise InsufficientCreditsError(
-                    f"Daily credit limit of {daily_limit} reached.",
-                    reason="user_daily",
-                )
+        # Per-user daily credit cap removed — spending is gated solely on the
+        # workspace (org) credit pool below.
 
         # Phase 4 of multi-user-org: refuse the turn early when the org's
         # credit pool is already empty. The atomic decrement in _record()

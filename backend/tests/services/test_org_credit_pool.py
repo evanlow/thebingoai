@@ -100,10 +100,11 @@ class TestCreditContextManagerOrgPool:
             mgr._check()
         assert ex.value.reason == "org_pool"
 
-    def test_user_daily_cap_blocks_with_user_daily_reason(self, db_session):
+    def test_daily_cap_removed_does_not_block(self, db_session):
+        # Daily limit removed: even a 0 daily_limit row must not block while the
+        # org pool has credit. Spending is gated solely on the workspace pool.
         org = _mk_org(db_session, balance=100)
         user = _mk_user(db_session, org_id=org.id)
-        # Seed a 0 daily_limit so the per-user cap fires before the org check.
         from sqlalchemy import text
         from datetime import datetime
         db_session.execute(
@@ -122,9 +123,10 @@ class TestCreditContextManagerOrgPool:
             provider_name="anthropic",
             conversation_id=None,
         )
-        with pytest.raises(InsufficientCreditsError) as ex:
-            mgr._check()
-        assert ex.value.reason == "user_daily"
+        # No raise — the per-user daily cap is gone; org pool (100) still funds it.
+        mgr._check()
+        mgr._record()
+        assert check_org_pool(db_session, org.id) == 99
 
     def test_user_without_org_skips_pool_check(self, db_session):
         # Community / legacy user. Pool branch must be inert.
@@ -170,3 +172,59 @@ class TestSpendOrgPool:
         org = self._org(db_session, recurring=1, topup=1)
         assert spend_org_pool(db_session, org.id, 3) is None
         assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 1, "topup": 1, "total": 2}
+
+
+class TestDebitOrgPoolClamped:
+    """Per-turn post-hoc debit: recurring-first, clamped at zero (never refuses)."""
+
+    def _org(self, db, *, recurring, topup):
+        import uuid
+        from backend.models.organization import Organization
+        org = Organization(
+            id=str(uuid.uuid4()), name=f"o-{uuid.uuid4()}",
+            credit_balance=recurring + topup, topup_balance=topup,
+        )
+        db.add(org); db.commit()
+        return org
+
+    def test_drains_recurring_first(self, db_session):
+        from backend.services.org_credit_pool import debit_org_pool_clamped, read_org_pool_breakdown
+        org = self._org(db_session, recurring=10, topup=5)
+        assert debit_org_pool_clamped(db_session, org.id, 3) == 12
+        assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 7, "topup": 5, "total": 12}
+
+    def test_spills_into_topup(self, db_session):
+        from backend.services.org_credit_pool import debit_org_pool_clamped, read_org_pool_breakdown
+        org = self._org(db_session, recurring=2, topup=5)
+        assert debit_org_pool_clamped(db_session, org.id, 4) == 3
+        assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 0, "topup": 3, "total": 3}
+
+    def test_clamps_at_zero_on_overage(self, db_session):
+        # Unlike spend_org_pool this never refuses: it drains to zero even when
+        # the debit exceeds the balance (the turn already ran).
+        from backend.services.org_credit_pool import debit_org_pool_clamped, read_org_pool_breakdown
+        org = self._org(db_session, recurring=1, topup=1)
+        assert debit_org_pool_clamped(db_session, org.id, 5) == 0
+        assert read_org_pool_breakdown(db_session, org.id) == {"recurring": 0, "topup": 0, "total": 0}
+
+    def test_db_error_rolls_back_and_returns_none(self):
+        # A failed UPDATE aborts the PG transaction; without a rollback the
+        # caller's subsequent commit/persist on the same session would fail. The
+        # helper must roll back (unpoison the session) and return None, not
+        # silently leave the txn aborted.
+        from unittest.mock import MagicMock
+        from backend.services.org_credit_pool import debit_org_pool_clamped
+        db = MagicMock()
+        db.execute.side_effect = Exception("statement failed")
+        assert debit_org_pool_clamped(db, "org-1", 5) is None
+        db.rollback.assert_called_once()
+
+    def test_missing_org_returns_none_without_rollback(self):
+        # No row matched (bad org_id) — the transaction is intact, so no rollback
+        # is issued; distinct from the DB-error path above.
+        from unittest.mock import MagicMock
+        from backend.services.org_credit_pool import debit_org_pool_clamped
+        db = MagicMock()
+        db.execute.return_value.fetchone.return_value = None
+        assert debit_org_pool_clamped(db, "missing", 5) is None
+        db.rollback.assert_not_called()

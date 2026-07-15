@@ -20,6 +20,11 @@ class BalanceResponse(BaseModel):
     org_recurring: int = 0       # derived: total - topup
     org_topup: int = 0
     org_total: int = 0
+    # Tells the frontend how to read `remaining` instead of inferring it:
+    #   "workspace" → org pool total (recurring + topup), gates spending.
+    #   "unlimited" → no org pool; the daily cap was removed, so nothing gates
+    #                 this user. `remaining` is not a real limit — hide it.
+    balance_scope: str = "unlimited"
 
 
 @router.get("/balance", response_model=BalanceResponse)
@@ -40,15 +45,19 @@ async def get_balance(
     ).fetchone()
     used_today = int(used_row.used)
 
-    remaining = max(0, daily_limit - used_today)
-
-    # Workspace (org) pool drained takes precedence over the daily quota: the
-    # spend gate blocks regardless of daily remaining, so surface 0 here too
-    # rather than a misleading daily count. Also surface the recurring/topup
-    # breakdown (recurring is derived = total - topup).
+    # Daily limit removed — the bottom-left balance now reflects the workspace
+    # (org) credit pool. `remaining` = org_total (recurring + topup); it drops
+    # live per turn as _exit debits the pool. daily_limit/used_today stay in the
+    # payload for the settings page but no longer gate spending.
     from backend.services.org_credit_pool import read_org_pool_breakdown, lookup_user_org_id
     org_exhausted = False
     org_recurring = org_topup = org_total = 0
+    # No org pool (community / no-org user): the daily cap was removed, so nothing
+    # gates this user — they are unlimited. `remaining` carries the legacy daily
+    # figure only for the settings consumption view; the chat UI hides it because
+    # balance_scope == "unlimited". Enterprise users always resolve to a pool.
+    remaining = max(0, daily_limit - used_today)
+    balance_scope = "unlimited"
     org_id = lookup_user_org_id(db, current_user.id)
     if org_id is not None:
         breakdown = read_org_pool_breakdown(db, org_id)
@@ -56,9 +65,10 @@ async def get_balance(
             org_recurring = breakdown["recurring"]
             org_topup = breakdown["topup"]
             org_total = breakdown["total"]
+            remaining = max(0, org_total)
+            balance_scope = "workspace"
             if org_total <= 0:
                 org_exhausted = True
-                remaining = 0
 
     tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time())
     resets_at = tomorrow.replace(tzinfo=timezone.utc).isoformat()
@@ -72,6 +82,7 @@ async def get_balance(
         org_recurring=org_recurring,
         org_topup=org_topup,
         org_total=org_total,
+        balance_scope=balance_scope,
     )
 
 
