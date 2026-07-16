@@ -24,10 +24,16 @@ export function initAnalytics(id: string) {
   // send_page_view:false — the plugin fires page_view on router.afterEach
   // (including the initial navigation), so auto page_view would double-count.
   window.gtag('config', id, { send_page_view: false })
-  // Strip query from page_location immediately — gtag's automatic events
-  // (scroll etc.) can fire before the router plugin's afterEach runs, and on
-  // full page loads like /auth/success the query carries live tokens.
-  window.gtag('set', { page_location: window.location.origin + window.location.pathname })
+  // Seed page_location with the origin ONLY — no path, no query — because
+  // gtag's automatic events (scroll etc.) can fire before the router
+  // plugin's afterEach runs, and init has no route match yet to derive a
+  // safe pattern from. A path segment can itself be a secret (the briefing
+  // share token IS the path in /share/briefings/[token]), so window.location
+  // .pathname is not safe to seed here, only the query would be. The router
+  // plugin's afterEach immediately overwrites this with the redacted route
+  // pattern, so this bare-origin value is only ever visible to an
+  // auto-event firing in the tiny window before the first afterEach runs.
+  window.gtag('set', { page_location: window.location.origin })
   const script = document.createElement('script')
   script.async = true
   script.src = `https://www.googletagmanager.com/gtag/js?id=${id}`

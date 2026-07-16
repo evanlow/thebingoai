@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, toRaw } from 'vue'
 
 // BriefingWidgetEmbed fetches the (data-less) widget shell on mount, then either
 // merges a generation-time snapshot (no SQL) or — for pre-rollout briefings —
@@ -8,6 +8,7 @@ import { ref, onMounted } from 'vue'
 
 vi.stubGlobal('ref', ref)
 vi.stubGlobal('onMounted', onMounted)
+vi.stubGlobal('toRaw', toRaw)
 
 const mockFetch = vi.fn()
 vi.stubGlobal('useApi', () => ({ fetchWithRefresh: mockFetch }))
@@ -16,6 +17,15 @@ const mockRefresh = vi.fn()
 vi.stubGlobal('useWidgetData', () => ({ refresh: mockRefresh }))
 
 import BriefingWidgetEmbed from '~/components/briefings/BriefingWidgetEmbed.vue'
+
+// Named stub (rather than `stubs: { DashboardWidget: true }`) so we can read
+// back the props actually passed to it — an anonymous `true` auto-stub loses
+// that in this Nuxt-auto-import setup.
+const DashboardWidgetStub = {
+  name: 'DashboardWidget',
+  props: ['widget', 'autoRefresh', 'editMode'],
+  template: '<div />',
+}
 
 // onMounted awaits a dynamic import('~/utils/widgetMerge'); a couple flushes
 // aren't enough to settle it. Tick microtasks until emitted('loaded') fires.
@@ -71,5 +81,56 @@ describe('BriefingWidgetEmbed', () => {
     expect(mockRefresh).not.toHaveBeenCalled()
     expect((wrapper.vm as any).widget).toBeNull()
     expect(wrapper.emitted('loaded')).toHaveLength(1)
+  })
+
+  it('skips the authed widget fetch when a widget is passed inline', async () => {
+    const wrapper = mountEmbed({
+      // Backend-stripped shape: no dataSource, so refresh() cannot fire either.
+      widget: { id: 'w1', widget: { type: 'bar', config: { type: 'bar' } } },
+      snapshot: { series: [1, 2, 3] },
+    })
+    await settle(wrapper)
+
+    // The whole point: an anonymous visitor has no token for this endpoint.
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(mockRefresh).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).widget.widget.config.series).toEqual([1, 2, 3])
+    expect(wrapper.emitted('loaded')).toHaveLength(1)
+  })
+
+  it('does not mutate the inline widget prop when merging the snapshot', async () => {
+    const inline = { id: 'w1', widget: { type: 'bar', config: { type: 'bar' } } }
+    const wrapper = mountEmbed({ widget: inline, snapshot: { series: [9] } })
+    await settle(wrapper)
+
+    // mergeRefreshedConfig Object.assigns into widget.widget.config — a shallow
+    // copy would write straight through into the caller's object.
+    expect((inline.widget.config as any).series).toBeUndefined()
+  })
+
+  it('always passes editMode=false to DashboardWidget — briefing embeds are read-only, not accidentally-falsy-undefined', async () => {
+    mockFetch.mockResolvedValue(shell())
+    const wrapper = mount(BriefingWidgetEmbed, {
+      props: { widgetId: 'w1', dashboardId: 10, snapshot: { series: [1, 2, 3] } },
+      global: { stubs: { DashboardWidget: DashboardWidgetStub } },
+    })
+    await settle(wrapper)
+
+    const dashboardWidget = wrapper.findComponent(DashboardWidgetStub)
+    expect(dashboardWidget.exists()).toBe(true)
+    expect(dashboardWidget.props('editMode')).toBe(false)
+  })
+
+  it('never falls back to the authed fetch when both widget and dashboardId are missing (public share view, widget dropped from the frozen snapshot)', async () => {
+    const wrapper = mountEmbed({ widget: undefined, dashboardId: undefined })
+    await settle(wrapper)
+
+    // An anonymous visitor has no token for the authed endpoint. Hitting it
+    // would 401 -> refreshAccessToken() -> logout() + redirect to /login,
+    // dumping the visitor off the public share page.
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).widget).toBeNull()
+    expect(wrapper.emitted('loaded')).toHaveLength(1)
+    expect(wrapper.find('div').exists()).toBe(false)
   })
 })

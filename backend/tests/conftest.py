@@ -96,3 +96,15 @@ def authenticated_client(db_session, sample_user):
             yield client
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def anonymous_client(db_session):
+    """TestClient with NO auth override and NO Authorization header — the only
+    honest way to prove the public endpoint needs no identity."""
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()

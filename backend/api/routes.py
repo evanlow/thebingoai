@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from backend.api import upload, query, health, jobs, auth, connections, usage, chat, memory, sql_query, chat_files, sqlite_upload, credits, maintenance
 from backend.api import agents as custom_agents, skills, heartbeat_jobs, dashboards, widget_data, dashboard_schedule
-from backend.api import feature_config, briefings
+from backend.api import feature_config, briefings, briefing_shares
 from backend.auth.webhooks import router as webhook_router
 from backend.api import query_results, agent_sessions, agent_profile, llm_models
 from backend.pipelines.api import router as pipelines_router
@@ -63,6 +63,11 @@ router.include_router(dashboard_schedule.router)
 
 # Briefings
 router.include_router(briefings.router)
+
+# Briefing share links (public link create/revoke)
+router.include_router(briefing_shares.router)
+# Unauthenticated: resolves a share token to a briefing. Only public router.
+router.include_router(briefing_shares.public_router)
 
 # Agent Sessions (Mesh)
 router.include_router(agent_sessions.router)

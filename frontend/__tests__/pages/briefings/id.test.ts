@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { ref, computed, watch } from 'vue'
 
 // Regression: a briefing whose status is 'generating' has payload === null.
@@ -36,11 +36,14 @@ const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
 vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
 
 import BriefingPage from '~/pages/briefings/[id].vue'
+import BriefingBody from '~/components/briefings/BriefingBody.vue'
 
 const mountPage = () =>
   mount(BriefingPage, {
     attachTo: document.body,
-    global: { stubs: { BriefingWidgetEmbed: true } },
+    // BriefingBody is auto-imported by Nuxt at runtime but not under VTU —
+    // register it explicitly or its content never renders.
+    global: { stubs: { BriefingWidgetEmbed: true }, components: { BriefingBody } },
   })
 
 describe('briefings/[id]', () => {
@@ -164,5 +167,153 @@ describe('briefings/[id]', () => {
     await retryBtn!.trigger('click')
     expect(retryFetchMock).toHaveBeenCalledWith('/api/dashboards/42/brief', { method: 'POST' })
     expect(trackEventMock).toHaveBeenCalledExactlyOnceWith('briefing_create', { dashboard_id: 42 })
+  })
+
+  const READY = () => ({
+    id: 48,
+    status: 'ready',
+    dashboard_id: 40,
+    created_at: '2026-06-19T00:00:00Z',
+    date_range_from: null,
+    date_range_to: null,
+    payload: { headline: 'Sales up 12%', deck: 'Strong quarter', kpis: [], sections: [], key_takeaways: ['Grow'] },
+  })
+
+  it('enabling sharing mints a link and copies it', async () => {
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValue({
+      token: 'tok123',
+    })
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(retryFetchMock).toHaveBeenCalledWith('/api/briefings/48/share', { method: 'POST' })
+    // No `url` in the response — the page builds it from the browser's own
+    // origin (mirrors stores/auth.ts's window.location.origin pattern).
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share/briefings/tok123`)
+  })
+
+  it('surfaces the 400 when a briefing predates chart snapshots', async () => {
+    retryFetchMock.mockReset()
+    retryFetchMock.mockRejectedValue({
+      data: { detail: "This briefing predates chart snapshots and can't be shared. Generate a fresh one." },
+    })
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('predates chart snapshots')
+  })
+
+  it('clicking "Turn off" revokes the share and returns to "Share to web"', async () => {
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({
+      token: 'tok123',
+    })
+    retryFetchMock.mockResolvedValueOnce(undefined)
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Shared · Copy link')
+
+    const turnOffBtn = wrapper.findAll('button').find((b) => b.text() === 'Turn off')
+    expect(turnOffBtn).toBeDefined()
+    await turnOffBtn!.trigger('click')
+    await flushPromises()
+
+    expect(retryFetchMock).toHaveBeenCalledWith('/api/briefings/48/share', { method: 'DELETE' })
+    expect(document.body.textContent).toContain('Share to web')
+    expect(document.body.textContent).not.toContain('Shared · Copy link')
+  })
+
+  it('surfaces an error when revoking sharing fails', async () => {
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({
+      token: 'tok123',
+    })
+    retryFetchMock.mockRejectedValueOnce({ data: { detail: 'Server exploded while turning off sharing.' } })
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+
+    const turnOffBtn = wrapper.findAll('button').find((b) => b.text() === 'Turn off')
+    expect(turnOffBtn).toBeDefined()
+    await turnOffBtn!.trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Server exploded while turning off sharing.')
+  })
+
+  it('keeps "Turn off" visible after a failed revoke and retries the DELETE on a second click', async () => {
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({
+      token: 'tok123',
+    })
+    retryFetchMock.mockRejectedValueOnce({ data: { detail: 'Server exploded while turning off sharing.' } })
+    retryFetchMock.mockResolvedValueOnce(undefined)
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+
+    let turnOffBtn = wrapper.findAll('button').find((b) => b.text() === 'Turn off')
+    expect(turnOffBtn).toBeDefined()
+    await turnOffBtn!.trigger('click')
+    await flushPromises()
+
+    // Error surfaced AND the Turn off button must still be present — this is
+    // the retry escape hatch that the buggy v-else-if removed.
+    expect(document.body.textContent).toContain('Server exploded while turning off sharing.')
+    turnOffBtn = wrapper.findAll('button').find((b) => b.text() === 'Turn off')
+    expect(turnOffBtn).toBeDefined()
+
+    await turnOffBtn!.trigger('click')
+    await flushPromises()
+
+    expect(retryFetchMock).toHaveBeenNthCalledWith(3, '/api/briefings/48/share', { method: 'DELETE' })
+    expect(document.body.textContent).toContain('Share to web')
+    expect(document.body.textContent).not.toContain('Server exploded while turning off sharing.')
+  })
+
+  it('clicking the toggle while shared copies the link and does not issue a DELETE', async () => {
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({
+      token: 'tok123',
+    })
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+    expect(retryFetchMock).toHaveBeenCalledTimes(1)
+    writeText.mockClear()
+
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share/briefings/tok123`)
+    expect(retryFetchMock).toHaveBeenCalledTimes(1)
+    expect(retryFetchMock).not.toHaveBeenCalledWith('/api/briefings/48/share', { method: 'DELETE' })
+    expect(document.body.textContent).toContain('Shared · Copy link')
   })
 })
