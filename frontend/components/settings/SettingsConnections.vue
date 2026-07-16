@@ -1867,7 +1867,7 @@ async function confirmDelete() {
 
   try {
     deleting.value = true
-    await api.connections.delete(String(deletingConnection.value.id))
+    await api.connections.delete(String(deletingConnection.value.id), { cascade: true })
     toast.success('Connection deleted successfully')
     showDeleteDialog.value = false
     showFormSheet.value = false
