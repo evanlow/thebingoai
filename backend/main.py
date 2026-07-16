@@ -47,6 +47,16 @@ async def lifespan(app: FastAPI):
                 "bingo-admin plugin on_startup must call register_plane_provisioner()."
             )
 
+    # Provision the ONE shared Airbnb sample (system org + Parquet) once the
+    # plane provisioner is wired up. Best-effort — never block boot.
+    try:
+        from backend.database.session import SessionLocal
+        from backend.services.seed import ensure_shared_sample
+        with SessionLocal() as db:
+            ensure_shared_sample(db)
+    except Exception:
+        logger.warning("Shared sample provisioning failed", exc_info=True)
+
     # Backfill dynamic SQL pipeline templates for core connectors (postgres /
     # mysql / sqlite) which are registered at module import in
     # `backend.connectors.factory`, not via a BingoPlugin.

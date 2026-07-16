@@ -251,6 +251,7 @@ def widgets_referencing(connection_id: int, *, db=None) -> list[dict]:
 def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> MigrationResult:
     """Core migration logic — called inside migrate_connection after guards."""
     import io
+    import os
     import sqlite3
     import tempfile
 
@@ -265,15 +266,24 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
 
     legacy_blob_path: str = connection.dataset_table_name  # type: ignore[assignment]
 
-    # Download SQLite blob (DataPlane dp: key or legacy DO Spaces key)
-    blob_data = sqlite_blob_storage.load_blob(connection, db=db)
-    if blob_data is None:
-        raise ValueError(f"Legacy blob not found in object storage: {legacy_blob_path!r}")
+    # Bundled local file (e.g. the seeded sample): dataset_table_name is an
+    # absolute path baked into the image, not an object-storage key. Read it
+    # in place; the file must survive migration (health check stats it).
+    is_local_file = os.path.isabs(legacy_blob_path)
+    if is_local_file:
+        if not os.path.isfile(legacy_blob_path):
+            raise ValueError(f"Local sqlite file not found: {legacy_blob_path!r}")
+        tmp_path = legacy_blob_path
+    else:
+        # Download SQLite blob (DataPlane dp: key or legacy DO Spaces key)
+        blob_data = sqlite_blob_storage.load_blob(connection, db=db)
+        if blob_data is None:
+            raise ValueError(f"Legacy blob not found in object storage: {legacy_blob_path!r}")
 
-    # Write to temp file and open read-only
-    with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as tmp:
-        tmp.write(blob_data)
-        tmp_path = tmp.name
+        # Write to temp file and open read-only
+        with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as tmp:
+            tmp.write(blob_data)
+            tmp_path = tmp.name
 
     tables_migrated = 0
     rows_migrated = 0
@@ -330,11 +340,11 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
         finally:
             conn_ro.close()
     finally:
-        import os
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        if not is_local_file:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     # Widget SQL rewrite
     widget_rewrites, queued_count = _rewrite_widgets_for_connection(
@@ -355,10 +365,11 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
         )
 
     if not dry_run:
-        # Delete the blob first — delete_blob routes off connection.dataset_table_name
-        sqlite_blob_storage.delete_blob(connection, db=db)
-        connection.dataset_table_name = None
-        db.add(connection)
+        if not is_local_file:
+            # Delete the blob first — delete_blob routes off connection.dataset_table_name
+            sqlite_blob_storage.delete_blob(connection, db=db)
+            connection.dataset_table_name = None
+            db.add(connection)
 
         # Serialise widget rewrites for the journal
         journal.widget_rewrites_applied = [

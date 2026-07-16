@@ -160,6 +160,8 @@ def rewrite_table_refs(sql: str, mapping: dict[str, str]) -> tuple[str, bool]:
             new_name = normalized_mapping[node.name.lower()]
             new_node = node.copy()
             new_node.this.args["this"] = new_name  # mutate the Identifier's raw string
+            new_node.set("db", None)       # plane views are bare-named — drop schema
+            new_node.set("catalog", None)  # …and catalog, so public.x / proj.ds.x resolve
             return new_node
         return node
 

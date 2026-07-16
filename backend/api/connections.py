@@ -63,20 +63,26 @@ def _find_connection(db: Session, key, current_user):
     else:
         q = q.filter(DatabaseConnection.uuid == key_str)
 
+    from backend.services.seed import shared_sample_clause
     org_id = getattr(current_user, "org_id", None)
     if org_id is not None:
         # Visible if: row already carries org_id, OR row's owner currently
         # belongs to this org (covers pre-Phase-3 rows that never recorded
-        # org_id directly).
+        # org_id directly), OR it's the shared read-only sample.
         from sqlalchemy import or_
         q = q.outerjoin(User, DatabaseConnection.user_id == User.id).filter(
             or_(
                 DatabaseConnection.org_id == org_id,
                 User.org_id == org_id,
+                shared_sample_clause(),
             )
         )
     else:
-        q = q.filter(DatabaseConnection.user_id == current_user.id)
+        from sqlalchemy import or_
+        q = q.filter(or_(
+            DatabaseConnection.user_id == current_user.id,
+            shared_sample_clause(),
+        ))
     return q.first()
 
 
@@ -336,6 +342,7 @@ async def list_connections(
     only their own. Ephemeral datasets (chat uploads) are hidden unless
     explicitly requested.
     """
+    from backend.services.seed import shared_sample_clause
     query = db.query(DatabaseConnection)
     if current_user.org_id is not None:
         from sqlalchemy import or_
@@ -343,10 +350,15 @@ async def list_connections(
             or_(
                 DatabaseConnection.org_id == current_user.org_id,
                 User.org_id == current_user.org_id,
+                shared_sample_clause(),
             )
         )
     else:
-        query = query.filter(DatabaseConnection.user_id == current_user.id)
+        from sqlalchemy import or_
+        query = query.filter(or_(
+            DatabaseConnection.user_id == current_user.id,
+            shared_sample_clause(),
+        ))
     if not include_ephemeral:
         query = query.filter(DatabaseConnection.is_ephemeral == False)  # noqa: E712
 

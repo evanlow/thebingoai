@@ -495,8 +495,13 @@ def _readable_connection(db, connection_id, current_user, dashboard):
     Shared (cross-org) dashboards: the connection must belong to a user in the
     dashboard's (host) org — read-only serving from host parquet only.
     """
+    from backend.services.seed import shared_sample_clause
     _, is_shared = _serving_org_and_shared(dashboard, current_user) if dashboard else (None, False)
     q = db.query(DatabaseConnection).filter(DatabaseConnection.id == connection_id)
+    # Shared read-only sample: readable by any user, independent of dashboard.
+    sample = q.filter(shared_sample_clause()).first()
+    if sample is not None:
+        return sample
     if is_shared:
         return (
             q.join(User, DatabaseConnection.user_id == User.id)
@@ -835,6 +840,10 @@ async def refresh_widget(
         # Route bigquery_ga4 widget SQL through the data plane (managed
         # materialised view) instead of the raw GA4 source connector.
         served_from = "source"
+        from backend.connectors.data_plane import DataPlaneConnector
+        if isinstance(connector, DataPlaneConnector):
+            # Migrated sqlite: connector reroutes to the DataPlane (Parquet).
+            served_from = "data_plane"
         if connection.db_type == "bigquery_ga4":
             sql, params = _prepare(request.sql)
             from backend.data_plane.scope import OwnerScope
@@ -994,11 +1003,29 @@ async def refresh_dashboard_widgets(
     # exactly as before (dev serves via its local-plane branch).
     duck_enabled = _duckdb_serving_enabled(org_id)
     shared_reader = None
+    # Widgets pointing at the shared sample resolve to the Samples-org bucket, not
+    # the viewer's org bucket — the shared reader is bound to the wrong bucket for
+    # them. Serve those with a per-widget reader (reader=None) instead.
+    sample_conn_ids: set = set()
     if duck_enabled:
         from backend.data_plane.scope import OwnerScope
         from backend.services.data_plane_service import get_gcs_duckdb_reader
         reader_scope = OwnerScope("org", org_id) if org_id else OwnerScope("user", current_user.id)
         shared_reader = get_gcs_duckdb_reader(reader_scope, db)
+
+        from backend.services.seed import shared_sample_clause
+        widget_conn_ids = [
+            w.get("dataSource", {}).get("connectionId")
+            for w in widgets if w.get("dataSource")
+        ]
+        widget_conn_ids = [cid for cid in widget_conn_ids if cid]
+        if widget_conn_ids:
+            sample_conn_ids = {
+                r.id for r in db.query(DatabaseConnection.id).filter(
+                    DatabaseConnection.id.in_(widget_conn_ids),
+                    shared_sample_clause(),
+                ).all()
+            }
 
     # Source-DB fallback memoized per connection_id so widgets sharing a
     # connection don't each re-fetch the DatabaseConnection row and rebuild a
@@ -1074,7 +1101,7 @@ async def refresh_dashboard_widgets(
                                 widget_sources=widget.get("sources"),
                             ),
                             dashboard, current_user, db,
-                            reader=shared_reader,
+                            reader=(None if connection_id in sample_conn_ids else shared_reader),
                         )
                     if served is not None:
                         _widget_cache_store(widget_cache_key, bulk_cache_ttl, served)
@@ -1144,6 +1171,10 @@ async def refresh_dashboard_widgets(
                     )
 
                 served_from = "source"
+                from backend.connectors.data_plane import DataPlaneConnector
+                if isinstance(connector, DataPlaneConnector):
+                    # Migrated sqlite: connector reroutes to the DataPlane.
+                    served_from = "data_plane"
                 if connection.db_type == "bigquery_ga4":
                     fb_sql, params = _prepare_bulk(sql)
                     from backend.data_plane.scope import OwnerScope as _OS

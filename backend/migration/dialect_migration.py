@@ -16,6 +16,7 @@ from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import func
 
 from backend.database.base import Base
@@ -147,6 +148,7 @@ def migrate_dashboard(dashboard, *, dry_run: bool = False, db) -> DashboardMigra
         return DashboardMigrationOutcome(dashboard.id, "dry_run", result.rewrites)
 
     dashboard.widgets = widgets  # reassign so the JSONB column flushes
+    flag_modified(dashboard, "widgets")  # reassigning the same list ref isn't dirty-tracked; force it
     db.add(dashboard)
     db.add(DashboardDialectMigration(
         dashboard_id=dashboard.id,
@@ -201,6 +203,7 @@ def rollback_dashboard(dashboard_id: int, *, db=None) -> str:
             if wid in old_by_widget and isinstance(ds, dict):
                 ds["sql"] = old_by_widget[wid]
         dashboard.widgets = widgets
+        flag_modified(dashboard, "widgets")  # same-ref reassign isn't dirty-tracked; force it
         db.add(dashboard)
 
     db.delete(journal)

@@ -53,14 +53,22 @@ async def build_orchestrator_context(
         DatabaseConnection.id, DatabaseConnection.name,
         DatabaseConnection.db_type, DatabaseConnection.database,
     )
+    from sqlalchemy import or_
+    from backend.services.seed import shared_sample_clause
     if connection_ids:
         accessible_connections = db.query(*conn_columns).filter(
             DatabaseConnection.id.in_(connection_ids),
-            DatabaseConnection.user_id == user.id
+            or_(
+                DatabaseConnection.user_id == user.id,
+                shared_sample_clause(),
+            ),
         ).all()
     else:
         accessible_connections = db.query(*conn_columns).filter(
-            DatabaseConnection.user_id == user.id
+            or_(
+                DatabaseConnection.user_id == user.id,
+                shared_sample_clause(),
+            )
         ).all()
     accessible_ids = [c.id for c in accessible_connections]
     connection_metadata = [
