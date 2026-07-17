@@ -90,7 +90,13 @@ async def build_orchestrator_context(
         allowed_tool_keys = PolicyService.get_team_allowed_tools(db, team_id)
         team_allowed_connections = PolicyService.get_team_allowed_connections(db, team_id)
         if team_allowed_connections:
-            team_connection_ids = [c for c in accessible_ids if c in team_allowed_connections]
+            # The shared sample is never on a team whitelist — keep it visible.
+            from backend.services.seed import shared_sample_ids
+            sample_ids = shared_sample_ids(db)
+            team_connection_ids = [
+                c for c in accessible_ids
+                if c in team_allowed_connections or c in sample_ids
+            ]
         # joinedload(profile): _build_dynamic_tools reads agent.profile after the
         # chat/websocket handlers close the session, and a lazy load on a detached
         # row raises DetachedInstanceError.

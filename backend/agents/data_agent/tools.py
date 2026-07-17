@@ -77,7 +77,8 @@ def _serve_query_via_dataplane(connection, sql: str, db) -> Optional[Any]:
             return None
 
     try:
-        base_sql, _ = rewrite_table_refs(transpiled, table_map)
+        from backend.utils.sql_refs import qualifier_allowlist
+        base_sql, _ = rewrite_table_refs(transpiled, table_map, qualifier_allowlist(connection))
     except Exception:
         return None  # unparseable post-transpile SQL → live source
 

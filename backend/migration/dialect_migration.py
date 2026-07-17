@@ -58,6 +58,14 @@ class DashboardDialectResult:
         return not self.unparseable
 
 
+def _force_widgets_dirty(dashboard) -> None:
+    """Reassigning the same list ref isn't dirty-tracked — force the JSONB
+    column to flush. No-op for non-ORM stand-ins (unit-test stubs)."""
+    from sqlalchemy import inspect
+    if inspect(dashboard, raiseerr=False) is not None:
+        flag_modified(dashboard, "widgets")
+
+
 def transpile_dashboard_widgets(widgets: list[dict], *, dry_run: bool = False) -> DashboardDialectResult:
     """Transpile every widget's `dataSource.sql` BigQuery → DuckDB, in place.
 
@@ -148,7 +156,7 @@ def migrate_dashboard(dashboard, *, dry_run: bool = False, db) -> DashboardMigra
         return DashboardMigrationOutcome(dashboard.id, "dry_run", result.rewrites)
 
     dashboard.widgets = widgets  # reassign so the JSONB column flushes
-    flag_modified(dashboard, "widgets")  # reassigning the same list ref isn't dirty-tracked; force it
+    _force_widgets_dirty(dashboard)
     db.add(dashboard)
     db.add(DashboardDialectMigration(
         dashboard_id=dashboard.id,
@@ -203,7 +211,7 @@ def rollback_dashboard(dashboard_id: int, *, db=None) -> str:
             if wid in old_by_widget and isinstance(ds, dict):
                 ds["sql"] = old_by_widget[wid]
         dashboard.widgets = widgets
-        flag_modified(dashboard, "widgets")  # same-ref reassign isn't dirty-tracked; force it
+        _force_widgets_dirty(dashboard)
         db.add(dashboard)
 
     db.delete(journal)

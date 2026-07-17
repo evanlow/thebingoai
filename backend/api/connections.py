@@ -91,7 +91,12 @@ def _governance_require_mutate_connection(current_user, connection) -> None:
 
     The collaborative-workspace policy lets any org-mate see a connection,
     but only the owner, a per-org admin, or a bingo_admin may mutate it.
+    The shared sample is read-only for everyone: the community-edition
+    governance check is a no-op Permit, so it must be blocked here.
     """
+    from backend.services.seed import is_shared_sample
+    if is_shared_sample(connection):
+        raise HTTPException(status_code=403, detail="The shared sample connection is read-only")
     from backend.governance.contract import require as governance_require
     governance_require(
         user=current_user,

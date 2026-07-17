@@ -455,7 +455,8 @@ def _rewrite_widgets_for_connection(
                 continue
 
             wid = widget.get("id") or widget.get("widgetId") or ""
-            new_sql, success = rewrite_table_refs(sql, mapping)
+            from backend.utils.sql_refs import qualifier_allowlist
+            new_sql, success = rewrite_table_refs(sql, mapping, qualifier_allowlist(connection))
 
             if not success:
                 # Queue for manual review

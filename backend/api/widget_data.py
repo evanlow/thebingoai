@@ -498,17 +498,19 @@ def _readable_connection(db, connection_id, current_user, dashboard):
     from backend.services.seed import shared_sample_clause
     _, is_shared = _serving_org_and_shared(dashboard, current_user) if dashboard else (None, False)
     q = db.query(DatabaseConnection).filter(DatabaseConnection.id == connection_id)
-    # Shared read-only sample: readable by any user, independent of dashboard.
-    sample = q.filter(shared_sample_clause()).first()
-    if sample is not None:
-        return sample
     if is_shared:
-        return (
+        connection = (
             q.join(User, DatabaseConnection.user_id == User.id)
             .filter(User.org_id == str(dashboard.org_id))
             .first()
         )
-    return q.filter(DatabaseConnection.user_id == current_user.id).first()
+    else:
+        connection = q.filter(DatabaseConnection.user_id == current_user.id).first()
+    if connection is not None:
+        return connection
+    # Shared read-only sample: readable by any user, independent of dashboard.
+    # Checked only on ownership miss so the common case stays one query.
+    return q.filter(shared_sample_clause()).first()
 
 
 def _shared_serve_ctx(is_shared: bool, serving_org):
@@ -639,7 +641,10 @@ def _serve_widget_via_dataplane(
     # Widget SQL is written against source table names (e.g. `orders`); rewrite
     # them to the Pipeline's materialized plane table (e.g. `acme__orders`) so
     # the Parquet glob resolves. No-op when the connection has no pipelines.
-    base_sql, _ = rewrite_table_refs(request.sql, plane_table_map(connection, db))
+    from backend.utils.sql_refs import qualifier_allowlist
+    base_sql, _ = rewrite_table_refs(
+        request.sql, plane_table_map(connection, db), qualifier_allowlist(connection)
+    )
 
     # ── Dev: local plane → serve live over local Parquet ──────────────────
     if isinstance(plane, LocalFilesystemDataPlane):
@@ -1062,6 +1067,12 @@ async def refresh_dashboard_widgets(
             connection_id = data_source.get("connectionId")
             sql = data_source.get("sql")
             mapping = data_source.get("mapping")
+            # Widgets JSONB may carry connectionId as a string; sample_conn_ids
+            # holds DB ints, so normalize before the membership test below.
+            try:
+                connection_id = int(connection_id)
+            except (TypeError, ValueError):
+                pass
 
             if not connection_id or not sql or not mapping:
                 results[widget_id] = {"error": "Incomplete dataSource (missing connectionId, sql, or mapping)"}
