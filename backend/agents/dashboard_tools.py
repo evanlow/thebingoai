@@ -569,9 +569,11 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
     db = db_session_factory()
     connector = None
     try:
+        from backend.services.seed import readable_connection_clause
+
         filters = [DatabaseConnection.id == connection_id]
         if user_id:
-            filters.append(DatabaseConnection.user_id == user_id)
+            filters.append(readable_connection_clause(user_id))
         connection = db.query(DatabaseConnection).filter(*filters).first()
         if not connection:
             logger.warning(f"Widget '{widget_id}': connection {connection_id} not found, skipping SQL execution")

@@ -213,14 +213,9 @@ async def cancel_dataset(
     if file_id.startswith("connection:"):
         try:
             cid = int(file_id.split(":", 1)[1])
-            from sqlalchemy import or_
-            from backend.services.seed import shared_sample_clause
             connection = db.query(DatabaseConnection).filter(
                 DatabaseConnection.id == cid,
-                or_(
-                    DatabaseConnection.user_id == current_user.id,
-                    shared_sample_clause(),
-                ),
+                DatabaseConnection.user_id == current_user.id,
             ).first()
         except (ValueError, IndexError):
             raise HTTPException(status_code=400, detail="Invalid connection reference")
@@ -248,6 +243,12 @@ async def cancel_dataset(
         )
 
     if connection:
+        # The shared sample is read-only for everyone — never deletable here,
+        # even if a lookup ever resolves it again (defense in depth).
+        from backend.services.seed import is_shared_sample
+        if is_shared_sample(connection):
+            raise HTTPException(status_code=403, detail="Sample connection is read-only")
+
         # Revoke any running Celery task
         try:
             from backend.tasks.upload_tasks import celery_app as _celery

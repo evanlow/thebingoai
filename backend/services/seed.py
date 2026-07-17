@@ -43,6 +43,14 @@ def shared_sample_clause():
     )
 
 
+def readable_connection_clause(user_id):
+    """Owner OR shared sample — the predicate for every read-path connection
+    lookup. Mutation paths must keep filtering on ownership alone."""
+    from sqlalchemy import or_
+
+    return or_(DatabaseConnection.user_id == user_id, shared_sample_clause())
+
+
 def is_shared_sample(connection) -> bool:
     """True when *connection* is the shared, read-only sample."""
     return (
@@ -126,16 +134,17 @@ def ensure_shared_sample(db: Session) -> None:
         except IntegrityError:
             db.rollback()
 
-    # 3. The single shared connection (idempotent by marker + sentinel scope).
-    #    No unique constraint backs the marker, so serialize the check-insert
-    #    across replicas with a transaction-scoped advisory lock (released by
-    #    the commit); the re-check under the lock makes exactly one row win.
-    connection = db.query(DatabaseConnection).filter(
-        shared_sample_clause(),
-        DatabaseConnection.source_filename == SAMPLE_SOURCE_MARKER,
-    ).first()
-    if connection is None:
-        db.execute(text("SELECT pg_advisory_xact_lock(hashtext('bingo_shared_sample'))"))
+    # Steps 3-8 run under a session-level advisory lock so exactly one replica
+    # provisions AND migrates: a transaction-scoped lock would be released by
+    # the first intermediate commit, letting concurrent replicas race
+    # migrate_connection (migration_journal.connection_id has no unique
+    # constraint). The lock lives on a dedicated raw connection because the
+    # pooled Session may switch underlying connections across commits.
+    lock_conn = db.get_bind().connect()
+    lock_conn.execute(text("SELECT pg_advisory_lock(hashtext('bingo_shared_sample'))"))
+    try:
+        # 3. The single shared connection (idempotent by marker + sentinel
+        #    scope). The re-check under the lock makes exactly one row win.
         connection = db.query(DatabaseConnection).filter(
             shared_sample_clause(),
             DatabaseConnection.source_filename == SAMPLE_SOURCE_MARKER,
@@ -158,63 +167,89 @@ def ensure_shared_sample(db: Session) -> None:
             connection.password = "sqlite"
             connection.ssl_ca_cert = None
             db.add(connection)
-        db.commit()
-        db.refresh(connection)
-
-    # 4. Retire the v1 dataset-type shared connection: repoint widgets built on
-    #    it to the sqlite-type connection, then drop it (its csv_<id> parquet is
-    #    left orphaned, harmless). Widget SQL is not rewritten — v1 table names
-    #    may differ; such widgets surface a query error instead of a dangling
-    #    "Connection not found".
-    legacy = db.query(DatabaseConnection).filter(
-        shared_sample_clause(),
-        DatabaseConnection.db_type == "dataset",
-    ).first()
-    if legacy is not None:
-        _repoint_widgets(db, old_connection_id=legacy.id, new_connection_id=connection.id)
-        db.delete(legacy)
-        db.commit()
-        logger.info("Removed v1 dataset-type shared sample (connection id=%s)", legacy.id)
-
-    # 5. Publish schema JSON from the bundled file (agents/UI need columns).
-    #    Best-effort: a discovery/save failure must not stop the migration
-    #    below — this step re-runs on the next boot.
-    if not connection.schema_json_path:
-        try:
-            from backend.api.sqlite_upload import _discover_sqlite_schema
-            from backend.services.schema_discovery import (
-                generate_schema_json, save_schema_file, schema_key_for,
-            )
-            schema_data = _discover_sqlite_schema(SAMPLE_DB_PATH)
-            schema_json = generate_schema_json(
-                connection_id=connection.id,
-                connection_name=connection.name,
-                db_type="sqlite",
-                schema_data=schema_data,
-            )
-            connection.schema_json_path = save_schema_file(schema_key_for(connection), schema_json)
-            connection.schema_generated_at = datetime.utcnow()
-            connection.table_count = len(schema_data["table_names"])
             db.commit()
-        except Exception:
-            db.rollback()
-            logger.warning(
-                "Schema discovery failed for shared sample %s", connection.id, exc_info=True,
-            )
+            db.refresh(connection)
 
-    # 6. Resolve the shared plane first (triggers provision-on-miss under
-    #    lockdown) so the migrator finds a plane to write to.
-    get_plane_for_connection(connection)
+        # 4. Retire the v1 dataset-type shared connection: repoint widgets built on
+        #    it to the sqlite-type connection, then drop it (its csv_<id> parquet is
+        #    left orphaned, harmless). Widget SQL is not rewritten — v1 table names
+        #    may differ; such widgets surface a query error instead of a dangling
+        #    "Connection not found".
+        legacy = db.query(DatabaseConnection).filter(
+            shared_sample_clause(),
+            DatabaseConnection.db_type == "dataset",
+        ).first()
+        if legacy is not None:
+            _repoint_widgets(db, old_connection_id=legacy.id, new_connection_id=connection.id)
+            db.delete(legacy)
+            db.commit()
+            logger.info("Removed v1 dataset-type shared sample (connection id=%s)", legacy.id)
 
-    # 7. Migrate sqlite → Parquet once. Idempotent: journal status='migrated'
-    #    returns "skipped"; a failed journal resets to pending on the next run.
-    from backend.migration.substrate import migrate_connection
-    result = migrate_connection(connection.id, db=db)
-    if result.status == "failed":
-        logger.warning("Shared sample migration failed: %s", result.error_message)
-        return
+        # 5. Publish schema JSON from the bundled file (agents/UI need columns).
+        #    Best-effort: a discovery/save failure must not stop the migration
+        #    below — this step re-runs on the next boot.
+        if not connection.schema_json_path:
+            try:
+                from backend.api.sqlite_upload import _discover_sqlite_schema
+                from backend.services.schema_discovery import (
+                    generate_schema_json, save_schema_file, schema_key_for,
+                )
+                schema_data = _discover_sqlite_schema(SAMPLE_DB_PATH)
+                schema_json = generate_schema_json(
+                    connection_id=connection.id,
+                    connection_name=connection.name,
+                    db_type="sqlite",
+                    schema_data=schema_data,
+                )
+                connection.schema_json_path = save_schema_file(schema_key_for(connection), schema_json)
+                connection.schema_generated_at = datetime.utcnow()
+                connection.table_count = len(schema_data["table_names"])
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.warning(
+                    "Schema discovery failed for shared sample %s", connection.id, exc_info=True,
+                )
 
-    logger.info(
-        "Shared sample ready: connection id=%s status=%s table=%s rows=%s",
-        connection.id, result.status, result.new_dataplane_table, result.rows_migrated,
-    )
+        # 6. Resolve the shared plane first (triggers provision-on-miss under
+        #    lockdown) so the migrator finds a plane to write to.
+        get_plane_for_connection(connection)
+
+        # 7. Migrate sqlite → Parquet once. Idempotent: journal status='migrated'
+        #    returns "skipped"; a failed journal resets to pending on the next run.
+        from backend.migration.substrate import migrate_connection
+        result = migrate_connection(connection.id, db=db)
+        if result.status == "failed":
+            logger.warning("Shared sample migration failed: %s", result.error_message)
+            return
+
+        # 8. Retire legacy per-user sample rows (pre-shared-sample seeding
+        #    created one SQLite copy per user): repoint their widgets to the
+        #    canonical connection, then delete. Only after a successful
+        #    migration so upgraded users never lose a working sample. Per-row
+        #    best-effort: an FK holder (pipeline, team policy, journal) blocks
+        #    that row's delete without failing boot. Widget SQL needs no
+        #    rewrite — legacy rows expose the identical sqlite schema.
+        legacy_rows = db.query(DatabaseConnection).filter(
+            DatabaseConnection.source_filename == SAMPLE_SOURCE_MARKER,
+            DatabaseConnection.id != connection.id,
+        ).all()
+        for row in legacy_rows:
+            try:
+                _repoint_widgets(db, old_connection_id=row.id, new_connection_id=connection.id)
+                db.delete(row)
+                db.commit()
+                logger.info("Removed legacy per-user sample connection id=%s", row.id)
+            except Exception:
+                db.rollback()
+                logger.warning(
+                    "Could not retire legacy sample connection id=%s", row.id, exc_info=True,
+                )
+
+        logger.info(
+            "Shared sample ready: connection id=%s status=%s table=%s rows=%s",
+            connection.id, result.status, result.new_dataplane_table, result.rows_migrated,
+        )
+    finally:
+        lock_conn.execute(text("SELECT pg_advisory_unlock(hashtext('bingo_shared_sample'))"))
+        lock_conn.close()
