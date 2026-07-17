@@ -203,6 +203,7 @@ const WIDGET_TYPE_LABELS: Record<string, string> = {
   pivot_table: 'Pivot Table',
   text: 'Text',
   filter: 'Filter',
+  section: 'Section',
 }
 
 const widgetDisplayName = computed(() =>
