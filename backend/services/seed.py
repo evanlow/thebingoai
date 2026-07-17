@@ -227,9 +227,10 @@ def ensure_shared_sample(db: Session) -> None:
         #    created one SQLite copy per user): repoint their widgets to the
         #    canonical connection, then delete. Only after a successful
         #    migration so upgraded users never lose a working sample. Per-row
-        #    best-effort: an FK holder (pipeline, team policy, journal) blocks
-        #    that row's delete without failing boot. Widget SQL needs no
-        #    rewrite — legacy rows expose the identical sqlite schema.
+        #    best-effort: an FK holder (pipeline, journal) blocks that row's
+        #    delete without failing boot. Widget SQL needs no rewrite — legacy
+        #    rows expose the identical sqlite schema.
+        from backend.models.team_connection_policy import TeamConnectionPolicy
         legacy_rows = db.query(DatabaseConnection).filter(
             DatabaseConnection.source_filename == SAMPLE_SOURCE_MARKER,
             DatabaseConnection.id != connection.id,
@@ -237,6 +238,11 @@ def ensure_shared_sample(db: Session) -> None:
         for row in legacy_rows:
             try:
                 _repoint_widgets(db, old_connection_id=row.id, new_connection_id=connection.id)
+                # Team whitelists never list the sample — drop stale policy rows
+                # first or their FK blocks the delete (same as connection DELETE).
+                db.query(TeamConnectionPolicy).filter(
+                    TeamConnectionPolicy.connection_id == row.id
+                ).delete()
                 db.delete(row)
                 db.commit()
                 logger.info("Removed legacy per-user sample connection id=%s", row.id)

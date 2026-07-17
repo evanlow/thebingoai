@@ -171,6 +171,30 @@ def test_ensure_shared_sample_retires_legacy_per_user_rows(monkeypatch, db_sessi
     assert dash.widgets[0]["dataSource"]["connectionId"] == canonical.id
 
 
+def test_ensure_shared_sample_retires_legacy_row_with_team_policy(monkeypatch, db_session, sample_user):
+    from backend.models.team import Team
+    from backend.models.team_connection_policy import TeamConnectionPolicy
+
+    _ensure_samples_org(db_session)
+    legacy = _make_connection(
+        db_session, user_id=sample_user.id, marker=seed.SAMPLE_SOURCE_MARKER,
+        name=seed.SAMPLE_CONNECTION_NAME,
+    )
+    team = Team(org_id=seed.SAMPLES_ORG_ID, name="legacy-policy-team")
+    db_session.add(team)
+    db_session.commit()
+    db_session.add(TeamConnectionPolicy(team_id=team.id, connection_id=legacy.id))
+    db_session.commit()
+
+    _patch_provisioning(monkeypatch)
+    seed.ensure_shared_sample(db_session)
+
+    assert db_session.get(DatabaseConnection, legacy.id) is None
+    assert db_session.query(TeamConnectionPolicy).filter(
+        TeamConnectionPolicy.connection_id == legacy.id
+    ).count() == 0
+
+
 def test_ensure_shared_sample_idempotent(monkeypatch, db_session):
     _patch_provisioning(monkeypatch)
     seed.ensure_shared_sample(db_session)
