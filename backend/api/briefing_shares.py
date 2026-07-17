@@ -8,13 +8,10 @@ The POST guard (ready + widget_snapshots present) is load-bearing: it is why
 GET /api/public/briefings/{token} can serve stored JSON and never run SQL.
 """
 
-import hashlib
 import logging
-import secrets
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.database.session import get_db
@@ -24,14 +21,15 @@ from backend.models.briefing import Briefing
 from backend.models.briefing_share import BriefingShare
 from backend.models.dashboard import Dashboard
 from backend.schemas.briefing import PublicBriefingResponse, strip_widget
+from backend.services.share_links import (
+    hash_token as _hash,  # test_briefing_shares.py imports _hash from this module
+    resolve_by_token,
+    upsert_share,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["briefing-shares"])
-
-
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _owned_briefing(db: Session, briefing_id: int, user: User) -> Briefing:
@@ -84,35 +82,31 @@ async def create_share(
         }
         return frozen, (dashboard.title if dashboard else None)
 
-    token = secrets.token_urlsafe(32)
-    share = db.query(BriefingShare).filter(BriefingShare.briefing_id == b.id).first()
-    if share is None:
+    def _make_row():
         widgets_frozen, dashboard_name = _freeze()
-        share = BriefingShare(
+        return BriefingShare(
             id=str(_uuid.uuid4()),
             briefing_id=b.id,
             created_by_user_id=current_user.id,
             widgets_frozen=widgets_frozen,
             dashboard_name=dashboard_name,
         )
-        db.add(share)
-    else:
+
+    def _refresh(share):
         share.widgets_frozen, share.dashboard_name = _freeze()
-    # Re-enabling rotates the token: the previous link dies immediately.
-    share.token_hash = _hash(token)
+
     try:
-        db.commit()
-    except IntegrityError:
-        # Two concurrent first-time enables both saw share is None. The loser
-        # loses the insert race but still rotates the token onto the row the
-        # winner just created — it cannot recover the winner's raw token.
-        db.rollback()
-        share = db.query(BriefingShare).filter(BriefingShare.briefing_id == b.id).first()
-        if share is None:
-            raise HTTPException(status_code=500, detail="Failed to create share link")
-        share.token_hash = _hash(token)
-        share.widgets_frozen, share.dashboard_name = _freeze()
-        db.commit()
+        # Rotation + concurrent-first-enable race recovery live in the shared
+        # helper; the comments explaining WHY are on upsert_share itself.
+        token = upsert_share(
+            db,
+            BriefingShare,
+            [BriefingShare.briefing_id == b.id],
+            _make_row,
+            _refresh,
+        )
+    except RuntimeError:
+        raise HTTPException(status_code=500, detail="Failed to create share link")
 
     logger.info("briefing %s share link enabled by user %s", b.id, current_user.id)
     # No server-built URL: this endpoint is only ever called from a browser,
@@ -147,11 +141,7 @@ public_router = APIRouter(prefix="/public", tags=["public"])
 async def resolve_share(token: str, db: Session = Depends(get_db)):
     """Resolve a share token to its briefing. No auth. Serves stored JSON only —
     never a connector, never SQL. Guaranteed by the POST /share guard."""
-    share = (
-        db.query(BriefingShare)
-        .filter(BriefingShare.token_hash == _hash(token))
-        .first()
-    )
+    share = resolve_by_token(db, BriefingShare, token)
     if share is None:
         # Generic 404 — do not distinguish never-existed from revoked.
         raise HTTPException(status_code=404, detail="This link isn't available")
