@@ -66,19 +66,30 @@
         <button
           data-testid="briefing-share-toggle"
           class="text-sm px-3 py-1 rounded-full border transition-colors disabled:opacity-50"
-          :class="shareUrl
+          :class="shareUrl || shareActive
             ? 'border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400'
             : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800'"
           :disabled="sharing"
           @click="shareUrl ? copyShareUrl() : enableSharing()"
         >
-          {{ shareUrl ? 'Shared · Copy link' : 'Share to web' }}
+          <!-- 'Shared · New link' (not 'Copy link'): after a reload the raw token
+               is unrecoverable (hashed at rest), so clicking mints a new link —
+               the label says so instead of silently rotating. -->
+          {{ shareUrl ? 'Shared · Copy link' : shareActive ? 'Shared · New link' : 'Share to web' }}
         </button>
       </div>
       <p v-if="shareError" data-pdf-ignore="true" class="text-sm text-rose-600 mb-4 text-right">
         {{ shareError }}
       </p>
-      <p v-if="shareUrl" data-pdf-ignore="true" class="text-sm text-neutral-500 mb-4 text-right">
+      <p v-if="shareUrl || shareActive" data-pdf-ignore="true" class="text-sm text-neutral-500 mb-4 text-right">
+        <!-- The URL is rendered as selectable text on purpose: clipboard write can
+             fail (permission denied) or silently no-op (non-secure context), and
+             this is then the owner's only way to retrieve the link. -->
+        <span
+          v-if="shareUrl"
+          data-testid="briefing-share-url"
+          class="block select-all break-all text-neutral-600 dark:text-neutral-400"
+        >{{ shareUrl }}</span>
         Anyone with the link can read this briefing.
         <button class="underline hover:text-neutral-700" :disabled="sharing" @click="disableSharing">Turn off</button>
       </p>
@@ -145,27 +156,71 @@ function formatRange(b: any) {
 const shareUrl = ref<string | null>(null)
 const shareError = ref<string | null>(null)
 const sharing = ref(false)
+// A share row exists server-side. Distinct from shareUrl: the raw token is
+// hashed at rest, so after a reload we can know sharing is ON but never
+// reconstruct the URL.
+const shareActive = ref(false)
+
+// Hydrate share status per briefing id. Also the reset that keeps stale share
+// state from leaking across ids when the page component is reused (see the
+// resetWidgets() watcher above).
+watch(
+  briefingId,
+  async (id) => {
+    shareUrl.value = null
+    shareError.value = null
+    shareActive.value = false
+    if (!id) return
+    try {
+      const { fetchWithRefresh } = useApi()
+      const resp = await fetchWithRefresh(`/api/briefings/${id}/share`, { method: 'GET' })
+      if (briefingId.value !== id) return // navigated away mid-flight — stale response
+      shareActive.value = !!resp?.active
+    } catch {
+      // Status probe only — on failure the button just reads 'Share to web'.
+    }
+  },
+  { immediate: true },
+)
 
 async function copyShareUrl() {
   if (!shareUrl.value) return
-  await navigator.clipboard?.writeText(shareUrl.value)
+  try {
+    await navigator.clipboard?.writeText(shareUrl.value)
+  } catch {
+    // Clipboard permission denied — the URL is still shown on screen.
+  }
 }
 
 async function enableSharing() {
   if (!briefing.value) return
   if (sharing.value) return
+  const id = briefing.value.id
   sharing.value = true
   shareError.value = null
   try {
     const { fetchWithRefresh } = useApi()
-    const resp = await fetchWithRefresh(`/api/briefings/${briefing.value.id}/share`, {
+    const resp = await fetchWithRefresh(`/api/briefings/${id}/share`, {
       method: 'POST',
     })
+    // Navigated to another briefing while the POST was in flight: applying the
+    // response now would show (and copy) briefing A's link on briefing B.
+    if (briefingId.value !== id) return
     // No server-built URL in the response: the browser already knows its own
     // origin. Mirrors stores/auth.ts's window.location.origin pattern for
     // our-own-app URLs handed to a user — no env var can be wrong or forgotten.
-    shareUrl.value = `${window.location.origin}/share/briefings/${resp.token}`
-    await navigator.clipboard?.writeText(shareUrl.value)
+    // The token rides in the FRAGMENT, not the path: fragments never leave the
+    // browser, so the raw credential stays out of server/proxy access logs and
+    // Referer headers. The share page reads it from location.hash.
+    shareUrl.value = `${window.location.origin}/share/briefings#${resp.token}`
+    shareActive.value = true
+    try {
+      await navigator.clipboard?.writeText(shareUrl.value)
+    } catch {
+      // Clipboard denial is not a share failure: the link was created and is
+      // shown on screen. Surfacing it as shareError invited a re-click, which
+      // rotates the token and kills the link that just succeeded.
+    }
   } catch (e: any) {
     // The 400 here is the fail-closed guard: a briefing without widget_snapshots
     // can't be shared, because the public view would otherwise live-query.
@@ -178,13 +233,16 @@ async function enableSharing() {
 async function disableSharing() {
   if (!briefing.value) return
   if (sharing.value) return
+  const id = briefing.value.id
   sharing.value = true
   shareError.value = null
   try {
     const { fetchWithRefresh } = useApi()
-    await fetchWithRefresh(`/api/briefings/${briefing.value.id}/share`, { method: 'DELETE' })
+    await fetchWithRefresh(`/api/briefings/${id}/share`, { method: 'DELETE' })
+    if (briefingId.value !== id) return // navigated away mid-flight — stale response
     shareUrl.value = null
     shareError.value = null
+    shareActive.value = false
   } catch (e: any) {
     shareError.value = e?.data?.detail || 'Could not turn off sharing.'
   } finally {

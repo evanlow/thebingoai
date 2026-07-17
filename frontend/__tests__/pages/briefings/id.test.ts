@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 
 // Regression: a briefing whose status is 'generating' has payload === null.
 // The Ready branch derefs briefing.payload!.headline, so without a dedicated
@@ -9,7 +9,10 @@ import { ref, computed, watch } from 'vue'
 vi.stubGlobal('ref', ref)
 vi.stubGlobal('computed', computed)
 vi.stubGlobal('watch', watch)
-vi.stubGlobal('useRoute', () => ({ params: { id: '48' } }))
+// Reactive so tests can simulate in-place /briefings/A -> /briefings/B
+// navigation (Nuxt reuses the page component on same-route param changes).
+const routeParams = reactive({ id: '48' })
+vi.stubGlobal('useRoute', () => ({ params: routeParams }))
 
 let briefingValue: any = null
 let loadingValue = false
@@ -51,6 +54,7 @@ describe('briefings/[id]', () => {
     document.body.innerHTML = ''
     loadingValue = false
     navigateToMock.mockClear()
+    routeParams.id = '48'
   })
 
   it('does not render the back button before the briefing loads', () => {
@@ -194,8 +198,9 @@ describe('briefings/[id]', () => {
 
     expect(retryFetchMock).toHaveBeenCalledWith('/api/briefings/48/share', { method: 'POST' })
     // No `url` in the response — the page builds it from the browser's own
-    // origin (mirrors stores/auth.ts's window.location.origin pattern).
-    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share/briefings/tok123`)
+    // origin (mirrors stores/auth.ts's window.location.origin pattern). The
+    // token rides in the FRAGMENT so it never reaches server access logs.
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share/briefings#tok123`)
   })
 
   it('surfaces the 400 when a briefing predates chart snapshots', async () => {
@@ -216,6 +221,7 @@ describe('briefings/[id]', () => {
     const writeText = vi.fn()
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({ active: false }) // mount-time GET /share hydration
     retryFetchMock.mockResolvedValueOnce({
       token: 'tok123',
     })
@@ -241,6 +247,7 @@ describe('briefings/[id]', () => {
     const writeText = vi.fn()
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({ active: false }) // mount-time GET /share hydration
     retryFetchMock.mockResolvedValueOnce({
       token: 'tok123',
     })
@@ -263,6 +270,7 @@ describe('briefings/[id]', () => {
     const writeText = vi.fn()
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({ active: false }) // mount-time GET /share hydration
     retryFetchMock.mockResolvedValueOnce({
       token: 'tok123',
     })
@@ -288,7 +296,7 @@ describe('briefings/[id]', () => {
     await turnOffBtn!.trigger('click')
     await flushPromises()
 
-    expect(retryFetchMock).toHaveBeenNthCalledWith(3, '/api/briefings/48/share', { method: 'DELETE' })
+    expect(retryFetchMock).toHaveBeenNthCalledWith(4, '/api/briefings/48/share', { method: 'DELETE' })
     expect(document.body.textContent).toContain('Share to web')
     expect(document.body.textContent).not.toContain('Server exploded while turning off sharing.')
   })
@@ -297,6 +305,7 @@ describe('briefings/[id]', () => {
     const writeText = vi.fn()
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({ active: false }) // mount-time GET /share hydration
     retryFetchMock.mockResolvedValueOnce({
       token: 'tok123',
     })
@@ -305,15 +314,82 @@ describe('briefings/[id]', () => {
     const wrapper = mountPage()
     await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
     await flushPromises()
-    expect(retryFetchMock).toHaveBeenCalledTimes(1)
+    expect(retryFetchMock).toHaveBeenCalledTimes(2)
     writeText.mockClear()
 
     await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
     await flushPromises()
 
-    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share/briefings/tok123`)
-    expect(retryFetchMock).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share/briefings#tok123`)
+    expect(retryFetchMock).toHaveBeenCalledTimes(2)
     expect(retryFetchMock).not.toHaveBeenCalledWith('/api/briefings/48/share', { method: 'DELETE' })
     expect(document.body.textContent).toContain('Shared · Copy link')
+  })
+
+  it('hydrates share status on load: an already-shared briefing shows "Shared · New link", never "Share to web"', async () => {
+    // The whole reason GET /share exists: without hydration the button reads
+    // "Share to web" and a click silently rotates the token, killing the link
+    // the owner already distributed.
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({ active: true })
+    briefingValue = READY()
+
+    mountPage()
+    await flushPromises()
+
+    expect(retryFetchMock).toHaveBeenCalledWith('/api/briefings/48/share', { method: 'GET' })
+    expect(document.body.textContent).toContain('Shared · New link')
+    expect(document.body.textContent).not.toContain('Share to web')
+    // The revoke escape hatch must be reachable without minting a new token.
+    expect(document.body.textContent).toContain('Turn off')
+  })
+
+  it('a clipboard failure after a successful share does not surface a share error', async () => {
+    const writeText = vi.fn().mockRejectedValue(new DOMException('denied', 'NotAllowedError'))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({ active: false }) // mount-time GET /share hydration
+    retryFetchMock.mockResolvedValueOnce({ token: 'tok123' })
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+
+    // The share succeeded — showing "Could not create a share link" here
+    // invited a re-click, which rotates the token and kills the working link.
+    expect(document.body.textContent).toContain('Shared · Copy link')
+    expect(document.body.textContent).not.toContain('Could not create a share link')
+    // With the clipboard dead, the rendered selectable URL is the owner's only
+    // way to retrieve the link they just made public.
+    const urlEl = document.body.querySelector('[data-testid="briefing-share-url"]')
+    expect(urlEl).not.toBeNull()
+    expect(urlEl!.textContent).toContain('/share/briefings#tok123')
+  })
+
+  it('navigating to another briefing resets share state — no wrong-briefing URL or DELETE', async () => {
+    // Nuxt reuses the page component across /briefings/:id changes. Without a
+    // reset, briefing B renders A's "Shared · Copy link", Copy copies A's URL,
+    // and Turn off DELETEs against B while A stays exposed.
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    retryFetchMock.mockReset()
+    retryFetchMock.mockResolvedValueOnce({ active: false }) // mount-time GET for briefing 48
+    retryFetchMock.mockResolvedValueOnce({ token: 'tokA' }) // POST share on 48
+    retryFetchMock.mockResolvedValueOnce({ active: false }) // hydration GET for briefing 50
+    briefingValue = READY()
+
+    const wrapper = mountPage()
+    await wrapper.find('[data-testid="briefing-share-toggle"]').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Shared · Copy link')
+
+    routeParams.id = '50' // in-place navigation, component NOT remounted
+    await flushPromises()
+
+    expect(retryFetchMock).toHaveBeenCalledWith('/api/briefings/50/share', { method: 'GET' })
+    expect(document.body.textContent).toContain('Share to web')
+    expect(document.body.textContent).not.toContain('tokA')
+    expect(retryFetchMock).not.toHaveBeenCalledWith(expect.anything(), { method: 'DELETE' })
   })
 })

@@ -12,6 +12,7 @@ import logging
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from backend.database.session import get_db
@@ -30,6 +31,14 @@ from backend.services.share_links import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["briefing-shares"])
+
+
+def _referenced_widget_ids(payload: dict | None) -> set:
+    return {
+        str(s["widget_id"])
+        for s in (payload or {}).get("sections", [])
+        if isinstance(s, dict) and s.get("widget_id")
+    }
 
 
 def _owned_briefing(db: Session, briefing_id: int, user: User) -> Briefing:
@@ -59,7 +68,13 @@ async def create_share(
     # Load-bearing: without inline snapshots the public view would fall back to
     # a live SQL re-query. Refusing here is what keeps the anonymous path
     # structurally incapable of querying. Do not relax.
-    if not (b.payload or {}).get("widget_snapshots"):
+    #
+    # Gated on the briefing actually referencing widgets: generation only writes
+    # widget_snapshots when at least one section carries a widget_id, so a
+    # text-only briefing legitimately has none — and with no embeds there is no
+    # SQL-fallback risk to guard against.
+    referenced = _referenced_widget_ids(b.payload)
+    if referenced and not (b.payload or {}).get("widget_snapshots"):
         raise HTTPException(
             status_code=400,
             detail="This briefing predates chart snapshots and can't be shared. "
@@ -115,6 +130,24 @@ async def create_share(
     return {"token": token}
 
 
+@router.get("/briefings/{briefing_id}/share")
+async def get_share_status(
+    briefing_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Whether a public link is active. Only sha256(token) is stored, so the
+    URL itself is not re-derivable — the frontend uses this to show the shared
+    state after a reload and offer 'new link' (rotate) or 'turn off', instead
+    of silently rotating a link the owner already distributed."""
+    b = _owned_briefing(db, briefing_id, current_user)
+    active = (
+        db.query(BriefingShare.id).filter(BriefingShare.briefing_id == b.id).first()
+        is not None
+    )
+    return {"active": active}
+
+
 @router.delete("/briefings/{briefing_id}/share", status_code=204)
 async def delete_share(
     briefing_id: int,
@@ -137,11 +170,21 @@ async def delete_share(
 public_router = APIRouter(prefix="/public", tags=["public"])
 
 
-@public_router.get("/briefings/{token}", response_model=PublicBriefingResponse)
-async def resolve_share(token: str, db: Session = Depends(get_db)):
+class ResolveShareRequest(BaseModel):
+    token: str
+
+
+@public_router.post("/briefings/resolve", response_model=PublicBriefingResponse)
+async def resolve_share(req: ResolveShareRequest, db: Session = Depends(get_db)):
     """Resolve a share token to its briefing. No auth. Serves stored JSON only —
-    never a connector, never SQL. Guaranteed by the POST /share guard."""
-    share = resolve_by_token(db, BriefingShare, token)
+    never a connector, never SQL. Guaranteed by the POST /share guard.
+
+    The token travels in the POST body, never the URL path: uvicorn/nginx
+    access logs record request paths verbatim, so a path token would land the
+    raw credential in ordinary logs, defeating hashed-at-rest storage. The
+    browser side keeps it out of server-visible URLs too (fragment, see
+    pages/share/briefings/index.vue)."""
+    share = resolve_by_token(db, BriefingShare, req.token)
     if share is None:
         # Generic 404 — do not distinguish never-existed from revoked.
         raise HTTPException(status_code=404, detail="This link isn't available")
@@ -158,8 +201,9 @@ async def resolve_share(token: str, db: Session = Depends(get_db)):
     # payload was mutated after sharing (or a legacy row from before the guard
     # existed) would silently degrade to widget_snapshots={}, which is exactly
     # the "absent" signal the frontend uses to fall back to a live SQL refresh —
-    # the one thing this endpoint exists to prevent.
-    if not snapshots:
+    # the one thing this endpoint exists to prevent. Text-only briefings
+    # (no referenced widgets → no embeds → no fallback risk) pass with {}.
+    if _referenced_widget_ids(payload) and not snapshots:
         raise HTTPException(status_code=404, detail="This link isn't available")
 
     # Widget shape and dashboard name are NOT read live — they were frozen onto
@@ -197,8 +241,10 @@ async def resolve_share(token: str, db: Session = Depends(get_db)):
             dashboard_name=share.dashboard_name,
             created_at=b.created_at,
         )
-    except KeyError:
-        # Malformed/legacy payload missing a required field. Same generic 404
-        # as every other failure — a 500 here would tell an attacker the token
-        # was valid (unknown tokens 404 too).
+    except (KeyError, ValidationError):
+        # Malformed/legacy payload: a missing required field raises KeyError,
+        # a present-but-invalid one (deck=None, section prose=None) raises
+        # pydantic ValidationError. Same generic 404 as every other failure —
+        # a 500 here would tell an attacker the token was valid (unknown
+        # tokens 404 too).
         raise HTTPException(status_code=404, detail="This link isn't available")

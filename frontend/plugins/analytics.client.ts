@@ -13,14 +13,14 @@ export default defineNuxtPlugin(() => {
   // Nuxt's router plugin re-runs the initial navigation after app:created,
   // so this covers first load + every SPA route change exactly once.
   //
-  // We report the MATCHED ROUTE PATTERN (e.g. "/share/briefings/:token"),
-  // never the concrete to.path/from.path. Query strings carry secrets
+  // We report the MATCHED ROUTE PATTERN (e.g. "/briefings/:id"), never the
+  // concrete to.path/from.path. Query strings carry secrets
   // (auth/reset/invite tokens) — that's the case setAnalyticsPage's
-  // page_location override below handles. But some routes carry a secret
-  // directly in the path itself (the briefing share token IS the path
-  // segment in /share/briefings/[token]), so path-only is not enough:
-  // reporting the route pattern instead means no dynamic segment, for this
-  // route or any future one, can ever reach GA.
+  // page_location override below handles. But a route can carry a secret
+  // directly in the path itself (the briefing share token originally rode
+  // in the path before moving to the URL fragment), so path-only is not
+  // enough: reporting the route pattern instead means no dynamic segment,
+  // for this route or any future one, can ever reach GA.
   const UNMATCHED = '/unmatched'
   const router = useRouter()
   router.afterEach((to, from) => {

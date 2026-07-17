@@ -141,6 +141,45 @@ def test_create_share_400_when_widget_snapshots_present_but_falsy(
     assert "snapshot" in resp.json()["detail"].lower()
 
 
+def test_text_only_briefing_shares_and_resolves_without_snapshots(
+    anonymous_client, authenticated_client, db_session, sample_dashboard, sample_user
+):
+    """Generation only writes widget_snapshots when a section references a
+    widget, so a text-only briefing legitimately has none. It embeds nothing,
+    so there is no live-SQL-fallback risk — the snapshot guard must not block
+    it at mint time, and the resolve-time re-check must not 404 it."""
+    payload = dict(READY_PAYLOAD)
+    payload["sections"] = [{"heading": "One", "prose": "p", "widget_id": None}]
+    payload.pop("widget_snapshots")
+    b = _briefing(db_session, sample_dashboard, sample_user, payload=payload)
+
+    resp = authenticated_client.post(f"/api/briefings/{b.id}/share")
+    assert resp.status_code == 201
+    token = resp.json()["token"]
+
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["headline"] == "Revenue up 12%"
+    assert body["widget_snapshots"] == {}
+    assert body["widgets"] == {}
+
+
+def test_create_share_still_400_when_widgets_referenced_but_snapshots_missing(
+    authenticated_client, db_session, sample_dashboard, sample_user
+):
+    """The inverse of the text-only case: sections DO reference a widget but
+    snapshots are gone — the fail-closed guard must still refuse, or the
+    public page would render an embed with no frozen data behind it."""
+    payload = dict(READY_PAYLOAD)
+    payload["widget_snapshots"] = {}
+    b = _briefing(db_session, sample_dashboard, sample_user, payload=payload)
+
+    resp = authenticated_client.post(f"/api/briefings/{b.id}/share")
+    assert resp.status_code == 400
+    assert "snapshot" in resp.json()["detail"].lower()
+
+
 def test_create_share_400_when_not_ready(
     authenticated_client, db_session, sample_dashboard, sample_user
 ):
@@ -194,7 +233,7 @@ def test_public_resolve_returns_payload(
 ):
     b, token = _make_shared(authenticated_client, db_session, sample_dashboard, sample_user)
 
-    resp = anonymous_client.get(f"/api/public/briefings/{token}")
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
     assert resp.status_code == 200
     body = resp.json()
     assert body["headline"] == "Revenue up 12%"
@@ -211,7 +250,7 @@ def test_public_resolve_leaks_nothing(
     to the response later trips this rather than sliding through."""
     b, token = _make_shared(authenticated_client, db_session, sample_dashboard, sample_user)
 
-    raw = anonymous_client.get(f"/api/public/briefings/{token}").text
+    raw = anonymous_client.post("/api/public/briefings/resolve", json={"token": token}).text
 
     assert "SELECT secret FROM revenue" not in raw
     assert "conn-abc" not in raw
@@ -267,13 +306,111 @@ def test_public_resolve_strips_nested_sql_from_widgets_without_a_snapshot(
     b = _briefing(db_session, sample_dashboard, sample_user, payload=payload)
     token = authenticated_client.post(f"/api/briefings/{b.id}/share").json()["token"]
 
-    resp = anonymous_client.get(f"/api/public/briefings/{token}")
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
     assert resp.status_code == 200
     raw = resp.text
     assert "SELECT DISTINCT region FROM secret_regions" not in raw
     assert "conn-nested-secret" not in raw
     assert "optionsSource" not in raw
     assert "filter_1" not in resp.json()["widgets"]
+
+
+def test_get_share_status_reflects_lifecycle(
+    authenticated_client, db_session, sample_dashboard, sample_user
+):
+    """GET /share is what lets the page hydrate after a reload instead of
+    showing 'Share to web' on an already-shared briefing — where a click
+    would silently rotate the token and kill the distributed link."""
+    b = _briefing(db_session, sample_dashboard, sample_user)
+
+    assert authenticated_client.get(f"/api/briefings/{b.id}/share").json() == {"active": False}
+
+    authenticated_client.post(f"/api/briefings/{b.id}/share")
+    body = authenticated_client.get(f"/api/briefings/{b.id}/share").json()
+    assert body == {"active": True}
+    # Status only — the raw token is hashed at rest and must not reappear here.
+    assert "token" not in body and "url" not in body
+
+    authenticated_client.delete(f"/api/briefings/{b.id}/share")
+    assert authenticated_client.get(f"/api/briefings/{b.id}/share").json() == {"active": False}
+
+
+def test_get_share_status_404_when_not_owner(
+    authenticated_client, db_session, sample_dashboard, other_user
+):
+    b = _briefing(db_session, sample_dashboard, other_user)
+    # 404, not 403 — do not confirm the briefing exists to a stranger.
+    assert authenticated_client.get(f"/api/briefings/{b.id}/share").status_code == 404
+
+
+def test_public_resolve_404_not_500_when_payload_fails_validation(
+    anonymous_client, authenticated_client, db_session, sample_dashboard, sample_user
+):
+    """A present-but-invalid field (deck=None) passes the mint-time guard and
+    the payload[...] key lookups, then fails pydantic — a ValidationError, not
+    a KeyError. It must still be the generic 404: a 500 would tell an attacker
+    the token was valid, since unknown tokens 404."""
+    b, token = _make_shared(authenticated_client, db_session, sample_dashboard, sample_user)
+
+    b.payload = {**b.payload, "deck": None}
+    db_session.add(b)
+    db_session.commit()
+
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "This link isn't available"
+
+
+def test_public_resolve_scrubs_nested_secrets_even_on_snapshotted_widgets(
+    anonymous_client, authenticated_client, db_session, sample_dashboard, sample_user
+):
+    """The `wid in snapshots` gate only keeps nested secrets out because
+    filter-style widgets happen to never get snapshots. strip_widget must not
+    rely on that coincidence: a widget that BOTH has a snapshot AND nests
+    sql/connectionId inside the retained `widget` subtree must come out clean."""
+    sample_dashboard.widgets = [
+        {
+            "id": "chart_1",
+            "title": "Revenue",
+            "widget": {
+                "config": {
+                    "type": "line",
+                    "rows": ["safe-row"],
+                    "controls": [
+                        {
+                            "type": "dropdown",
+                            "label": "Region",
+                            "optionsSource": {
+                                "connectionId": "conn-nested-secret",
+                                "sql": "SELECT DISTINCT region FROM secret_regions",
+                            },
+                        }
+                    ],
+                }
+            },
+            "dataSource": {
+                "connectionId": "conn-abc",
+                "sql": "SELECT revenue FROM t",
+                "mapping": {"x": "date", "y": "revenue"},
+            },
+        }
+    ]
+    db_session.add(sample_dashboard)
+    db_session.commit()
+
+    b = _briefing(db_session, sample_dashboard, sample_user)
+    token = authenticated_client.post(f"/api/briefings/{b.id}/share").json()["token"]
+
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
+    assert resp.status_code == 200
+    raw = resp.text
+    assert "SELECT DISTINCT region FROM secret_regions" not in raw
+    assert "conn-nested-secret" not in raw
+    assert "optionsSource" not in raw
+    # Non-secret nested keys survive the scrub — this is stripping, not dropping.
+    config = resp.json()["widgets"]["chart_1"]["widget"]["config"]
+    assert config["rows"] == ["safe-row"]
+    assert config["controls"][0]["label"] == "Region"
 
 
 def test_public_resolve_404_when_widget_snapshots_missing_after_share(
@@ -287,13 +424,13 @@ def test_public_resolve_404_when_widget_snapshots_missing_after_share(
     thing this endpoint exists to prevent. It must 404 instead."""
     b, token = _make_shared(authenticated_client, db_session, sample_dashboard, sample_user)
 
-    assert anonymous_client.get(f"/api/public/briefings/{token}").status_code == 200
+    assert anonymous_client.post("/api/public/briefings/resolve", json={"token": token}).status_code == 200
 
     b.payload = {**b.payload, "widget_snapshots": None}
     db_session.add(b)
     db_session.commit()
 
-    resp = anonymous_client.get(f"/api/public/briefings/{token}")
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
     assert resp.status_code == 404
 
 
@@ -321,21 +458,21 @@ def test_public_resolve_needs_no_auth_header_at_all(
     db_session.commit()
 
     assert "Authorization" not in anonymous_client.headers
-    assert anonymous_client.get(f"/api/public/briefings/{token}").status_code == 200
+    assert anonymous_client.post("/api/public/briefings/resolve", json={"token": token}).status_code == 200
 
 
 def test_public_resolve_404_for_unknown_token(anonymous_client):
-    assert anonymous_client.get("/api/public/briefings/not-a-real-token").status_code == 404
+    assert anonymous_client.post("/api/public/briefings/resolve", json={"token": "not-a-real-token"}).status_code == 404
 
 
 def test_public_resolve_404_after_revoke(
     anonymous_client, authenticated_client, db_session, sample_dashboard, sample_user
 ):
     b, token = _make_shared(authenticated_client, db_session, sample_dashboard, sample_user)
-    assert anonymous_client.get(f"/api/public/briefings/{token}").status_code == 200
+    assert anonymous_client.post("/api/public/briefings/resolve", json={"token": token}).status_code == 200
 
     authenticated_client.delete(f"/api/briefings/{b.id}/share")
-    assert anonymous_client.get(f"/api/public/briefings/{token}").status_code == 404
+    assert anonymous_client.post("/api/public/briefings/resolve", json={"token": token}).status_code == 404
 
 
 def test_public_resolve_serves_frozen_view_not_live_dashboard(
@@ -383,7 +520,7 @@ def test_public_resolve_serves_frozen_view_not_live_dashboard(
     db_session.add(sample_dashboard)
     db_session.commit()
 
-    resp = anonymous_client.get(f"/api/public/briefings/{token}")
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
     assert resp.status_code == 200
     raw = resp.text
     body = resp.json()
@@ -406,8 +543,8 @@ def test_rotating_the_token_kills_the_old_link(
     new = authenticated_client.post(f"/api/briefings/{b.id}/share").json()["token"]
 
     assert new != old
-    assert anonymous_client.get(f"/api/public/briefings/{old}").status_code == 404
-    assert anonymous_client.get(f"/api/public/briefings/{new}").status_code == 200
+    assert anonymous_client.post("/api/public/briefings/resolve", json={"token": old}).status_code == 404
+    assert anonymous_client.post("/api/public/briefings/resolve", json={"token": new}).status_code == 200
 
 
 def test_public_resolve_applies_redaction_policy_retroactively_to_frozen_widgets(
@@ -446,7 +583,7 @@ def test_public_resolve_applies_redaction_policy_retroactively_to_frozen_widgets
     db_session.add(share)
     db_session.commit()
 
-    resp = anonymous_client.get(f"/api/public/briefings/{token}")
+    resp = anonymous_client.post("/api/public/briefings/resolve", json={"token": token})
     assert resp.status_code == 200
     raw = resp.text
     body = resp.json()

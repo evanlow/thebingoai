@@ -4,16 +4,18 @@ import { ref, onMounted } from 'vue'
 
 // The public share page must render entirely from the one public endpoint.
 // Any authed call here is a bug: an anonymous visitor has no token for it.
+// The share token travels in the URL FRAGMENT and is resolved via POST body —
+// never a path or query segment — so the raw credential stays out of server
+// access logs and Referer headers.
 
 vi.stubGlobal('ref', ref)
 vi.stubGlobal('onMounted', onMounted)
 vi.stubGlobal('definePageMeta', () => {})
-vi.stubGlobal('useRoute', () => ({ params: { token: 'tok123' } }))
 
 const fetchMock = vi.fn()
 vi.stubGlobal('$fetch', fetchMock)
 
-import SharePage from '~/pages/share/briefings/[token].vue'
+import SharePage from '~/pages/share/briefings/index.vue'
 import BriefingBody from '~/components/briefings/BriefingBody.vue'
 
 const PUBLIC_PAYLOAD = {
@@ -36,20 +38,28 @@ const mountPage = () =>
     global: { stubs: { BriefingWidgetEmbed: true }, components: { BriefingBody } },
   })
 
-describe('share/briefings/[token]', () => {
+describe('share/briefings (fragment token)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     fetchMock.mockReset()
+    window.location.hash = '#tok123'
   })
 
-  it('renders the briefing from the public payload', async () => {
+  it('resolves the fragment token via POST body — never a token-bearing URL', async () => {
     fetchMock.mockResolvedValue(PUBLIC_PAYLOAD)
     mountPage()
     await flushPromises()
 
     expect(document.body.textContent).toContain('Revenue up 12%')
     expect(document.body.textContent).toContain('Grow')
-    expect(fetchMock).toHaveBeenCalledWith('/api/public/briefings/tok123')
+    expect(fetchMock).toHaveBeenCalledWith('/api/public/briefings/resolve', {
+      method: 'POST',
+      body: { token: 'tok123' },
+    })
+    // The token must appear in NO requested URL: a path/query token lands the
+    // raw credential in uvicorn/nginx access logs.
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.includes('tok123'))).toBe(false)
   })
 
   it('never calls an authed dashboard endpoint', async () => {
@@ -69,5 +79,14 @@ describe('share/briefings/[token]', () => {
     expect(document.body.textContent).toContain("isn't available")
     // Must not distinguish revoked from never-existed.
     expect(document.body.textContent).not.toContain('revoked')
+  })
+
+  it('makes no request at all when the fragment is empty', async () => {
+    window.location.hash = ''
+    mountPage()
+    await flushPromises()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain("isn't available")
   })
 })

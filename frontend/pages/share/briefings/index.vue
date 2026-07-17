@@ -45,13 +45,20 @@
 // This page reads one public endpoint and renders stored JSON — never an authed API.
 definePageMeta({ layout: 'blank' })
 
-const route = useRoute()
 const payload = ref<any>(null)
 const loading = ref(true)
 
 onMounted(async () => {
+  // The token lives in the URL FRAGMENT (/share/briefings#<token>), never in
+  // the path or query: fragments are not sent to servers, so the raw
+  // credential stays out of uvicorn/nginx access logs and Referer headers —
+  // only its sha256 exists server-side. It is resolved via a POST body for
+  // the same reason. Fragment reading is client-only, hence onMounted.
+  const token = window.location.hash.slice(1)
   try {
-    payload.value = await $fetch(`/api/public/briefings/${route.params.token}`)
+    payload.value = token
+      ? await $fetch('/api/public/briefings/resolve', { method: 'POST', body: { token } })
+      : null
   } catch {
     // 404 / revoked / never existed all look the same on purpose — do not
     // confirm token guesses.

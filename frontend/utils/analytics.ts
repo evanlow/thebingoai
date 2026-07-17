@@ -28,8 +28,10 @@ export function initAnalytics(id: string) {
   // gtag's automatic events (scroll etc.) can fire before the router
   // plugin's afterEach runs, and init has no route match yet to derive a
   // safe pattern from. A path segment can itself be a secret (the briefing
-  // share token IS the path in /share/briefings/[token]), so window.location
-  // .pathname is not safe to seed here, only the query would be. The router
+  // share token originally rode in the path; it now travels in the URL
+  // fragment, but nothing stops a future route from putting a secret in a
+  // dynamic segment), so window.location.pathname is not safe to seed here,
+  // only the query would be. The router
   // plugin's afterEach immediately overwrites this with the redacted route
   // pattern, so this bare-origin value is only ever visible to an
   // auto-event firing in the tiny window before the first afterEach runs.

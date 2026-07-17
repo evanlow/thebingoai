@@ -43,7 +43,11 @@ onMounted(async () => {
             { method: 'GET' },
           )
         : null
-    if (props.snapshot) {
+    // widget.value can be null with a snapshot still present: the backend
+    // serves widget_snapshots unfiltered, so a widget deleted from the
+    // dashboard before share time has a snapshot but no frozen shape. A
+    // snapshot alone can't render (no widget config) — skip, don't throw.
+    if (props.snapshot && widget.value) {
       // Snapshot present (generated post-rollout): merge the saved data config,
       // no SQL round-trip. mergeRefreshedConfig preserves editor-only columns.
       const { mergeRefreshedConfig } = await import('~/utils/widgetMerge')

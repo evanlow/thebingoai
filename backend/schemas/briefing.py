@@ -60,14 +60,31 @@ class BriefingResponse(BaseModel):
 # notably `dataSource` (SQL + connectionId) and `sources` — is dropped.
 _PUBLIC_WIDGET_KEYS = ("id", "widget", "title")
 
+# Keys that carry query/connection secrets at ANY depth. The top-level
+# allowlist alone is not enough: filter-style widgets nest connectionId + sql
+# at widget.config.controls[].optionsSource, inside the retained `widget`
+# subtree. Today such widgets never pass the `wid in snapshots` gate (only
+# widgets with a top-level dataSource get snapshots), but that is a cross-file
+# coincidence — scrub recursively so no future widget shape can leak through.
+_WIDGET_SECRET_KEYS = frozenset({"dataSource", "sources", "sql", "connectionId", "optionsSource"})
+
+
+def _scrub(v):
+    if isinstance(v, dict):
+        return {k: _scrub(x) for k, x in v.items() if k not in _WIDGET_SECRET_KEYS}
+    if isinstance(v, list):
+        return [_scrub(x) for x in v]
+    return v
+
 
 def strip_widget(w: dict) -> dict:
     """Reduce a dashboard widget to the keys safe for anonymous eyes.
 
-    Allowlist, not denylist: a new secret-bearing key added to widgets later
-    must not start leaking because nobody remembered to exclude it here.
+    Allowlist over top-level keys, plus a recursive denylist of secret-bearing
+    keys inside the retained subtrees. Idempotent — resolve_share re-applies it
+    to already-stripped frozen data at read time.
     """
-    return {k: w[k] for k in _PUBLIC_WIDGET_KEYS if k in w}
+    return {k: _scrub(w[k]) for k in _PUBLIC_WIDGET_KEYS if k in w}
 
 
 class PublicBriefingResponse(BaseModel):

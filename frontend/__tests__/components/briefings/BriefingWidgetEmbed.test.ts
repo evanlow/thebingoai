@@ -133,4 +133,19 @@ describe('BriefingWidgetEmbed', () => {
     expect(wrapper.emitted('loaded')).toHaveLength(1)
     expect(wrapper.find('div').exists()).toBe(false)
   })
+
+  it('renders nothing (and does not throw) when a snapshot is present but the widget shape is missing', async () => {
+    // Backend serves widget_snapshots unfiltered, so a widget deleted from the
+    // dashboard before share time arrives as snapshot-without-widget. The old
+    // code Object.assigned into a null widget, relying on the catch to swallow
+    // the TypeError — same blank render, but by accident.
+    const wrapper = mountEmbed({ widget: undefined, dashboardId: undefined, snapshot: { series: [1] } })
+    await settle(wrapper)
+
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(mockRefresh).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).widget).toBeNull()
+    expect(wrapper.emitted('loaded')).toHaveLength(1)
+    expect(wrapper.find('div').exists()).toBe(false)
+  })
 })
