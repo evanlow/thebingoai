@@ -23,7 +23,7 @@ CHART_GUIDANCE = """### Chart Type Selection
 - Pie/doughnut charts are **NEVER full-width** — max w=6
 - Default to w=6 and pair charts side-by-side at the same y row
 - w=12 ONLY for time-series line/area charts
-- Place charts in Section 3 (Analysis & Trends, y=5 to y=14)
+- Charts live inside the analysis sections, right after their `section` header widget
 
 ### Options Best Practices
 
@@ -36,6 +36,7 @@ CHART_GUIDANCE = """### Chart Type Selection
 - **Time-series**: always set `xAxisMode: "date"` when the x-axis is a date/datetime column
 - **Noisy daily time-series**: add a trendline on the main series — `{"trendline": {"type": "movingAverage", "period": 7}}` in its datasetColumns entry
 - **Known target/threshold** (quota, SLA, goal mentioned by the user): add ONE entry to `options.referenceLines`, e.g. `{"value": 10000, "label": "Target"}`
+- **Acceptable range / band** (SLA window, normal operating range): use `options.referenceBands`, e.g. `[{"from": 200, "to": 400, "label": "Normal range"}]` — shades the band behind the series
 - **Cumulative questions** ("running total", "growth to date"): set `cumulative: true` on the dataset column instead of writing window-function SQL
 - **Data labels**: `showDataLabels: true` on at most the single headline series — labels on every series clutter the chart
 - Skip animation config unless specifically requested — defaults are sensible

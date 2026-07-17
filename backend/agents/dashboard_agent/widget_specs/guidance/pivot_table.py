@@ -28,41 +28,30 @@ FROM sales
 WHERE region IS NOT NULL
 ```
 
-Widget config + mapping:
+Lean params (mapping is auto-derived from the dimension/value lists):
 ```json
 {
   "type": "pivot_table",
-  "config": {
-    "title": "Revenue by Region and Quarter",
-    "rowDimensions": [{"column": "region", "label": "Region"}],
-    "columnDimensions": [{"column": "quarter", "label": "Quarter"}],
-    "values": [{"column": "revenue", "label": "Revenue", "aggregation": "sum", "format": "currency"}],
-    "expandCollapse": true,
-    "showRowTotals": true,
-    "showColumnTotals": true
-  }
-}
-```
-Mapping lists the UNION of every referenced column:
-```json
-{
-  "type": "pivot_table",
-  "columnConfig": [
-    {"column": "region", "label": "Region"},
-    {"column": "quarter", "label": "Quarter"},
-    {"column": "revenue", "label": "Revenue"}
-  ]
+  "title": "Revenue by Region and Quarter",
+  "rowDimensions": [{"column": "region", "label": "Region"}],
+  "columnDimensions": [{"column": "quarter", "label": "Quarter"}],
+  "values": [{"column": "revenue", "label": "Revenue", "aggregation": "sum", "format": "currency"}],
+  "expandCollapse": true,
+  "showRowTotals": true,
+  "showColumnTotals": true,
+  "connectionId": 1,
+  "sql": "SELECT region, quarter, revenue FROM sales WHERE region IS NOT NULL"
 }
 ```
 
 ### Best Practices
 
-- Place pivot tables in Section 4 (Detail & Drill-Down, y=16+). Use w=12 alone, or w=8 paired
-  with a w=4 chart at the same y so the row fills all 12 columns.
+- Place pivot tables in the detail section (after its `section` header widget). Omit width
+  for w=12 alone, or set `width: 8` paired with a `width: 4` chart so the row fills 12 columns.
 - Sort row groups by the main metric: `"sortBy": "<value column>", "sortDir": "desc"`.
 - Keep column dimensions to 1 (2 max) — wide pivots are hard to read.
 - Use a hierarchy for row dimensions when there's a natural drill path; viewers expand/collapse it.
-- Always set `config.title`; do not add a separate Text widget to title the pivot.
+- Always set `title`; do not add a separate Text widget to title the pivot.
 - Set `format` on currency/percent metrics for readability.
 - Limits: ≤2 column dimensions, ≤10 row dimensions, ≤20 metrics.
 """

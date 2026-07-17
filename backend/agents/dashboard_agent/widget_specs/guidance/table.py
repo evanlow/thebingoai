@@ -17,11 +17,11 @@ FROM customers
 ORDER BY total_spent DESC
 LIMIT 100
 ```
-Mapping:
+Lean params:
 ```json
 {
   "type": "table",
-  "columnConfig": [
+  "columns": [
     {"column": "name", "label": "Customer", "sortable": true},
     {"column": "email", "label": "Email"},
     {"column": "created_at", "label": "Joined", "sortable": true, "format": "date"},
@@ -31,9 +31,9 @@ Mapping:
 }
 ```
 
-### Visual Column Features (set in mapping.columnConfig — config.columns is rebuilt from it)
+### Visual Column Features (set per entry in `columns`)
 
-Extended display fields MUST go in `mapping.columnConfig` entries, not `config.columns`:
+Extended display fields go on each `columns` entry (the backend lifts them into the mapping):
 - **Ranking tables** (top-N by a metric): set `displayType: "bar"` + `showBarValue: true` on the key metric — in-cell bars make rank obvious at a glance
 - **Dense numeric comparison** (many numeric columns): set `displayType: "heatmap"` on the metrics
 - **Share-of-total questions**: set `comparisonCalc: "percentOfTotal"` on the metric
@@ -43,30 +43,20 @@ Extended display fields MUST go in `mapping.columnConfig` entries, not `config.c
 
 ### Best Practices
 
-- Place tables in Section 4 (Detail & Drill-Down, y=16+)
-- Default width w=12, h=5
+- Place tables in the detail section (after its `section` header widget)
+- Tables always take a full-width row — the backend handles sizing
 - Always use LIMIT in SQL to avoid sending thousands of rows
 - Make key columns sortable for interactive exploration
 - Set format on every column that isn't plain text — it significantly improves readability
-- Always set `config.defaultSortKey` to the primary metric (with `defaultSortDir: "desc"`)
-- For totals, set `config.showSummaryRow: true` and `aggregation` on each metric column
-- **Always set `config.title`** — the table renders it as a label above the columns. Do NOT place a separate Text widget just to title a table; use `config.title` instead.
+- Always set `defaultSortKey` to the primary metric (with `defaultSortDir: "desc"`)
+- For totals, set `showSummaryRow: true` and `aggregation` on each metric column
+- **Always set `title`** — the table renders it as a label above the columns. Do NOT place a separate Text widget just to title a table; use `title` instead.
 
-Example with title:
+Example (lean) with title:
 ```json
-{
-  "id": "table_bookings",
-  "position": {"x": 0, "y": 16, "w": 12, "h": 5},
-  "widget": {
-    "type": "table",
-    "config": {
-      "title": "Availability, Bookability & Review Trends",
-      "columns": [...],
-      "pagination": true,
-      "rowsPerPage": 25
-    }
-  },
-  "dataSource": {...}
-}
+{"type": "table", "title": "Availability, Bookability & Review Trends",
+ "connectionId": 1, "sql": "SELECT ...",
+ "columns": [{"column": "name", "label": "Customer", "sortable": true}],
+ "pagination": true, "rowsPerPage": 25}
 ```
 """

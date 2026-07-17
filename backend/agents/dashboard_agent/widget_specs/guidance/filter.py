@@ -10,48 +10,42 @@ FILTER_GUIDANCE = """### Key Rules
 - **Filter dimensions MUST be reachable by ALL data widgets** — this is why every widget uses the baseJoin
 - **`date_range` controls MUST include `dateRangeSource`** (SQL returning `min_date`/`max_date`) and **`dateRangeDefault`** (one of `"full"`, `"7d"`, `"30d"`, `"90d"`, `"ytd"`)
 
-### Example Configuration
+### Example Configuration (lean)
 
 ```json
 {
-  "id": "filter_bar",
-  "position": {"x": 0, "y": 2, "w": 12, "h": 2},
-  "widget": {
-    "type": "filter",
-    "config": {
-      "controls": [
-        {
-          "type": "dropdown",
-          "label": "Region",
-          "key": "region",
-          "column": "region",
-          "dimension": "region",
-          "optionsSource": {
-            "connectionId": 1,
-            "sql": "SELECT DISTINCT o.region AS option_value FROM orders o ORDER BY 1"
-          }
-        },
-        {
-          "type": "date_range",
-          "label": "Date",
-          "key": "date",
-          "column": "order_date",
-          "dimension": "order_date",
-          "dateRangeSource": {
-            "connectionId": 1,
-            "sql": "SELECT MIN(o.order_date) AS min_date, MAX(o.order_date) AS max_date FROM orders o"
-          },
-          "dateRangeDefault": "full"
-        },
-        {
-          "type": "search",
-          "label": "Search",
-          "key": "search",
-          "column": "name"
-        }
-      ]
+  "type": "filter",
+  "controls": [
+    {
+      "type": "dropdown",
+      "label": "Region",
+      "key": "region",
+      "column": "region",
+      "dimension": "region",
+      "optionsSource": {
+        "connectionId": 1,
+        "sql": "SELECT DISTINCT o.region AS option_value FROM orders o ORDER BY 1"
+      }
+    },
+    {
+      "type": "date_range",
+      "label": "Date",
+      "key": "date",
+      "column": "order_date",
+      "dimension": "order_date",
+      "dateRangeSource": {
+        "connectionId": 1,
+        "sql": "SELECT MIN(o.order_date) AS min_date, MAX(o.order_date) AS max_date FROM orders o"
+      },
+      "dateRangeDefault": "full"
+    },
+    {
+      "type": "search",
+      "label": "Search",
+      "key": "search",
+      "column": "name"
     }
-  }
+  ]
 }
 ```
 
@@ -82,7 +76,7 @@ Set `dateRangeDefault` on `date_range` controls to configure the initial range w
 
 ### Best Practices
 
-- Place at y=0, w=12, h=2 (Section 1 — Filters, the VERY TOP row of the dashboard)
+- Emit the filter bar FIRST — it is the very top row of the dashboard (the backend pins it there)
 - Include 2-4 controls for key slicing dimensions from the data context
 - Use dropdown for categorical dimensions with reasonable cardinality
 - Use date_range for temporal dimensions
