@@ -5,6 +5,10 @@ from backend.agents.dashboard_agent.prompts import (
     build_dashboard_agent_prompt,
     build_dashboard_runtime_suffix,
 )
+from backend.agents.dashboard_prompt_blocks import (
+    DASHBOARD_MESH_WORKFLOW,
+    DASHBOARD_WORKFLOW,
+)
 from backend.agents.invoke_helpers import extract_final_answer, run_inline_react, run_via_mesh_runtime
 from backend.agents.prompt_resolver import resolve_agent_prompt
 from backend.agents.context import AgentContext
@@ -25,12 +29,13 @@ def _resolve_dashboard_agent_prompt(
     mesh_enabled: bool = False,
 ) -> str:
     """Resolve dashboard_agent prompt from profile or fallback to legacy."""
-    return resolve_agent_prompt(
+    use_mesh = mesh_enabled or settings.agent_mesh_enabled
+    prompt = resolve_agent_prompt(
         agent_type="dashboard_agent",
         context=context,
         db_session_factory=db_session_factory,
         runtime_context_extras={
-            "mesh_enabled": mesh_enabled or settings.agent_mesh_enabled,
+            "mesh_enabled": use_mesh,
             "target_connection_id": target_connection_id,
         },
         fallback=lambda: build_dashboard_agent_prompt(
@@ -48,6 +53,16 @@ def _resolve_dashboard_agent_prompt(
         ),
         log_prefix=__name__,
     )
+    # Mesh parity: the AgentProfile `tools` section embeds the inline
+    # DASHBOARD_WORKFLOW (direct list_tables/get_table_schema/profile_table calls),
+    # but mesh mode does not bind those tools — schema/profiling go through
+    # sessions_send to the data agent. ProfileRenderer.render() is agent-agnostic
+    # and can't do this swap, so we post-process the seeded workflow here. The
+    # fallback branch already emits the mesh prompt, so the replace is a no-op
+    # there. User-edited tools sections won't exact-match (documented limitation).
+    if use_mesh:
+        prompt = prompt.replace(DASHBOARD_WORKFLOW, DASHBOARD_MESH_WORKFLOW)
+    return prompt
 
 
 async def invoke_dashboard_agent(

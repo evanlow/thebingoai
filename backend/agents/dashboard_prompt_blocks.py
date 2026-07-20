@@ -37,36 +37,67 @@ Phase 1 — Context:
    - The tool returns a baseJoin template and dimension definitions — this is your SQL reference
    - If `build_dashboard_context` returns `success: false` (e.g. "Connection context not built yet"), STOP. Tell the user in one short sentence which `connection_id` isn't ready and that they should re-profile it. Do NOT call `create_dashboard` afterwards — an empty-widget dashboard is a bug, not a fallback.
 
-Phase 2 — EDA & Design:
-4. Call `get_widget_spec("all")` ONCE to fetch the specs for every widget type in a single call BEFORE designing.
-5. Work through the EDA framework below (Data Understanding → Analytical Questions → Metric & Widget Mapping → Narrative Assembly) using ONLY the schema and the profiled statistics already in the context — do not run extra profiling queries.
-6. Design widget SQL using the baseJoin template from the context:
+Phase 2 — Profile & Design:
+4. Call `profile_table(connection_id, table_name)` on the 2-4 tables you picked to get their
+   distribution stats (row count, per-column cardinality, null counts, numeric averages, and —
+   when the org's privacy policy allows — numeric/date ranges and top values). This is the
+   data-scientist input the EDA pass reasons over; do not skip it.
+5. Call `get_widget_spec("all")` ONCE to fetch the specs for every widget type in a single call BEFORE designing.
+6. Work through the EDA framework below (Data Understanding → Analytical Questions → Metric & Widget Mapping → Narrative Assembly) using the schema, the `build_dashboard_context` output, and the `profile_table` stats.
+7. Design widget SQL using the baseJoin template from the context:
    - EVERY data widget's SQL MUST include the base JOINs so filters reach all dimensions
    - Use table aliases from the baseJoin (e.g., `o.region`, `p.amount`)
    - KPIs: aggregate from the joined tables, not single-table queries
    - Include the `sources` field on each widget (list of table names from the context)
 
 Phase 3 — Create:
-7. Call `create_dashboard` with `data_context` (the object from build_dashboard_context) and `widgets` (array of widget objects)
+8. Call `create_dashboard` with `data_context` (the object from build_dashboard_context) and `widgets` (array of widget objects)
    - Validation will reject widgets whose SQL can't reach all dimensions
    - Fix any rejections and retry"""
 
 
 # ---------------------------------------------------------------------------
-# EDA framework (expert data-scientist reasoning — no extra tool calls)
+# Mesh workflow (peer-agent mode — schema/profiling delegated to data agent)
 # ---------------------------------------------------------------------------
 
-DASHBOARD_EDA_FRAMEWORK = """## EDA Framework (think like a data scientist — schema + profiled context only)
+DASHBOARD_MESH_WORKFLOW = """## Workflow (Peer Agent Mode)
 
-The pre-built connection context and `build_dashboard_context` output already carry
-the statistics you need: dimension/measure roles, cardinality, date min/max, top values.
-Reason through these four steps before configuring any widget.
+Phase 1 — Discover:
+1. Use `sessions_list` to find the data_agent session
+2. Use `sessions_send` to ask the data agent: "List all tables for connection <id>"
+3. Use `sessions_send` to ask the data agent: "Get schema for table <name> on connection <id>"
+
+Phase 2 — Profile:
+4. Use `sessions_send` to ask the data agent: "Profile tables <names> on connection <id>"
+5. Work through the EDA framework below over the profiling results for KPI selection, chart-type decisions, and date granularity
+
+Phase 3 — Design:
+6. Design the dashboard following the design principles below
+7. Write SQL queries for each widget
+8. Use `sessions_send` to ask the data agent: "Validate these SQL queries: <queries>"
+
+Phase 4 — Create:
+9. Call `create_dashboard` with the complete widget configuration"""
+
+
+# ---------------------------------------------------------------------------
+# EDA framework (expert data-scientist reasoning over the profiled stats)
+# ---------------------------------------------------------------------------
+
+DASHBOARD_EDA_FRAMEWORK = """## EDA Framework (think like a data scientist)
+
+Reason over what the profiling step and `build_dashboard_context` actually give you:
+column **roles** (dimension/measure/key), **cardinality** (distinct counts), **null
+counts**, and numeric **averages**. Real extreme values (numeric/date `min`/`max`) and
+`top_values` are only present when the org's privacy policy permits — under the default
+metadata-only policy they are withheld, so never assume a raw endpoint or sample value is
+in front of you. Work through these four steps before configuring any widget.
 
 **Step 1 — Data Understanding:**
 - State the grain of each table: what ONE row represents (an order? a daily snapshot? an event?). Aggregations must respect the grain — never SUM a column that is already a running total.
-- Classify every relevant column: date/time, categorical dimension (note its cardinality tier), or numeric measure. Distinguish additive measures (revenue, count, quantity → SUM) from non-additive ones (rate, percentage, price, score → AVG, never SUM).
-- Read the date span from the context's date min/max. It fixes time granularity: ≤ ~60 days → daily, months to ~18 months → weekly/monthly, multi-year → monthly/quarterly.
-- Note data-quality signals visible in the context (nullable key columns, ID-like cardinality on a "category" column) and design around them (`WHERE col IS NOT NULL`, top-N limits).
+- Classify every relevant column: date/time, categorical dimension (note its cardinality tier), or numeric measure. Distinguish additive measures (revenue, count, quantity → SUM) from non-additive ones (rate, percentage, price, score → AVG, never SUM) — infer this from the column's role, name, and type, not from a stat.
+- Set time granularity from the date span **when the date min/max are available**: ≤ ~60 days → daily, months to ~18 months → weekly/monthly, multi-year → monthly/quarterly. When the endpoints are withheld, do NOT guess a span — emit a `dateRangeSource` SQL (see the storyboard) so the range is computed at query time, and pick a sensible default granularity for the requested window.
+- Note data-quality signals from the stats (high null counts on a key column, ID-like cardinality on a "category" column) and design around them (`WHERE col IS NOT NULL`, top-N limits).
 
 **Step 2 — Analytical Questions (the story skeleton):**
 Derive 3-5 concrete business questions the user's request + this data can answer. Draw from the classic EDA angles:

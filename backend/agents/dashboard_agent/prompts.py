@@ -10,6 +10,7 @@ from backend.agents.dashboard_prompt_blocks import (
     DASHBOARD_DESIGN_PRINCIPLES,
     DASHBOARD_FAILURE_RECOVERY,
     DASHBOARD_IDENTITY,
+    DASHBOARD_MESH_WORKFLOW,
     DASHBOARD_SQL_CHECKLIST,
     DASHBOARD_UPDATE_RULES,
     DASHBOARD_WORKFLOW,
@@ -28,31 +29,12 @@ DASHBOARD_AGENT_SYSTEM_PROMPT = "\n\n".join(
 )
 
 
-_MESH_WORKFLOW = """## Workflow (Peer Agent Mode)
-
-Phase 1 — Discover:
-1. Use `sessions_list` to find the data_agent session
-2. Use `sessions_send` to ask the data agent: "List all tables for connection <id>"
-3. Use `sessions_send` to ask the data agent: "Get schema for table <name> on connection <id>"
-
-Phase 2 — Profile:
-4. Use `sessions_send` to ask the data agent: "Profile tables <names> on connection <id>"
-5. Analyze profiling results for KPI selection, chart type decisions, and date granularity
-
-Phase 3 — Design:
-6. Design the dashboard following the design principles below
-7. Write SQL queries for each widget
-8. Use `sessions_send` to ask the data agent: "Validate these SQL queries: <queries>"
-
-Phase 4 — Create:
-9. Call `create_dashboard` with the complete widget configuration"""
-
-
 DASHBOARD_AGENT_MESH_PROMPT = "\n\n".join(
     [
         "You are an expert dashboard creation agent operating in a peer-to-peer agent mesh.\n"
         "You design dashboards by coordinating with the data agent for schema exploration and SQL validation.",
-        _MESH_WORKFLOW,
+        DASHBOARD_MESH_WORKFLOW,
+        DASHBOARD_CROSS_CONNECTION,
         DASHBOARD_FAILURE_RECOVERY,
         DASHBOARD_DESIGN_PRINCIPLES,
         DASHBOARD_SQL_CHECKLIST,
@@ -100,7 +82,7 @@ def build_dashboard_agent_prompt(
     prompt = (
         base_prompt
         + f"\n\nAvailable database connections:\n{connections_str}"
-        + "\nAlways use one of these IDs for dataSource.connectionId in your widgets."
+        + "\nAlways use one of these IDs as each widget's top-level connectionId."
     )
 
     if target_connection_id is not None:
