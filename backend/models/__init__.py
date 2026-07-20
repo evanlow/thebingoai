@@ -29,6 +29,7 @@ from backend.models.custom_agent import CustomAgent
 from backend.models.dashboard import Dashboard
 from backend.models.dashboard_refresh_run import DashboardRefreshRun
 from backend.models.briefing import Briefing
+from backend.models.briefing_share import BriefingShare
 
 # Phase 5: User Skills & Memories
 from backend.models.user_skill import UserSkill

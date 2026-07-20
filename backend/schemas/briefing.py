@@ -54,3 +54,53 @@ class BriefingResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# Keys a public visitor may see on an embedded widget. Everything else —
+# notably `dataSource` (SQL + connectionId) and `sources` — is dropped.
+_PUBLIC_WIDGET_KEYS = ("id", "widget", "title")
+
+# Keys that carry query/connection secrets at ANY depth. The top-level
+# allowlist alone is not enough: filter-style widgets nest connectionId + sql
+# at widget.config.controls[].optionsSource, inside the retained `widget`
+# subtree. Today such widgets never pass the `wid in snapshots` gate (only
+# widgets with a top-level dataSource get snapshots), but that is a cross-file
+# coincidence — scrub recursively so no future widget shape can leak through.
+_WIDGET_SECRET_KEYS = frozenset({"dataSource", "sources", "sql", "connectionId", "optionsSource"})
+
+
+def _scrub(v):
+    if isinstance(v, dict):
+        return {k: _scrub(x) for k, x in v.items() if k not in _WIDGET_SECRET_KEYS}
+    if isinstance(v, list):
+        return [_scrub(x) for x in v]
+    return v
+
+
+def strip_widget(w: dict) -> dict:
+    """Reduce a dashboard widget to the keys safe for anonymous eyes.
+
+    Allowlist over top-level keys, plus a recursive denylist of secret-bearing
+    keys inside the retained subtrees. Idempotent — resolve_share re-applies it
+    to already-stripped frozen data at read time.
+    """
+    return {k: _scrub(w[k]) for k in _PUBLIC_WIDGET_KEYS if k in w}
+
+
+class PublicBriefingResponse(BaseModel):
+    """Anonymous view of a briefing. Deliberately NOT BriefingResponse, which
+    carries user_id / dashboard_id / error / source — none of a stranger's
+    business. widget_snapshots is required: a briefing lacking it cannot be
+    shared (POST /share rejects it), which is what keeps this path SQL-free.
+    """
+
+    headline: str
+    deck: str
+    kpis: List[Kpi] = Field(default_factory=list)
+    sections: List[Section]
+    key_takeaways: List[str]
+    recommended_actions: Optional[List[str]] = None
+    widget_snapshots: Dict[str, Any]
+    widgets: Dict[str, Any]          # widget_id -> strip_widget(widget)
+    dashboard_name: Optional[str] = None
+    created_at: datetime

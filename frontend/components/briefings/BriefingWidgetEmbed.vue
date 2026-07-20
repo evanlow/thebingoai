@@ -1,16 +1,23 @@
 <template>
   <div v-if="widget && widget.widget?.config" class="rounded-lg border border-neutral-100 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
-    <DashboardWidget :widget="widget" :auto-refresh="!snapshot" />
+    <DashboardWidget :widget="widget" :auto-refresh="!snapshot" :edit-mode="false" />
   </div>
 </template>
 
 <script setup lang="ts">
 const props = defineProps<{
   widgetId: string | number
-  dashboardId: number
+  // Authed view only: used to fetch the widget shape. Omitted on the public
+  // share view, which passes `widget` inline instead.
+  dashboardId?: number
   // Rendered data config snapshot from generation time. When present we merge
   // it instead of re-running the widget's SQL — instant render, no live query.
   snapshot?: Record<string, any>
+  // Public share view: the widget shape, already stripped of dataSource by the
+  // backend. When present we skip the authed fetch entirely — an anonymous
+  // visitor has no token for it. A stripped widget also carries no dataSource,
+  // so the refresh() branch below cannot fire even by accident.
+  widget?: Record<string, any>
 }>()
 
 const emit = defineEmits<{ loaded: [] }>()
@@ -25,11 +32,22 @@ const { refresh } = useWidgetData(widget as any, !props.snapshot)
 
 onMounted(async () => {
   try {
-    widget.value = await fetchWithRefresh(
-      `/api/dashboards/${props.dashboardId}/widgets/${props.widgetId}`,
-      { method: 'GET' },
-    )
-    if (props.snapshot) {
+    widget.value = props.widget
+      // Deep clone: the snapshot merge below Object.assigns into
+      // widget.widget.config, and a shallow copy would write straight through
+      // into the caller's prop object.
+      ? structuredClone(toRaw(props.widget))
+      : props.dashboardId != null
+        ? await fetchWithRefresh(
+            `/api/dashboards/${props.dashboardId}/widgets/${props.widgetId}`,
+            { method: 'GET' },
+          )
+        : null
+    // widget.value can be null with a snapshot still present: the backend
+    // serves widget_snapshots unfiltered, so a widget deleted from the
+    // dashboard before share time has a snapshot but no frozen shape. A
+    // snapshot alone can't render (no widget config) — skip, don't throw.
+    if (props.snapshot && widget.value) {
       // Snapshot present (generated post-rollout): merge the saved data config,
       // no SQL round-trip. mergeRefreshedConfig preserves editor-only columns.
       const { mergeRefreshedConfig } = await import('~/utils/widgetMerge')
