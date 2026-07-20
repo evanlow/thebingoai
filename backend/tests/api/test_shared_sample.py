@@ -443,3 +443,62 @@ def test_delete_connection_rejects_shared_sample_for_org_user(
     assert resp.status_code == 403
     assert resp.json()["detail"] == READ_ONLY_DETAIL
     assert db_session.get(DatabaseConnection, shared_sample.id) is not None
+
+
+# ── GET /api/connections lists the shared sample ────────────────────────────
+
+def _list_ids(client):
+    resp = client.get("/api/connections")
+    assert resp.status_code == 200
+    return {c["id"] for c in resp.json()}
+
+
+def test_list_connections_includes_shared_sample_for_no_org_user(
+    authenticated_client, db_session, sample_user, other_user, shared_sample,
+):
+    """No-org branch: own connections + the sample, and nothing foreign."""
+    own = _make_connection(db_session, user_id=sample_user.id, name="own")
+    foreign = _make_connection(db_session, user_id=other_user.id, name="foreign")
+
+    ids = _list_ids(authenticated_client)
+
+    assert shared_sample.id in ids
+    assert own.id in ids
+    assert foreign.id not in ids
+
+
+def test_list_connections_includes_shared_sample_for_org_user(
+    db_session, sample_user, other_user, shared_sample,
+):
+    """Org branch is a separate three-way predicate — the sample must survive
+    there too, alongside org-mate visibility, without exposing other orgs."""
+    from backend.models.organization import Organization
+
+    org_id = str(uuid.uuid4())
+    outside_org_id = str(uuid.uuid4())
+    # organizations.name is unique and other tests in this module seed orgs too
+    # — derive the names from the ids so runs never collide.
+    db_session.add_all([
+        Organization(id=org_id, name=f"home-{org_id}"),
+        Organization(id=outside_org_id, name=f"outside-{outside_org_id}"),
+    ])
+    db_session.commit()
+    sample_user.org_id = org_id
+    other_user.org_id = outside_org_id
+    db_session.commit()
+
+    mate = _make_connection(db_session, user_id=sample_user.id, name="mate")
+    outsider = _make_connection(db_session, user_id=other_user.id, name="outsider")
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_current_user] = lambda: sample_user
+    try:
+        with TestClient(app) as client:
+            client.headers.update({"Authorization": "Bearer test-token"})
+            ids = _list_ids(client)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert shared_sample.id in ids
+    assert mate.id in ids
+    assert outsider.id not in ids
