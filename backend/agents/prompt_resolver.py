@@ -21,8 +21,14 @@ def resolve_agent_prompt(
     db_session_factory: Optional[Callable] = None,
     runtime_context_extras: Optional[Dict[str, Any]] = None,
     log_prefix: Optional[str] = None,
+    suffix_builder: Optional[Callable[[], str]] = None,
 ) -> str:
-    """Resolve a per-agent prompt from the active AgentProfile, else `fallback()`."""
+    """Resolve a per-agent prompt from the active AgentProfile, else `fallback()`.
+
+    `suffix_builder` is applied only on the profile branch — runtime context
+    (pre-built data context, connector hints, dialect hints) that the fallback
+    builder already includes itself.
+    """
     import logging
     logger = logging.getLogger(log_prefix or __name__)
 
@@ -43,6 +49,11 @@ def resolve_agent_prompt(
                 )
                 prompt = ProfileRenderer.render(profile, rt_ctx)
                 db.close()
+                if suffix_builder:
+                    try:
+                        prompt += suffix_builder()
+                    except Exception as exc:
+                        logger.warning(f"{agent_type} prompt suffix build failed: {exc}")
                 return prompt
             db.close()
         except Exception as exc:

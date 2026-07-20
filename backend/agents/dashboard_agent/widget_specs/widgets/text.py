@@ -12,7 +12,7 @@ class TextWidget(BaseWidget):
     default_position = {"w": 12, "h": 1, "minW": 2, "minH": 1}
     params_doc = (
         "## Text params\n"
-        "- `content`* (string): markdown; use ## for section headers\n"
+        "- `content`* (string): markdown prose; NOT for section headers — use a `section` widget\n"
         "- `alignment` (left|center|right)\n"
     )
 

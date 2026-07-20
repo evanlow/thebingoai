@@ -5,17 +5,10 @@ TEXT_GUIDANCE = """### Usage
 Text widgets are for **narrative prose** — commentary, methodology notes,
 caveats. Section headers are the `section` widget type, NOT text widgets.
 
-### Example
+### Example (lean)
 
 ```json
-{
-  "id": "note_method",
-  "position": {"x": 0, "y": 4, "w": 12, "h": 1},
-  "widget": {
-    "type": "text",
-    "config": {"content": "Figures exclude cancelled orders."}
-  }
-}
+{"type": "text", "content": "Figures exclude cancelled orders."}
 ```
 
 ### Best Practices

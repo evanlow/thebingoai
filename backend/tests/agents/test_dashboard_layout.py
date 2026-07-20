@@ -350,3 +350,66 @@ class TestSectionOrdering:
         assert [w["id"] for w in widgets] == ["c1", "c2", "table"]
         positions = [(w["position"]["y"], w["position"]["x"]) for w in widgets]
         assert positions == sorted(positions)
+
+
+class TestAdaptiveSections:
+    """Adaptive storyboard: multiple interleaved section widgets keep their
+    emitted order, each on a full-width row, after filter + KPI bands."""
+
+    def _adaptive(self):
+        y = 0
+        widgets = [_w("f", "filter", 0, y, 12, 2)]
+        y += 2
+        for i in (1, 2, 3):
+            widgets.append(_w(f"k{i}", "kpi", (i - 1) * 4, y, 4, 2))
+        y += 2
+        widgets += [
+            _w("s1", "section", 0, y, 12, 1),
+            _w("c1", "chart", 0, y + 1, 6, 5, "line"),
+            _w("c2", "chart", 6, y + 1, 6, 5, "bar"),
+            _w("s2", "section", 0, y + 6, 12, 1),
+            _w("c3", "chart", 0, y + 7, 6, 5, "pie"),
+            _w("c4", "chart", 6, y + 7, 6, 5, "bar"),
+            _w("s3", "section", 0, y + 12, 12, 1),
+            _w("t1", "table", 0, y + 13, 12, 5),
+        ]
+        return widgets
+
+    def test_interleaved_sections_keep_order(self):
+        widgets = self._adaptive()
+        normalize_dashboard_layout(widgets)
+        ids = [w["id"] for w in widgets]
+        assert ids.index("s1") < ids.index("c1") < ids.index("s2")
+        assert ids.index("s2") < ids.index("c3") < ids.index("s3")
+        assert ids.index("s3") < ids.index("t1")
+
+    def test_sections_full_width_own_row(self):
+        widgets = self._adaptive()
+        normalize_dashboard_layout(widgets)
+        for sid in ("s1", "s2", "s3"):
+            pos = _pos(widgets, sid)
+            assert pos["x"] == 0 and pos["w"] == 12
+            # No other widget shares the section's row.
+            same_y = [w for w in widgets if w["position"]["y"] == pos["y"]]
+            assert [w["id"] for w in same_y] == [sid]
+
+    def test_filter_and_kpis_precede_sections(self):
+        widgets = self._adaptive()
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "f")["y"] == 0
+        kpi_y = _pos(widgets, "k1")["y"]
+        assert kpi_y == _pos(widgets, "k2")["y"] == _pos(widgets, "k3")["y"]
+        assert kpi_y < _pos(widgets, "s1")["y"]
+
+    def test_mid_list_kpi_hoisted_above_first_section(self):
+        # Documents the normalizer constraint the prompt encodes: a KPI
+        # emitted inside an analysis section is hoisted to the top KPI band.
+        widgets = [
+            _w("f", "filter", 0, 0, 12, 2),
+            _w("k1", "kpi", 0, 2, 6, 2),
+            _w("s1", "section", 0, 4, 12, 1),
+            _w("c1", "chart", 0, 5, 6, 5, "bar"),
+            _w("k2", "kpi", 6, 5, 6, 2),
+        ]
+        normalize_dashboard_layout(widgets)
+        assert _pos(widgets, "k2")["y"] < _pos(widgets, "s1")["y"]
