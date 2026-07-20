@@ -141,7 +141,11 @@ def test_non_local_plane_returns_none(monkeypatch, scope, current_user, db_with_
 
 def test_missing_connection_returns_none(monkeypatch, current_user):
     db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = None
+    # Self-returning filter: _readable_connection issues a second, shared-sample
+    # query on the ownership miss, so both chains must resolve to None.
+    q = db.query.return_value
+    q.filter.return_value = q
+    q.first.return_value = None
     req = _request("SELECT region FROM csv_1")
     assert _serve_widget_via_dataplane(req, None, current_user, db) is None
 
