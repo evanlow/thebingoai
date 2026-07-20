@@ -125,21 +125,65 @@ def execute_heartbeat_job(job_id: str):
             with (_credit_mgr if _credit_mgr is not None else nullcontext()):
                 response = asyncio.run(_run_orchestrator_for_job(job, user))
 
-            completed_at = datetime.utcnow()
-            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+                # Persist the run BEFORE the charge lands at __exit__ — a
+                # persist failure raises out of the block so the user is never
+                # billed for a run whose result wasn't saved (same order as the
+                # websocket chat path).
+                completed_at = datetime.utcnow()
+                duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-            run.status = HeartbeatRunStatus.COMPLETED.value
-            run.response = response
-            run.completed_at = completed_at
-            run.duration_ms = duration_ms
-            db.commit()
+                run.status = HeartbeatRunStatus.COMPLETED.value
+                run.response = response
+                run.completed_at = completed_at
+                run.duration_ms = duration_ms
+                db.commit()
+
+                # Deliver inside the context too: the permanent-conversation
+                # message is the only copy the user ever sees, so a failed insert
+                # must void the turn rather than charge for an answer that never
+                # arrived.
+                _deliver_or_void(db, job=job, run=run, credit_mgr=_credit_mgr, response=response)
 
             logger.info(f"Heartbeat job {job_id} run {run.id} completed in {duration_ms}ms")
-
-            # Deliver result to user's permanent conversation
-            _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
     finally:
         db.close()
+
+
+def _deliver_or_void(db, *, job: HeartbeatJob, run, credit_mgr, response: str) -> None:
+    """Deliver the answer; on failure void the turn and record why on the run.
+
+    The run row is COMMITTED as COMPLETED before we get here, so it must not be
+    reopened as FAILED: a non-DB delivery error would clobber a committed row,
+    and a DB one aborts the transaction so `record_run_failure`'s commit dies
+    with InFailedSqlTransaction and the error is lost entirely. Roll back first,
+    then stamp `run.error` on the still-COMPLETED row — the answer exists, it
+    just never reached the user.
+
+    Voiding here (rather than letting the exception escape into the credit
+    block) keeps the "nobody pays for an answer they never got" rule without
+    routing a delivery problem through the run-failure machinery.
+    """
+    try:
+        _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
+    except Exception as deliver_err:
+        logger.error(
+            "Heartbeat job %s run %s: result produced but delivery failed: %s",
+            job.id, run.id, deliver_err,
+        )
+        if credit_mgr is not None and hasattr(credit_mgr, "void"):
+            credit_mgr.void("heartbeat delivery failed")
+        # A DB-side delivery failure leaves the session aborted; clear it before
+        # touching the run row or this write dies too.
+        db.rollback()
+        try:
+            run.error = f"delivery failed: {deliver_err}"
+            db.commit()
+        except Exception:
+            logger.exception(
+                "Heartbeat job %s run %s: could not record the delivery error",
+                job.id, run.id,
+            )
+            db.rollback()
 
 
 def _deliver_heartbeat_result(db, *, job: HeartbeatJob, run_id: str, user_id: str, response: str) -> None:
@@ -148,25 +192,34 @@ def _deliver_heartbeat_result(db, *, job: HeartbeatJob, run_id: str, user_id: st
     publish a WebSocket notification via Redis Pub/Sub.
 
     This is a synchronous helper (Celery workers are sync).
+
+    The permanent-conversation insert PROPAGATES on failure: writing that message
+    *is* the delivery — it is the only place the user ever sees the answer, since
+    the run row is internal. `_deliver_or_void` is what turns that exception into
+    a voided turn, honouring the rule that nobody pays for an answer they never
+    received; call through it rather than calling this directly.
+
+    The notification stays best-effort: the message is already committed, so a
+    dead Redis only delays it until the client's next fetch.
     """
     from backend.services.conversation_service import ConversationService
     from backend.models.message import Message
     from backend.services.ws_connection_manager import ConnectionManager
 
+    perm_conv = ConversationService.get_or_create_permanent_conversation(db, user_id)
+
+    msg = Message(
+        conversation_id=perm_conv.id,
+        role="assistant",
+        content=response,
+        source="heartbeat",
+        heartbeat_job_id=job.id,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+
     try:
-        perm_conv = ConversationService.get_or_create_permanent_conversation(db, user_id)
-
-        msg = Message(
-            conversation_id=perm_conv.id,
-            role="assistant",
-            content=response,
-            source="heartbeat",
-            heartbeat_job_id=job.id,
-        )
-        db.add(msg)
-        db.commit()
-        db.refresh(msg)
-
         payload = {
             "type": "heartbeat.message",
             "thread_id": perm_conv.thread_id,
@@ -182,9 +235,8 @@ def _deliver_heartbeat_result(db, *, job: HeartbeatJob, run_id: str, user_id: st
         }
         ConnectionManager.publish_to_user_sync(user_id, payload)
         logger.info(f"Heartbeat result delivered to permanent conv for user {user_id}")
-
     except Exception as e:
-        logger.error(f"Failed to deliver heartbeat result to user {user_id}: {e}")
+        logger.error(f"Saved heartbeat result but failed to notify user {user_id}: {e}")
 
 
 async def _run_orchestrator_for_job(job: HeartbeatJob, user: User) -> str:
@@ -301,16 +353,19 @@ def execute_agent_heartbeat_job(job_id: str):
                     _run_agent_for_job(job, user)
                 )
 
-            completed_at = datetime.utcnow()
-            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+                # Persist BEFORE the charge lands at __exit__ (see the
+                # orchestrator-run variant above).
+                completed_at = datetime.utcnow()
+                duration_ms = int((completed_at - started_at).total_seconds() * 1000)
 
-            run.status = HeartbeatRunStatus.COMPLETED.value
-            run.response = response
-            run.completed_at = completed_at
-            run.duration_ms = duration_ms
-            db.commit()
+                run.status = HeartbeatRunStatus.COMPLETED.value
+                run.response = response
+                run.completed_at = completed_at
+                run.duration_ms = duration_ms
+                db.commit()
 
-            _deliver_heartbeat_result(db, job=job, run_id=run.id, user_id=job.user_id, response=response)
+                # Deliver inside the context (see the orchestrator-run variant).
+                _deliver_or_void(db, job=job, run=run, credit_mgr=_credit_mgr, response=response)
     finally:
         db.close()
 

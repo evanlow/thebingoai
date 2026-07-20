@@ -22,6 +22,11 @@ class _FakeMgr:
     def void(self, reason: str) -> None:
         self.calls.append(("void", reason))
 
+    async def __aenter__(self):
+        # Deliberately not logged: the helper tests assert on the exact call
+        # list and only the close-out half is under test there.
+        return self
+
     async def __aexit__(self, exc_type, exc, tb):
         self.calls.append(("aexit", (exc_type, exc, tb)))
         if self._raise:
@@ -49,6 +54,26 @@ def test_retry_failed_voids_before_recording():
         ("void", "layer4_retry_failed"),
         ("aexit", (None, None, None)),
     ]
+
+
+def test_orchestrator_error_voids_the_turn():
+    # stream_orchestrator reports its own failures as an `error` EVENT and never
+    # raises, so "no exception" is not evidence the turn worked. Must void, the
+    # same as chat.py's success=False branch.
+    mgr = _FakeMgr()
+    asyncio.run(_finalize_credit_turn(mgr, None, orchestrator_errored=True))
+    assert mgr.calls == [
+        ("void", "orchestrator reported failure"),
+        ("aexit", (None, None, None)),
+    ]
+
+
+def test_orchestrator_error_outranks_retry_reason():
+    # Same precedence as chat.py:190 — an outright failure beats a stalled retry.
+    mgr = _FakeMgr()
+    asyncio.run(_finalize_credit_turn(mgr, False, orchestrator_errored=True))
+    assert ("void", "orchestrator reported failure") in mgr.calls
+    assert ("void", "layer4_retry_failed") not in mgr.calls
 
 
 def test_none_manager_is_noop():
@@ -82,7 +107,8 @@ def _order_mgr(order: list) -> _FakeMgr:
 
 
 def _run_complete(order, *, mgr, retry_succeeded=None, persist_raises=False,
-                  postprocess_raises=False, pending_done=_DONE):
+                  postprocess_raises=False, pending_done=_DONE,
+                  orchestrator_errored=False):
     """Drive _complete_turn with the persist/postprocess seams stubbed to record
     into `order`. Returns the list of payloads passed to `send`."""
     sent = []
@@ -112,6 +138,7 @@ def _run_complete(order, *, mgr, retry_succeeded=None, persist_raises=False,
             final_message="a", collected_steps=[], retry_succeeded=retry_succeeded,
             judge_metadata=None, credit_mgr=mgr, pending_done_event=pending_done,
             send=_send, request_id="r-1", user=user, active_thread_id="t-1",
+            orchestrator_errored=orchestrator_errored,
         ))
     return sent
 
@@ -157,9 +184,100 @@ def test_complete_turn_retry_failed_voids_before_charge():
     assert tags.index("void") < tags.index("aexit")
 
 
+def test_complete_turn_orchestrator_error_voids_before_charge():
+    order = []
+    _run_complete(order, mgr=_order_mgr(order), orchestrator_errored=True)
+    tags = _tags(order)
+    assert tags.index("void") < tags.index("aexit")
+    assert ("void", "orchestrator reported failure") in order
+
+
 def test_complete_turn_no_pending_done_still_charges():
-    # Defensive: even with no buffered done event, the charge still lands.
+    # Defensive: a missing `done` event with no reported error still charges —
+    # only an explicit orchestrator_errored flag voids (see the test above).
     order = []
     sent = _run_complete(order, mgr=_order_mgr(order), pending_done=None)
     assert "aexit" in _tags(order)
+    assert ("void", "orchestrator reported failure") not in order
     assert sent == []  # nothing forwarded
+
+
+# --- the wiring: does the stream loop actually set the flag? ------------------
+
+
+def test_handle_chat_send_voids_on_an_orchestrator_error_event(monkeypatch):
+    """The regression this pins: stream_orchestrator catches its own exception,
+    yields `{"type": "error"}` and stops WITHOUT a `done` (graph.py). Nothing
+    raises, so `_handle_chat_send` used to run to a clean __aexit__ and bill the
+    user for an error message — while POST /api/chat voided the same failure.
+
+    The helper tests above cover the void decision; only this one proves the
+    flag is set where the error event actually arrives.
+    """
+    from unittest.mock import MagicMock
+
+    conversation = types.SimpleNamespace(id="c-1", thread_id="t-1")
+    mgr = _FakeMgr()
+
+    async def _resolve_conv(db, user, thread_id, connection_ids, send, request_id):
+        return conversation, False
+
+    async def _build_ctx(**kw):
+        return types.SimpleNamespace(
+            agent_context="", custom_agents=None, memory_context=None,
+            user_skills=None, user_memories_context=None,
+            skill_suggestions=None, soul_prompt=None, profile=None,
+        )
+
+    async def _stream(*a, **k):
+        # Exactly what graph.py yields when the orchestrator blows up.
+        yield {"type": "error", "content": "Something went wrong. Please try again."}
+
+    async def _noop(*a, **k):
+        return None
+
+    async def _wait_files(*a, **k):
+        return True
+
+    async def _resolve_att(*a, **k):
+        return None, None
+
+    import backend.agents as agents
+    import backend.agents.profile_llm as pl
+    import backend.plugins.loader as loader
+    import backend.services.heartbeat_context as hb
+    import backend.services.token_tracking_service as tts
+    import redis as _redis
+
+    monkeypatch.setattr(ws, "_resolve_conversation", _resolve_conv)
+    monkeypatch.setattr(hb, "build_orchestrator_context", _build_ctx)
+    monkeypatch.setattr(agents, "stream_orchestrator", _stream)
+    monkeypatch.setattr(ws, "_wait_for_file_processing", _wait_files)
+    monkeypatch.setattr(ws, "_resolve_attachments", _resolve_att)
+    monkeypatch.setattr(ws, "_inject_conversation_datasets", _noop)
+    monkeypatch.setattr(ws, "_persist_turn", _noop)
+    monkeypatch.setattr(ws, "_postprocess_turn", _noop)
+    monkeypatch.setattr(ws, "DetachedReadSessionLocal", lambda: MagicMock())
+    monkeypatch.setattr(pl, "resolve_published_llm", lambda p: (None, None, None))
+    monkeypatch.setattr(loader, "get_loaded_plugins", lambda: {})
+    monkeypatch.setattr(_redis, "from_url", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(
+        ws.ConversationService, "get_conversation_history",
+        staticmethod(lambda db, tid, uid: []),
+    )
+    monkeypatch.setattr(
+        ws.ConversationService, "add_message", staticmethod(lambda *a, **k: None)
+    )
+    monkeypatch.setattr(tts, "CreditContextManager", lambda **kw: mgr)
+
+    class _WS:
+        async def send_text(self, _):
+            pass
+
+    asyncio.run(ws._handle_chat_send(
+        _WS(), types.SimpleNamespace(id="u-1"), "r-1", "t-1", "hello", [],
+    ))
+
+    assert ("void", "orchestrator reported failure") in mgr.calls, (
+        "websocket billed a turn the orchestrator reported as failed"
+    )
