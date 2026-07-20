@@ -448,7 +448,7 @@ const { remaining, isUnlimited } = useCreditBalance()
 // grows so a 6-digit balance still fits the ~150px sidebar slot without wrapping.
 const creditSizeClass = computed(() => {
   const digits = String(Math.round(remaining.value || 0)).length
-  if (digits <= 4) return 'text-sm'     // ≤ 9,999
+  if (digits <= 4) return 'text-xs'     // ≤ 9,999
   if (digits === 5) return 'text-xs'    // ≤ 99,999
   return 'text-[10px]'                  // 100,000+
 })

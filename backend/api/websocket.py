@@ -177,11 +177,16 @@ async def _resolve_conversation(
     else:
         conversation = ConversationService.create_conversation(db, user.id, title="New Task")
 
-    # Validate connection access
+    # Validate connection access (own connections + the shared read-only sample)
     if connection_ids:
+        from sqlalchemy import or_
+        from backend.services.seed import shared_sample_clause
         accessible = db.query(DatabaseConnection.id).filter(
             DatabaseConnection.id.in_(connection_ids),
-            DatabaseConnection.user_id == user.id,
+            or_(
+                DatabaseConnection.user_id == user.id,
+                shared_sample_clause(),
+            ),
         ).all()
         if len(accessible) != len(connection_ids):
             await send({"type": "chat.error", "request_id": request_id, "thread_id": conversation.thread_id, "content": "Access denied to one or more connections"})
@@ -197,9 +202,14 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
     _resolve_attachments cannot find them with a normal chat_file_service lookup.
     This helper reconstructs the data that build_user_message() needs.
     """
+    from sqlalchemy import or_
+    from backend.services.seed import shared_sample_clause
     conn = db.query(DatabaseConnection).filter(
         DatabaseConnection.id == connection_id,
-        DatabaseConnection.user_id == user.id,
+        or_(
+            DatabaseConnection.user_id == user.id,
+            shared_sample_clause(),
+        ),
     ).first()
     if conn is None:
         logger.warning("_build_dataset_file_content: connection %d not found for user %s", connection_id, user.id)

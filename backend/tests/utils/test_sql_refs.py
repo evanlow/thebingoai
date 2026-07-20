@@ -4,6 +4,7 @@ import sqlglot
 
 from backend.utils.sql_refs import (
     extract_table_refs,
+    qualifier_allowlist,
     rewrite_table_refs,
     can_parse,
     transpile_bq_to_duckdb,
@@ -56,6 +57,88 @@ def test_rewrite_unparseable():
     result_sql, success = rewrite_table_refs(bad_sql, {"a": "b"})
     assert success is False
     assert result_sql == bad_sql
+
+
+class _Conn:
+    def __init__(self, db_type, database=""):
+        self.db_type = db_type
+        self.database = database
+
+
+@pytest.mark.parametrize("db_type,expected", [
+    ("postgres", {"public"}),
+    ("postgresql", {"public"}),
+    ("sqlite", {"main"}),
+    ("mssql", {"dbo"}),
+    ("sqlserver", {"dbo"}),
+    ("bigquery", None),
+    ("", None),
+])
+def test_qualifier_allowlist_by_db_type(db_type, expected):
+    assert qualifier_allowlist(_Conn(db_type)) == expected
+
+
+def test_qualifier_allowlist_db_type_case_insensitive():
+    assert qualifier_allowlist(_Conn("Postgres")) == {"public"}
+
+
+def test_qualifier_allowlist_mysql_uses_database_name():
+    assert qualifier_allowlist(_Conn("mysql", database="Shop")) == {"shop"}
+
+
+def test_qualifier_allowlist_mysql_without_database_is_none():
+    assert qualifier_allowlist(_Conn("mysql")) is None
+
+
+def test_rewrite_drops_qualifier_in_allowlist():
+    result_sql, success = rewrite_table_refs(
+        "SELECT * FROM public.orders", {"orders": "acme__orders"}, {"public"}
+    )
+    assert success is True
+    assert "acme__orders" in result_sql
+    assert "public" not in result_sql
+
+
+def test_rewrite_skips_qualifier_outside_allowlist():
+    sql = "SELECT * FROM archive.orders"
+    result_sql, success = rewrite_table_refs(sql, {"orders": "acme__orders"}, {"public"})
+    assert success is True
+    assert "archive.orders" in result_sql
+    assert "acme__orders" not in result_sql
+
+
+def test_rewrite_mixed_schemas_only_allowlisted_rewritten():
+    sql = "SELECT * FROM public.orders o JOIN archive.orders a ON o.id = a.id"
+    result_sql, success = rewrite_table_refs(sql, {"orders": "acme__orders"}, {"public"})
+    assert success is True
+    assert "acme__orders" in result_sql
+    assert "archive.orders" in result_sql
+
+
+def test_rewrite_unqualified_ref_rewritten_regardless_of_allowlist():
+    result_sql, success = rewrite_table_refs(
+        "SELECT * FROM orders", {"orders": "acme__orders"}, {"public"}
+    )
+    assert success is True
+    assert "acme__orders" in result_sql
+
+
+def test_rewrite_allowlist_none_drops_any_qualifier():
+    result_sql, success = rewrite_table_refs(
+        "SELECT * FROM proj.ds.orders", {"orders": "acme__orders"}, None
+    )
+    assert success is True
+    assert "acme__orders" in result_sql
+    assert "proj" not in result_sql
+    assert "ds" not in result_sql
+
+
+def test_rewrite_allowlist_schema_compare_case_insensitive():
+    result_sql, success = rewrite_table_refs(
+        "SELECT * FROM PUBLIC.orders", {"orders": "acme__orders"}, {"public"}
+    )
+    assert success is True
+    assert "acme__orders" in result_sql
 
 
 def test_can_parse_valid():

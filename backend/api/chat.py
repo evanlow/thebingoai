@@ -105,9 +105,14 @@ async def chat(
 
         # Validate requested connection access
         if request.connection_ids:
+            from sqlalchemy import or_
+            from backend.services.seed import shared_sample_clause
             accessible = db.query(DatabaseConnection.id).filter(
                 DatabaseConnection.id.in_(request.connection_ids),
-                DatabaseConnection.user_id == current_user.id
+                or_(
+                    DatabaseConnection.user_id == current_user.id,
+                    shared_sample_clause(),
+                ),
             ).all()
             if len(accessible) != len(request.connection_ids):
                 raise HTTPException(status_code=403, detail="Access denied to one or more connections")

@@ -173,8 +173,10 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
                         # Rewrite source table names (e.g. `orders`) → the
                         # Pipeline's materialized plane table (e.g. `acme__orders`)
                         # so the DuckDB-over-GCS warm below resolves the Parquet.
+                        from backend.utils.sql_refs import qualifier_allowlist
                         query_sql, _ = rewrite_table_refs(
-                            original_sql, plane_table_map(connection, db)
+                            original_sql, plane_table_map(connection, db),
+                            qualifier_allowlist(connection),
                         )
                         date_col = _get_date_column(widget, data_context)
                         if date_col:

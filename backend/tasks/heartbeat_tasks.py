@@ -383,10 +383,15 @@ async def _run_agent_for_job(job: HeartbeatJob, user: User) -> str:
 
     db = SessionLocal()
     try:
-        # Get user's connections
+        # Get user's connections (+ the shared read-only sample)
+        from sqlalchemy import or_
+        from backend.services.seed import shared_sample_clause
         conn_ids = [
             row.id for row in db.query(DatabaseConnection.id)
-            .filter(DatabaseConnection.user_id == user.id)
+            .filter(or_(
+                DatabaseConnection.user_id == user.id,
+                shared_sample_clause(),
+            ))
             .all()
         ]
 
