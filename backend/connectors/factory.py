@@ -168,15 +168,40 @@ def _delete_sqlite_file(connection) -> None:
         )
 
 
-def _check_sqlite_health(connection) -> bool:
-    """Check whether a SQLite connection's blob exists (local, DataPlane, or DO Spaces)."""
+def _check_sqlite_health(connection) -> dict:
+    """Test a SQLite connection, routing the same way queries do.
+
+    Post-migration the blob is deleted and `dataset_table_name` cleared, so the
+    blob check would report every migrated connection as broken — mirror
+    `SqliteFileConnector.from_connection` and test the DataPlane instead.
+    """
     import os
+    from backend.database.session import SessionLocal
+    from backend.migration.substrate import MigrationJournal
+
+    with SessionLocal() as db:
+        migrated = (
+            db.query(MigrationJournal)
+            .filter(
+                MigrationJournal.connection_id == connection.id,
+                MigrationJournal.status == "migrated",
+            )
+            .first()
+        )
+    if migrated is not None:
+        return _test_data_plane(connection)
+
     if not connection.dataset_table_name:
-        return False
+        return {"success": False, "message": "No SQLite file stored for this connection"}
     if os.path.isabs(connection.dataset_table_name):
-        return os.path.isfile(connection.dataset_table_name)
-    from backend.services.sqlite_blob_storage import blob_exists
-    return blob_exists(connection)
+        ok = os.path.isfile(connection.dataset_table_name)
+    else:
+        from backend.services.sqlite_blob_storage import blob_exists
+        ok = blob_exists(connection)
+    return {
+        "success": ok,
+        "message": "SQLite file is available" if ok else "SQLite file is missing from storage",
+    }
 
 
 register_connector(ConnectorRegistration(
