@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 class DataPlaneConnector:
     """Wraps a DataPlane instance so it fits the connector interface."""
 
+    # Read path is the DataPlane (Parquet), not an origin database — widget
+    # refresh reports `served_from="data_plane"` on this.
+    serves_from_plane = True
+
     def __init__(self, plane, scope: OwnerScope) -> None:
         self._plane = plane
         self._scope = scope
