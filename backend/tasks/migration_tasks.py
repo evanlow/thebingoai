@@ -6,6 +6,20 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
+def enqueue_profile_then_migrate(connection_id: int) -> None:
+    """Kick profiling, then migrate the SQLite blob → Parquet after profiling
+    *terminates* (success or final failure). Wired as both the success ``link``
+    and the failure ``link_error`` so a failed profiling run still migrates;
+    exactly one fires (retries don't trigger link_error). Immutable ``.si``
+    ignores profiling's return/error args, so migration receives just the id."""
+    from backend.tasks.profiling_tasks import profile_connection
+    migrate_sig = migrate_sqlite_connection.si(connection_id)
+    prof_sig = profile_connection.s(connection_id)
+    prof_sig.link(migrate_sig)
+    prof_sig.link_error(migrate_sig)
+    prof_sig.delay()
+
+
 @shared_task(name="migrate_sqlite_connection", bind=True, max_retries=2)
 def migrate_sqlite_connection(self, connection_id: int):
     from backend.database.session import SessionLocal

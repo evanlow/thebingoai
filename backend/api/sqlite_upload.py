@@ -217,15 +217,10 @@ async def upload_sqlite(
         # link_error). The immutable `.si` ignores profiling's return/error args.
         if connection.schema_json_path:
             try:
-                from backend.tasks.profiling_tasks import profile_connection
-                from backend.tasks.migration_tasks import migrate_sqlite_connection
+                from backend.tasks.migration_tasks import enqueue_profile_then_migrate
                 connection.profiling_status = ProfilingStatus.PENDING.value
                 db.commit()
-                migrate_sig = migrate_sqlite_connection.si(connection.id)
-                prof_sig = profile_connection.s(connection.id)
-                prof_sig.link(migrate_sig)
-                prof_sig.link_error(migrate_sig)
-                prof_sig.delay()
+                enqueue_profile_then_migrate(connection.id)
             except Exception as e:
                 logger.error("Failed to queue profiling/migration for SQLite connection %s: %s", connection.id, e)
 

@@ -62,3 +62,19 @@ def test_migrate_sqlite_connection_failed_status_retries():
             pass
 
     retry.assert_called_once()
+
+
+def test_enqueue_profile_then_migrate_wires_link_and_link_error():
+    from backend.tasks import migration_tasks
+
+    prof_sig = MagicMock()
+    migrate_sig = MagicMock()
+    with patch("backend.tasks.profiling_tasks.profile_connection") as prof, \
+         patch.object(migration_tasks.migrate_sqlite_connection, "si", return_value=migrate_sig):
+        prof.s.return_value = prof_sig
+        migration_tasks.enqueue_profile_then_migrate(5)
+
+    prof.s.assert_called_once_with(5)
+    prof_sig.link.assert_called_once_with(migrate_sig)          # success path
+    prof_sig.link_error.assert_called_once_with(migrate_sig)    # failure path — the #1 fix
+    prof_sig.delay.assert_called_once_with()
