@@ -64,6 +64,31 @@ def test_migrate_sqlite_connection_failed_status_retries():
     retry.assert_called_once()
 
 
+def test_migrate_sqlite_connection_exception_retries_with_original_exc():
+    """A raising helper (provisioning race, storage blip) must retry — and hand
+    the original exception to self.retry, not swallow or replace it."""
+    from backend.tasks import migration_tasks
+
+    conn = MagicMock(id=7)
+    boom = RuntimeError("plane not provisioned")
+
+    class _Retry(Exception):
+        pass
+
+    with patch("backend.database.session.SessionLocal", _session_local_yielding(conn)), \
+         patch("backend.models.database_connection.DatabaseConnection", MagicMock()), \
+         patch("backend.migration.substrate.migrate_connection_with_plane", side_effect=boom), \
+         patch.object(migration_tasks.migrate_sqlite_connection, "retry", side_effect=_Retry) as retry:
+        try:
+            migration_tasks.migrate_sqlite_connection(7)
+            assert False, "expected a raising helper to trigger self.retry"
+        except _Retry:
+            pass
+
+    retry.assert_called_once()
+    assert retry.call_args.kwargs["exc"] is boom
+
+
 def test_enqueue_profile_then_migrate_wires_link_and_link_error():
     from backend.tasks import migration_tasks
 

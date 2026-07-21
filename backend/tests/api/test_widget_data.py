@@ -704,3 +704,7 @@ def test_refresh_widget_plane_backed_connector_reports_data_plane(monkeypatch):
     resp = _run(wd.refresh_widget(req, _user(), db))
 
     assert resp.served_from == "data_plane"
+
+    # Pin the real core connector too — the fake above only covers the contract.
+    from backend.connectors.data_plane import DataPlaneConnector
+    assert DataPlaneConnector.serves_from_plane is True
