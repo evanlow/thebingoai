@@ -215,14 +215,16 @@ async def upload_sqlite(
         # the success `link` and the failure `link_error` of profiling. Exactly
         # one fires at profiling's terminal state (retries don't trigger
         # link_error). The immutable `.si` ignores profiling's return/error args.
-        if connection.schema_json_path:
-            try:
-                from backend.tasks.migration_tasks import enqueue_profile_then_migrate
-                connection.profiling_status = ProfilingStatus.PENDING.value
-                db.commit()
-                enqueue_profile_then_migrate(connection.id)
-            except Exception as e:
-                logger.error("Failed to queue profiling/migration for SQLite connection %s: %s", connection.id, e)
+        # Not gated on `schema_json_path`: if the block above failed, profiling
+        # rediscovers and saves the schema itself, so gating would strand the
+        # connection with a raw blob and no migration.
+        try:
+            from backend.tasks.migration_tasks import enqueue_profile_then_migrate
+            connection.profiling_status = ProfilingStatus.PENDING.value
+            db.commit()
+            enqueue_profile_then_migrate(connection.id)
+        except Exception as e:
+            logger.error("Failed to queue profiling/migration for SQLite connection %s: %s", connection.id, e)
 
         # Governance: auto-assign to user's teams
         if settings.enable_governance:
