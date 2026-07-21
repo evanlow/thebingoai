@@ -34,8 +34,14 @@ class DataPlaneConnector:
         except Exception as exc:
             raise ConnectionError(f"DataPlane not reachable: {exc}") from exc
 
+    def get_schemas(self) -> list[str]:
+        return ["main"]  # the plane is flat — one namespace
+
     def get_tables(self, schema: Optional[str] = None) -> list[str]:
         return self._plane.list_tables(self._scope)
+
+    def get_foreign_keys(self, table_name: str, schema: Optional[str] = None) -> list[dict]:
+        return []  # Parquet carries no FK metadata
 
     def get_table_schema(self, table_name: str, schema: Optional[str] = None) -> TableSchema:
         arrow_schema = self._plane.get_schema(self._scope, table_name)
