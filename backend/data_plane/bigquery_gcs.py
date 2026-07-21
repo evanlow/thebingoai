@@ -175,7 +175,11 @@ class BigQueryGCSPlane:
             arrow_table = pa.Table.from_batches(batches) if batches else pa.table({})
 
         arrow_table = _downcast_ns_timestamps(arrow_table)
-        arrow_table = _bq_safe_column_names(arrow_table)
+        arrow_table, renamed = _bq_safe_column_names(arrow_table)
+        if renamed and unique_key:
+            # The key names the dedup view / MERGE join builds from — it has to
+            # follow the Parquet rename or both fail after the object is written.
+            unique_key = tuple(renamed.get(k, k) for k in unique_key)
 
         buf = io.BytesIO()
         pq.write_table(arrow_table, buf)
@@ -738,40 +742,61 @@ def _downcast_ns_timestamps(table: pa.Table) -> pa.Table:
     return table.cast(pa.schema(new_fields))
 
 
-def _bq_safe_column_names(table: pa.Table) -> pa.Table:
-    """Rename columns to names BigQuery accepts (`[A-Za-z_][A-Za-z0-9_]{0,299}`).
+# BigQuery rejects columns starting with any of these, case-insensitively.
+_BQ_RESERVED_PREFIXES = (
+    "_TABLE_", "_FILE_", "_PARTITION", "_ROW_TIMESTAMP", "__ROOT__", "_COLIDENTIFIER",
+)
+
+
+def _bq_safe_column_names(table: pa.Table) -> tuple[pa.Table, dict[str, str]]:
+    """Rename columns to names BigQuery accepts, returning `(table, rename_map)`.
+
+    Guarantees each output name matches `[A-Za-z_][A-Za-z0-9_]{0,299}`, carries
+    no BigQuery-reserved prefix, and is unique under BigQuery's case-insensitive
+    column comparison.
 
     dlt names variant columns with its path separator (`value▶v_bool`), which
     BigQuery rejects when the external table is created — the whole load
     package then retries until the pipeline run fails. Rename before the
     Parquet write so the file and the BQ schema agree.
 
-    Already-valid names are returned untouched, so this is a no-op for every
-    existing table.
-    """
-    import re
+    When distinct source names collapse onto one safe name, *every* member of
+    the colliding set gets a suffix hashed from its own original name — nobody
+    wins the bare name by being first. So a given source column maps to the same
+    safe name in every batch of a multi-batch load, whatever the column order.
 
-    seen: set[str] = set()
-    names: list[str] = []
-    changed = False
-    for name in table.schema.names:
+    `rename_map` holds only the columns that changed. Callers must apply it to
+    anything else that names columns (e.g. `unique_key`), or the Parquet file
+    and the BQ surface built over it will disagree. Already-valid names are
+    returned untouched, so this is a no-op for every existing table.
+    """
+    import hashlib
+    import re
+    from collections import Counter
+
+    def base_of(name: str) -> str:
         safe = re.sub(r"[^A-Za-z0-9_]", "_", name)
         if not safe or safe[0].isdigit():
             safe = "_" + safe
-        safe = safe[:300]
-        base = safe
-        i = 1
-        while safe in seen:  # two distinct source names collapsing to one
-            safe = f"{base[:295]}_{i}"
-            i += 1
-        seen.add(safe)
-        names.append(safe)
-        changed = changed or safe != name
-    if not changed:
-        return table
-    logger.info("Renamed BigQuery-invalid column names: %s",
-                [(o, n) for o, n in zip(table.schema.names, names) if o != n])
-    return table.rename_columns(names)
+        if safe.upper().startswith(_BQ_RESERVED_PREFIXES):
+            safe = "_" + safe
+        return safe[:300]
+
+    bases = [base_of(name) for name in table.schema.names]
+    collisions = Counter(b.casefold() for b in bases)
+
+    names: list[str] = []
+    rename_map: dict[str, str] = {}
+    for name, base in zip(table.schema.names, bases):
+        if collisions[base.casefold()] > 1:
+            base = f"{base[:293]}_{hashlib.sha1(name.encode()).hexdigest()[:6]}"
+        names.append(base)
+        if base != name:
+            rename_map[name] = base
+    if not rename_map:
+        return table, {}
+    logger.info("Renamed BigQuery-invalid column names: %s", sorted(rename_map.items()))
+    return table.rename_columns(names), rename_map
 
 
 def _arrow_schema_to_bq(schema: pa.Schema) -> list:

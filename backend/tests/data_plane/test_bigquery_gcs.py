@@ -612,16 +612,68 @@ def test_write_parquet_sanitizes_bq_invalid_column_names(plane, scope):
 def test_bq_safe_column_names_leaves_valid_names_untouched():
     from backend.data_plane.bigquery_gcs import _bq_safe_column_names
     tbl = pa.table({"id": pa.array([1]), "created_at": pa.array(["x"])})
-    assert _bq_safe_column_names(tbl) is tbl
+    out, renamed = _bq_safe_column_names(tbl)
+    assert out is tbl
+    assert renamed == {}
 
 
 def test_bq_safe_column_names_dedupes_collisions():
     from backend.data_plane.bigquery_gcs import _bq_safe_column_names
     tbl = pa.table({"a b": pa.array([1]), "a-b": pa.array([2])})
-    assert _bq_safe_column_names(tbl).schema.names == ["a_b", "a_b_1"]
+    names = _bq_safe_column_names(tbl)[0].schema.names
+    assert names[0] != names[1]
+    assert all(n.startswith("a_b_") for n in names)
+
+
+def test_bq_safe_column_names_dedupes_case_only_collisions():
+    """BigQuery compares column names case-insensitively — `Foo`/`foo` collide."""
+    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    tbl = pa.table({"Foo": pa.array([1]), "foo": pa.array([2])})
+    names = _bq_safe_column_names(tbl)[0].schema.names
+    assert len({n.casefold() for n in names}) == 2
+
+
+def test_bq_safe_column_names_escapes_reserved_prefixes():
+    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    tbl = pa.table({"_TABLE_source": pa.array([1]), "_PARTITION_key": pa.array([2])})
+    out, renamed = _bq_safe_column_names(tbl)
+    assert out.schema.names == ["__TABLE_source", "__PARTITION_key"]
+    assert renamed == {"_TABLE_source": "__TABLE_source", "_PARTITION_key": "__PARTITION_key"}
+
+
+def test_bq_safe_column_names_is_deterministic_across_calls():
+    """dlt calls write_parquet per batch — collision suffixes must not drift."""
+    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    first = _bq_safe_column_names(pa.table({"a b": pa.array([1]), "a-b": pa.array([2])}))[0]
+    # Same columns, reversed order — the safe name for each source name is stable.
+    second = _bq_safe_column_names(pa.table({"a-b": pa.array([2]), "a b": pa.array([1])}))[0]
+    assert first.schema.names == second.schema.names[::-1]
 
 
 def test_bq_safe_column_names_prefixes_leading_digit():
     from backend.data_plane.bigquery_gcs import _bq_safe_column_names
     tbl = pa.table({"2024 revenue": pa.array([1])})
-    assert _bq_safe_column_names(tbl).schema.names == ["_2024_revenue"]
+    assert _bq_safe_column_names(tbl)[0].schema.names == ["_2024_revenue"]
+
+
+def test_write_parquet_renames_unique_key_with_columns(plane, scope):
+    """A sanitized PK must follow the rename or the dedup view/MERGE join breaks."""
+    tbl = pa.table({"order-id": pa.array(["a"]), "Order Total": pa.array([1.0])})
+    mock_blob = MagicMock()
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+    mock_bq = MagicMock()
+    mock_bq.list_tables.return_value = []
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs), \
+         patch.object(plane, "_bq", return_value=mock_bq), \
+         patch.object(plane, "_native_merge_enabled", return_value=False), \
+         patch.object(plane, "_register_bronze_and_view") as mock_register:
+        plane.write_parquet(scope, "orders", tbl, unique_key=("order-id",))
+
+    import pyarrow.parquet as pq
+    written = pq.read_table(io.BytesIO(mock_blob.upload_from_string.call_args[0][0]))
+    assert written.schema.names == ["order_id", "Order_Total"]
+    assert mock_register.call_args[0][-1] == ("order_id",)
