@@ -583,3 +583,45 @@ def test_raw_object_exists_delegates_to_blob(plane, scope):
         assert plane.raw_object_exists(scope, "sqlite_blobs/c1.sqlite") is True
 
     mock_bucket.blob.assert_called_once_with("sqlite_blobs/c1.sqlite")
+
+
+def test_write_parquet_sanitizes_bq_invalid_column_names(plane, scope):
+    """dlt variant columns (`value▶v_bool`) are renamed before the Parquet write —
+    BigQuery rejects them at external-table creation, failing the whole load."""
+    tbl = pa.table({
+        "value▶v_bool": pa.array([True, False]),
+        "ok_col": pa.array([1, 2], type=pa.int64()),
+    })
+    mock_blob = MagicMock()
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+    mock_bq = MagicMock()
+    mock_bq.list_tables.return_value = []
+
+    with patch.object(plane, "_gcs", return_value=mock_gcs), \
+         patch.object(plane, "_bq", return_value=mock_bq):
+        plane.write_parquet(scope, "site_settings", tbl)
+
+    import pyarrow.parquet as pq
+    written = pq.read_table(io.BytesIO(mock_blob.upload_from_string.call_args[0][0]))
+    assert written.schema.names == ["value_v_bool", "ok_col"]
+
+
+def test_bq_safe_column_names_leaves_valid_names_untouched():
+    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    tbl = pa.table({"id": pa.array([1]), "created_at": pa.array(["x"])})
+    assert _bq_safe_column_names(tbl) is tbl
+
+
+def test_bq_safe_column_names_dedupes_collisions():
+    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    tbl = pa.table({"a b": pa.array([1]), "a-b": pa.array([2])})
+    assert _bq_safe_column_names(tbl).schema.names == ["a_b", "a_b_1"]
+
+
+def test_bq_safe_column_names_prefixes_leading_digit():
+    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    tbl = pa.table({"2024 revenue": pa.array([1])})
+    assert _bq_safe_column_names(tbl).schema.names == ["_2024_revenue"]

@@ -175,6 +175,7 @@ class BigQueryGCSPlane:
             arrow_table = pa.Table.from_batches(batches) if batches else pa.table({})
 
         arrow_table = _downcast_ns_timestamps(arrow_table)
+        arrow_table = _bq_safe_column_names(arrow_table)
 
         buf = io.BytesIO()
         pq.write_table(arrow_table, buf)
@@ -735,6 +736,42 @@ def _downcast_ns_timestamps(table: pa.Table) -> pa.Table:
     if not changed:
         return table
     return table.cast(pa.schema(new_fields))
+
+
+def _bq_safe_column_names(table: pa.Table) -> pa.Table:
+    """Rename columns to names BigQuery accepts (`[A-Za-z_][A-Za-z0-9_]{0,299}`).
+
+    dlt names variant columns with its path separator (`value▶v_bool`), which
+    BigQuery rejects when the external table is created — the whole load
+    package then retries until the pipeline run fails. Rename before the
+    Parquet write so the file and the BQ schema agree.
+
+    Already-valid names are returned untouched, so this is a no-op for every
+    existing table.
+    """
+    import re
+
+    seen: set[str] = set()
+    names: list[str] = []
+    changed = False
+    for name in table.schema.names:
+        safe = re.sub(r"[^A-Za-z0-9_]", "_", name)
+        if not safe or safe[0].isdigit():
+            safe = "_" + safe
+        safe = safe[:300]
+        base = safe
+        i = 1
+        while safe in seen:  # two distinct source names collapsing to one
+            safe = f"{base[:295]}_{i}"
+            i += 1
+        seen.add(safe)
+        names.append(safe)
+        changed = changed or safe != name
+    if not changed:
+        return table
+    logger.info("Renamed BigQuery-invalid column names: %s",
+                [(o, n) for o, n in zip(table.schema.names, names) if o != n])
+    return table.rename_columns(names)
 
 
 def _arrow_schema_to_bq(schema: pa.Schema) -> list:
