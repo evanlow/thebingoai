@@ -165,6 +165,15 @@ def migrate_connection(connection_id: int, *, dry_run: bool = False, db=None) ->
     return _result
 
 
+def migrate_connection_with_plane(connection, *, db) -> MigrationResult:
+    """Resolve the connection's DataPlane (triggers provision-on-miss under
+    lockdown) then migrate its SQLite blob → Parquet. Shared by seed + the
+    migrate_sqlite_connection task so the resolve-then-migrate recipe lives once."""
+    from backend.services.data_plane_service import get_plane_for_connection
+    get_plane_for_connection(connection)
+    return migrate_connection(connection.id, db=db)
+
+
 def rollback_connection(connection_id: int, *, db=None) -> RollbackResult:
     """Reverse a completed migration: restore widget SQL and dataset_table_name."""
     if db is None:

@@ -1,4 +1,5 @@
-"""migrate_sqlite_connection resolves the plane then delegates to migrate_connection."""
+"""migrate_sqlite_connection loads the connection then delegates to the shared
+migrate_connection_with_plane helper, and retries on a failed result."""
 from unittest.mock import MagicMock, patch
 
 
@@ -11,7 +12,7 @@ def _session_local_yielding(conn):
     return session_local
 
 
-def test_migrate_sqlite_connection_delegates_to_migrate_connection():
+def test_migrate_sqlite_connection_delegates_to_helper():
     from backend.tasks import migration_tasks
 
     conn = MagicMock(id=42)
@@ -19,14 +20,12 @@ def test_migrate_sqlite_connection_delegates_to_migrate_connection():
 
     with patch("backend.database.session.SessionLocal", _session_local_yielding(conn)), \
          patch("backend.models.database_connection.DatabaseConnection", MagicMock()), \
-         patch("backend.services.data_plane_service.get_plane_for_connection") as get_plane, \
-         patch("backend.migration.substrate.migrate_connection", return_value=result) as migrate:
+         patch("backend.migration.substrate.migrate_connection_with_plane", return_value=result) as migrate:
         migration_tasks.migrate_sqlite_connection(42)
 
-    get_plane.assert_called_once_with(conn)
     migrate.assert_called_once()
     args, kwargs = migrate.call_args
-    assert args[0] == 42
+    assert args[0] is conn
     assert "db" in kwargs
 
 
@@ -35,9 +34,31 @@ def test_migrate_sqlite_connection_missing_connection_is_noop():
 
     with patch("backend.database.session.SessionLocal", _session_local_yielding(None)), \
          patch("backend.models.database_connection.DatabaseConnection", MagicMock()), \
-         patch("backend.services.data_plane_service.get_plane_for_connection") as get_plane, \
-         patch("backend.migration.substrate.migrate_connection") as migrate:
+         patch("backend.migration.substrate.migrate_connection_with_plane") as migrate:
         migration_tasks.migrate_sqlite_connection(999)
 
-    get_plane.assert_not_called()
     migrate.assert_not_called()
+
+
+def test_migrate_sqlite_connection_failed_status_retries():
+    from backend.tasks import migration_tasks
+
+    conn = MagicMock(id=7)
+    result = MagicMock(
+        status="failed", new_dataplane_table=None, rows_migrated=0, error_message="boom",
+    )
+
+    class _Retry(Exception):
+        pass
+
+    with patch("backend.database.session.SessionLocal", _session_local_yielding(conn)), \
+         patch("backend.models.database_connection.DatabaseConnection", MagicMock()), \
+         patch("backend.migration.substrate.migrate_connection_with_plane", return_value=result), \
+         patch.object(migration_tasks.migrate_sqlite_connection, "retry", side_effect=_Retry) as retry:
+        try:
+            migration_tasks.migrate_sqlite_connection(7)
+            assert False, "expected a failed result to trigger self.retry"
+        except _Retry:
+            pass
+
+    retry.assert_called_once()
