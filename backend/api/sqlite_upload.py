@@ -209,15 +209,21 @@ async def upload_sqlite(
                 connection.id, e, exc_info=True,
             )
 
-        # Kick off background profiling
+        # Kick off profiling, then migrate the sqlite blob → Parquet (chained so
+        # profiling reads the raw blob before migration deletes it).
         if connection.schema_json_path:
             try:
+                from celery import chain
                 from backend.tasks.profiling_tasks import profile_connection
+                from backend.tasks.migration_tasks import migrate_sqlite_connection
                 connection.profiling_status = ProfilingStatus.PENDING.value
                 db.commit()
-                profile_connection.delay(connection.id)
+                chain(
+                    profile_connection.s(connection.id),
+                    migrate_sqlite_connection.si(connection.id),
+                ).delay()
             except Exception as e:
-                logger.error("Failed to queue profiling for SQLite connection %s: %s", connection.id, e)
+                logger.error("Failed to queue profiling/migration for SQLite connection %s: %s", connection.id, e)
 
         # Governance: auto-assign to user's teams
         if settings.enable_governance:
