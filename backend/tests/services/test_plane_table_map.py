@@ -79,3 +79,58 @@ def test_collision_same_target_is_idempotent():
     p1 = SimpleNamespace(extraction_config={"tables": ["orders"]}, target_table="acme__orders", enabled=True)
     p2 = SimpleNamespace(extraction_config={"tables": ["orders"]}, target_table="acme__orders", enabled=True)
     assert plane_table_map(_conn(), _db([p1, p2])) == {"orders": "acme__orders"}
+
+
+# --- v2 model: one pipeline per connection, per-table specs on its schedules --
+
+
+def _v2(specs, **kw):
+    """New-model pipeline: no target_table / extraction_config; specs live on a schedule."""
+    return SimpleNamespace(
+        extraction_config={}, target_table=None,
+        schedules=[SimpleNamespace(tables=specs)], **kw,
+    )
+
+
+def test_schedule_specs_map():
+    p = _v2([
+        {"source_table": "orders", "target_table": "acme__orders"},
+        {"source_table": "customers", "target_table": "acme__customers"},
+    ])
+    assert plane_table_map(_conn(), _db([p])) == {
+        "orders": "acme__orders",
+        "customers": "acme__customers",
+    }
+
+
+def test_schedule_spec_disabled_excluded():
+    p = _v2([
+        {"source_table": "orders", "target_table": "acme__orders"},
+        {"source_table": "archived", "target_table": "acme__archived", "enabled": False},
+    ])
+    assert plane_table_map(_conn(), _db([p])) == {"orders": "acme__orders"}
+
+
+def test_schedule_spec_key_lowercased_and_partial_skipped():
+    p = _v2([
+        {"source_table": "Orders", "target_table": "acme__orders"},
+        {"source_table": "no_target"},          # missing target_table → skip
+        {"target_table": "acme__no_source"},    # missing source_table → skip
+    ])
+    assert plane_table_map(_conn(), _db([p])) == {"orders": "acme__orders"}
+
+
+def test_legacy_pipeline_wins_over_schedule_spec():
+    # Legacy row is written first by the loop; setdefault must not let a
+    # schedule spec for the same source table overwrite it.
+    legacy = SimpleNamespace(
+        extraction_config={"tables": ["orders"]}, target_table="acme__orders", enabled=True,
+    )
+    v2 = _v2([{"source_table": "orders", "target_table": "other__orders"}], enabled=True)
+    assert plane_table_map(_conn(), _db([legacy, v2])) == {"orders": "acme__orders"}
+
+
+def test_pipeline_without_schedules_attribute_is_safe():
+    # Legacy fixtures / ORM rows with no `schedules` loaded must not blow up.
+    p = SimpleNamespace(extraction_config={"tables": ["orders"]}, target_table="acme__orders")
+    assert plane_table_map(_conn(), _db([p])) == {"orders": "acme__orders"}
