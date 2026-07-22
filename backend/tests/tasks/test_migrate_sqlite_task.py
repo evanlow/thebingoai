@@ -20,7 +20,6 @@ def test_migrate_sqlite_connection_delegates_to_helper():
 
     with patch("backend.database.session.SessionLocal", _session_local_yielding(conn)), \
          patch("backend.models.database_connection.DatabaseConnection", MagicMock()), \
-         patch("backend.tasks.profiling_tasks._discover_and_save_schema"), \
          patch("backend.migration.substrate.migrate_connection_with_plane", return_value=result) as migrate:
         migration_tasks.migrate_sqlite_connection(42)
 
@@ -28,41 +27,6 @@ def test_migrate_sqlite_connection_delegates_to_helper():
     args, kwargs = migrate.call_args
     assert args[0] is conn
     assert "db" in kwargs
-
-
-def test_migrate_sqlite_connection_refreshes_schema_after_migration():
-    """The plane may rename columns on write, so the schema cached at upload
-    time can name columns the migrated table no longer has."""
-    from backend.tasks import migration_tasks
-
-    conn = MagicMock(id=42)
-    result = MagicMock(status="migrated", new_dataplane_table="orders", rows_migrated=1)
-
-    with patch("backend.database.session.SessionLocal", _session_local_yielding(conn)), \
-         patch("backend.models.database_connection.DatabaseConnection", MagicMock()), \
-         patch("backend.migration.substrate.migrate_connection_with_plane", return_value=result), \
-         patch("backend.tasks.profiling_tasks._discover_and_save_schema") as refresh:
-        migration_tasks.migrate_sqlite_connection(42)
-
-    refresh.assert_called_once()
-    assert refresh.call_args[0][1] is conn
-
-
-def test_migrate_sqlite_connection_schema_refresh_failure_does_not_retry():
-    """The blob is already deleted — a refresh blip must not re-run migration."""
-    from backend.tasks import migration_tasks
-
-    conn = MagicMock(id=42)
-    result = MagicMock(status="migrated", new_dataplane_table="orders", rows_migrated=1)
-
-    with patch("backend.database.session.SessionLocal", _session_local_yielding(conn)), \
-         patch("backend.models.database_connection.DatabaseConnection", MagicMock()), \
-         patch("backend.migration.substrate.migrate_connection_with_plane", return_value=result), \
-         patch("backend.tasks.profiling_tasks._discover_and_save_schema", side_effect=RuntimeError("nope")), \
-         patch.object(migration_tasks.migrate_sqlite_connection, "retry") as retry:
-        migration_tasks.migrate_sqlite_connection(42)
-
-    retry.assert_not_called()
 
 
 def test_migrate_sqlite_connection_missing_connection_is_noop():

@@ -20,28 +20,6 @@ def enqueue_profile_then_migrate(connection_id: int) -> None:
     prof_sig.delay()
 
 
-def _refresh_schema_from_plane(db, connection) -> None:
-    """Re-discover the schema now that the DataPlane, not the blob, is the source.
-
-    The plane may rename columns on write (BigQuery rejects e.g. `Order Total`),
-    so the schema cached at upload time can name columns the migrated table no
-    longer has — every query generated from it would then fail. Post-migration
-    `get_connector_for_connection` routes to `DataPlaneConnector`, so
-    re-discovery reads the real column names.
-
-    Non-fatal: the blob is already deleted, so a failure here must not retry the
-    migration. `profile_connection` rediscovers the schema on its next run.
-    """
-    from backend.tasks.profiling_tasks import _discover_and_save_schema
-    try:
-        _discover_and_save_schema(db, connection)
-    except Exception as exc:
-        logger.warning(
-            "migrate_sqlite_connection: post-migration schema refresh failed for %s: %s",
-            connection.id, exc, exc_info=True,
-        )
-
-
 @shared_task(name="migrate_sqlite_connection", bind=True, max_retries=2)
 def migrate_sqlite_connection(self, connection_id: int):
     from backend.database.session import SessionLocal
@@ -60,8 +38,6 @@ def migrate_sqlite_connection(self, connection_id: int):
                 logger.warning("migrate_sqlite_connection: connection %s not found", connection_id)
                 return
             result = migrate_connection_with_plane(connection, db=db)
-            if result.status == "migrated":
-                _refresh_schema_from_plane(db, connection)
     except Exception as exc:  # provisioning race, storage blip, etc.
         logger.error(
             "migrate_sqlite_connection: connection=%s raised; retrying: %s", connection_id, exc,

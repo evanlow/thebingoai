@@ -34,6 +34,11 @@ class MigrationJournal(Base, TimestampMixin):
     error_message = Column(Text, nullable=True)
     widget_rewrites_applied = Column(JSONB, nullable=False, server_default="[]", default=list)
     pre_migration_dataset_table_name = Column(Text, nullable=True)
+    # Physical tables written by this migration all start with this prefix
+    # (`sqlite_<connection_id>_`), which is what keeps two uploads that both
+    # contain an `orders` table from overwriting each other in a shared owner
+    # scope. NULL = migrated before prefixing existed, i.e. bare table names.
+    dataplane_table_prefix = Column(Text, nullable=True)
 
 
 class WidgetPendingManualRewrite(Base):
@@ -266,6 +271,7 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
 
     import pyarrow as pa
 
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
     from backend.data_plane.scope import OwnerScope
     from backend.services.data_plane_service import get_default_plane
     from backend.services import sqlite_blob_storage
@@ -299,6 +305,14 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
     legacy_table_names: list[str] = []
     new_dataplane_table: Optional[str] = None
 
+    # Physical tables are namespaced by connection: the owner scope is shared by
+    # every upload a user makes, so writing bare table names means the second
+    # .sqlite containing `orders` silently replaces the first one's data.
+    table_prefix = f"sqlite_{connection.id}"
+    # legacy table -> physical table, and legacy table -> {old column: new column}
+    table_renames: dict[str, str] = {}
+    column_renames: dict[str, dict[str, str]] = {}
+
     try:
         conn_ro = sqlite3.connect(f"file:{tmp_path}?mode=ro", uri=True)
         try:
@@ -311,6 +325,8 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
 
             for (table_name,) in table_rows:
                 legacy_table_names.append(table_name)
+                physical_table = f"{table_prefix}_{table_name}"
+                table_renames[table_name] = physical_table
 
                 # Capture PRIMARY KEY columns so the DataPlane can register a
                 # dedup view (bronze+silver pattern) or MERGE-into-native table
@@ -339,11 +355,21 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
                     arrow_arrays = [pa.array(col_data[c]) for c in col_names]
                     arrow_table = pa.table(dict(zip(col_names, arrow_arrays)))
 
+                    # Sanitize here rather than leaving it to the plane: the
+                    # rename map has to reach the saved schema + data_context,
+                    # which name the columns the dashboard agent writes SQL
+                    # against. Doing it up front also means the local and
+                    # BigQuery planes end up with identical column names.
+                    arrow_table, renamed = bq_safe_column_names(arrow_table)
+                    if renamed:
+                        column_renames[table_name] = renamed
+                        pk_cols = tuple(renamed.get(c, c) for c in pk_cols)
+
                     write_kwargs: dict = {"mode": "overwrite"}
                     if pk_cols:
                         write_kwargs["unique_key"] = pk_cols
-                    plane.write_parquet(scope, table_name, arrow_table, **write_kwargs)
-                    new_dataplane_table = table_name  # last table; spec uses singular
+                    plane.write_parquet(scope, physical_table, arrow_table, **write_kwargs)
+                    new_dataplane_table = physical_table  # last table; spec uses singular
 
                 tables_migrated += 1
         finally:
@@ -357,7 +383,8 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
 
     # Widget SQL rewrite
     widget_rewrites, queued_count = _rewrite_widgets_for_connection(
-        connection, legacy_table_names, new_dataplane_prefix="", dry_run=dry_run, db=db
+        connection, legacy_table_names, new_dataplane_prefix=table_prefix,
+        dry_run=dry_run, db=db,
     )
 
     if queued_count > 0:
@@ -387,14 +414,25 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
         ]
         journal.legacy_blob_path = legacy_blob_path
         journal.new_dataplane_table = new_dataplane_table
+        journal.dataplane_table_prefix = f"{table_prefix}_"
         journal.status = "migrated"
         journal.finished_at = datetime.utcnow()
+
+        # Point the saved schema + data_context at the names the plane actually
+        # holds. Same transaction as the journal flip, so a migrated journal can
+        # never coexist with metadata naming tables/columns that don't exist.
+        _apply_migration_renames(connection, table_renames, column_renames, db)
 
         # Auto-materialise Pipeline + stg_ DbtModel rows for every migrated
         # table so the dbt project's sources.yml + staging layer references the
         # new DataPlane data. Failures are non-fatal — the post-migration sync
         # can be re-run idempotently. cron=None so the dispatcher never picks
         # the rows up (SQLite is a one-shot upload).
+        # ponytail: these rows still carry pre-prefix table names for a bundled
+        # local-file connection (the seeded sample), because the templates are
+        # built by re-reading the .sqlite, which this migration leaves in place.
+        # Affects dbt lineage only — nothing queries through these rows. Fix by
+        # handing `table_renames` down if the dbt layer ever gates a read path.
         try:
             from backend.services.template_materializer import materialize_post_migration
             materialize_post_migration(connection, db)
@@ -419,6 +457,90 @@ def _do_migrate(connection, journal: MigrationJournal, *, dry_run: bool, db) -> 
         widget_rewrites=widget_rewrites,
         widgets_queued_for_review=0,
     )
+
+
+def _rename_relationship(rel: dict, table_map: dict, column_map: dict) -> dict:
+    """Rewrite a relationship's `table.column` endpoints through both maps.
+
+    Only `from`/`to` are touched — relationships also carry `type`/`inferred`.
+    """
+    def rename(ref: str) -> str:
+        table, sep, column = ref.partition(".")
+        if not sep:
+            return table_map.get(ref, ref)
+        return f"{table_map.get(table, table)}.{column_map.get(table, {}).get(column, column)}"
+
+    return {
+        k: rename(v) if k in ("from", "to") and isinstance(v, str) else v
+        for k, v in rel.items()
+    }
+
+
+def _apply_migration_renames(connection, table_map: dict, column_map: dict, db) -> None:
+    """Rewrite the connection's saved schema + data_context to the names the
+    DataPlane actually holds.
+
+    Tables gain the per-connection prefix and columns may have been sanitized
+    (`Order Total` -> `Order_Total`), so metadata written before the migration
+    names things the migrated tables no longer have. `data_context` matters most:
+    it is what the dashboard agent reads when generating SQL.
+
+    Rewriting beats re-discovering from the plane — Parquet carries no primary
+    key or foreign key metadata, so a fresh discovery would drop everything
+    `_discover_sqlite_schema` captured at upload.
+
+    Known gap: column names already embedded in *widget SQL text* are not
+    rewritten. Uploads migrate seconds after the widgets-free upload, so this
+    only affects a legacy connection migrated long after dashboards were built.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    schema_json = connection.schema_json
+    if schema_json:
+        for schema_data in (schema_json.get("schemas") or {}).values():
+            tables = schema_data.get("tables") or {}
+            renamed_tables = {}
+            for table_name, table_data in tables.items():
+                cols = column_map.get(table_name, {})
+                for col in table_data.get("columns") or []:
+                    if isinstance(col, dict) and col.get("name") in cols:
+                        col["name"] = cols[col["name"]]
+                renamed_tables[table_map.get(table_name, table_name)] = table_data
+            schema_data["tables"] = renamed_tables
+
+        schema_json["table_names"] = [
+            table_map.get(t, t) for t in schema_json.get("table_names") or []
+        ]
+        schema_json["relationships"] = [
+            _rename_relationship(rel, table_map, column_map)
+            for rel in schema_json.get("relationships") or []
+        ]
+        # Set the column directly rather than via `save_schema_file`: that opens
+        # its own session and commits, which would split this rewrite across two
+        # transactions and touch a row `db` is already holding.
+        connection.schema_json = schema_json
+        flag_modified(connection, "schema_json")
+
+    context = connection.data_context
+    if context:
+        renamed_tables = {}
+        for table_name, table_data in (context.get("tables") or {}).items():
+            cols = column_map.get(table_name, {})
+            if cols:
+                table_data["columns"] = {
+                    cols.get(cname, cname): cdata
+                    for cname, cdata in (table_data.get("columns") or {}).items()
+                }
+            renamed_tables[table_map.get(table_name, table_name)] = table_data
+        context["tables"] = renamed_tables
+        context["relationships"] = [
+            _rename_relationship(rel, table_map, column_map)
+            for rel in context.get("relationships") or []
+        ]
+        connection.data_context = context
+        flag_modified(connection, "data_context")
+
+    db.add(connection)
 
 
 def _rewrite_widgets_for_connection(
