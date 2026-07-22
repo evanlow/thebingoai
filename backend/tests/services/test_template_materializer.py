@@ -63,7 +63,6 @@ _runner_module.compute_pipeline_fingerprint = MagicMock(side_effect=_fake_finger
 
 sys.modules["backend.models.pipeline"] = _pipeline_module
 sys.modules["backend.models.transforms"] = _transforms_module
-sys.modules["backend.data_plane.scope"] = _scope_module
 sys.modules["backend.pipelines.runner"] = _runner_module
 
 # Import the actual `plugins.base` (lightweight) so real dataclasses are used.
