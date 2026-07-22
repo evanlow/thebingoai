@@ -610,50 +610,57 @@ def test_write_parquet_sanitizes_bq_invalid_column_names(plane, scope):
 
 
 def test_bq_safe_column_names_leaves_valid_names_untouched():
-    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
     tbl = pa.table({"id": pa.array([1]), "created_at": pa.array(["x"])})
-    out, renamed = _bq_safe_column_names(tbl)
+    out, renamed = bq_safe_column_names(tbl)
     assert out is tbl
     assert renamed == {}
 
 
 def test_bq_safe_column_names_dedupes_collisions():
-    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
     tbl = pa.table({"a b": pa.array([1]), "a-b": pa.array([2])})
-    names = _bq_safe_column_names(tbl)[0].schema.names
+    names = bq_safe_column_names(tbl)[0].schema.names
     assert names[0] != names[1]
     assert all(n.startswith("a_b_") for n in names)
 
 
 def test_bq_safe_column_names_dedupes_case_only_collisions():
     """BigQuery compares column names case-insensitively — `Foo`/`foo` collide."""
-    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
     tbl = pa.table({"Foo": pa.array([1]), "foo": pa.array([2])})
-    names = _bq_safe_column_names(tbl)[0].schema.names
+    names = bq_safe_column_names(tbl)[0].schema.names
     assert len({n.casefold() for n in names}) == 2
 
 
 def test_bq_safe_column_names_escapes_reserved_prefixes():
-    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
     tbl = pa.table({"_TABLE_source": pa.array([1]), "_PARTITION_key": pa.array([2])})
-    out, renamed = _bq_safe_column_names(tbl)
+    out, renamed = bq_safe_column_names(tbl)
     assert out.schema.names == ["__TABLE_source", "__PARTITION_key"]
     assert renamed == {"_TABLE_source": "__TABLE_source", "_PARTITION_key": "__PARTITION_key"}
 
 
+def test_bq_safe_column_names_escapes_change_prefix():
+    """`_CHANGE_*` are BigQuery CDC pseudo-columns — also a rejected prefix."""
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
+    tbl = pa.table({"_CHANGE_TYPE": pa.array([1])})
+    assert bq_safe_column_names(tbl)[0].schema.names == ["__CHANGE_TYPE"]
+
+
 def test_bq_safe_column_names_is_deterministic_across_calls():
     """dlt calls write_parquet per batch — collision suffixes must not drift."""
-    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
-    first = _bq_safe_column_names(pa.table({"a b": pa.array([1]), "a-b": pa.array([2])}))[0]
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
+    first = bq_safe_column_names(pa.table({"a b": pa.array([1]), "a-b": pa.array([2])}))[0]
     # Same columns, reversed order — the safe name for each source name is stable.
-    second = _bq_safe_column_names(pa.table({"a-b": pa.array([2]), "a b": pa.array([1])}))[0]
+    second = bq_safe_column_names(pa.table({"a-b": pa.array([2]), "a b": pa.array([1])}))[0]
     assert first.schema.names == second.schema.names[::-1]
 
 
 def test_bq_safe_column_names_prefixes_leading_digit():
-    from backend.data_plane.bigquery_gcs import _bq_safe_column_names
+    from backend.data_plane.bigquery_gcs import bq_safe_column_names
     tbl = pa.table({"2024 revenue": pa.array([1])})
-    assert _bq_safe_column_names(tbl)[0].schema.names == ["_2024_revenue"]
+    assert bq_safe_column_names(tbl)[0].schema.names == ["_2024_revenue"]
 
 
 def test_write_parquet_renames_unique_key_with_columns(plane, scope):

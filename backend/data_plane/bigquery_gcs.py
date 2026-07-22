@@ -175,7 +175,7 @@ class BigQueryGCSPlane:
             arrow_table = pa.Table.from_batches(batches) if batches else pa.table({})
 
         arrow_table = _downcast_ns_timestamps(arrow_table)
-        arrow_table, renamed = _bq_safe_column_names(arrow_table)
+        arrow_table, renamed = bq_safe_column_names(arrow_table)
         if renamed and unique_key:
             # The key names the dedup view / MERGE join builds from — it has to
             # follow the Parquet rename or both fail after the object is written.
@@ -743,12 +743,15 @@ def _downcast_ns_timestamps(table: pa.Table) -> pa.Table:
 
 
 # BigQuery rejects columns starting with any of these, case-insensitively.
+# `_CHANGE_` covers the CDC pseudo-columns (`_CHANGE_TYPE`,
+# `_CHANGE_SEQUENCE_NUMBER`, `_CHANGE_TIMESTAMP`) in one entry.
 _BQ_RESERVED_PREFIXES = (
     "_TABLE_", "_FILE_", "_PARTITION", "_ROW_TIMESTAMP", "__ROOT__", "_COLIDENTIFIER",
+    "_CHANGE_",
 )
 
 
-def _bq_safe_column_names(table: pa.Table) -> tuple[pa.Table, dict[str, str]]:
+def bq_safe_column_names(table: pa.Table) -> tuple[pa.Table, dict[str, str]]:
     """Rename columns to names BigQuery accepts, returning `(table, rename_map)`.
 
     Guarantees each output name matches `[A-Za-z_][A-Za-z0-9_]{0,299}`, carries
