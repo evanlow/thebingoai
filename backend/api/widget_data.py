@@ -845,9 +845,10 @@ async def refresh_widget(
         # Route bigquery_ga4 widget SQL through the data plane (managed
         # materialised view) instead of the raw GA4 source connector.
         served_from = "source"
-        from backend.connectors.data_plane import DataPlaneConnector
-        if isinstance(connector, DataPlaneConnector):
-            # Migrated sqlite: connector reroutes to the DataPlane (Parquet).
+        if getattr(connector, "serves_from_plane", False) is True:
+            # Migrated sqlite / CSV dataset: connector reads the DataPlane
+            # (Parquet), not the origin database. Identity check — any
+            # attribute-synthesising stand-in (MagicMock) must not opt in.
             served_from = "data_plane"
         if connection.db_type == "bigquery_ga4":
             sql, params = _prepare(request.sql)
@@ -1182,9 +1183,8 @@ async def refresh_dashboard_widgets(
                     )
 
                 served_from = "source"
-                from backend.connectors.data_plane import DataPlaneConnector
-                if isinstance(connector, DataPlaneConnector):
-                    # Migrated sqlite: connector reroutes to the DataPlane.
+                if getattr(connector, "serves_from_plane", False) is True:
+                    # Migrated sqlite / CSV dataset: connector reads the DataPlane.
                     served_from = "data_plane"
                 if connection.db_type == "bigquery_ga4":
                     fb_sql, params = _prepare_bulk(sql)

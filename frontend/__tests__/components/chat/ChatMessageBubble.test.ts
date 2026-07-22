@@ -137,6 +137,30 @@ describe('ChatMessageBubble', () => {
     const avatarWrapper = lightImg.element.parentElement!
     expect(avatarWrapper.className).not.toContain('avatar-spin')
   })
+
+  it('ticks the elapsed timer next to "working..." while streaming', async () => {
+    vi.useFakeTimers()
+    withChatStore({ isStreaming: true })
+    const wrapper = mount(ChatMessageBubble, {
+      props: {
+        message: { ...assistantMsg, content: '', steps_log: ['17:07:34 > Create Dashboard'], steps_log_expanded: true },
+        showActions: false,
+        actionType: null,
+        isLast: true,
+        agentName: 'Bingo',
+      },
+    })
+    expect(wrapper.text()).toContain('working... (0s)')
+
+    vi.advanceTimersByTime(5000)
+    await nextTick()
+    expect(wrapper.text()).toContain('working... (5s)')
+
+    vi.advanceTimersByTime(60000)
+    await nextTick()
+    expect(wrapper.text()).toContain('working... (1m 5s)')
+    vi.useRealTimers()
+  })
 })
 
 describe('ChatMessageBubble — reasoning steps toggle', () => {

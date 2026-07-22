@@ -54,7 +54,67 @@ def _run_widget_query(connection, sql: str, db_session_factory, connector):
             return plane.query(scope, sql)
         finally:
             db.close()
+
+    plane_result = _run_widget_query_on_plane(connection, sql, db_session_factory)
+    if plane_result is not None:
+        return plane_result
     return connector.execute_query(sql)
+
+
+def _run_widget_query_on_plane(connection, sql: str, db_session_factory):
+    """Run generation-time widget SQL over the DataPlane Parquet, or None.
+
+    Mirrors `api/widget_data._serve_widget_via_dataplane`: once the Org has
+    `duckdb_widget_serving` on, the agent emits DuckDB SQL (see
+    `agents/profile_defaults._dialect_hints_for_target`), so running it against
+    the live source connector would fail on DuckDB-only constructs. Rewrite the
+    source table refs to their plane targets and read the lake instead.
+
+    No transpile — stored SQL is assumed DuckDB, same contract as the serve
+    path. Returns None on any miss so the caller falls back to the source.
+    """
+    org_id = getattr(connection, "org_id", None)
+    if not org_id:
+        return None
+
+    from backend.config.feature_flags import enabled
+    if not enabled(str(org_id), "duckdb_widget_serving"):
+        return None
+
+    from backend.data_plane.local_filesystem import LocalFilesystemDataPlane
+    from backend.services.data_plane_service import (
+        get_gcs_duckdb_reader,
+        get_plane_for_connection,
+        plane_table_map,
+    )
+    from backend.utils.sql_refs import qualifier_allowlist, rewrite_table_refs
+
+    db = db_session_factory()
+    reader = None
+    try:
+        table_map = plane_table_map(connection, db)
+        if not table_map:
+            return None  # no pipelines → nothing materialized → source
+        plane, scope = get_plane_for_connection(connection)
+        plane_sql, _ = rewrite_table_refs(sql, table_map, qualifier_allowlist(connection))
+
+        if isinstance(plane, LocalFilesystemDataPlane):
+            return plane.query(scope, plane_sql)
+
+        reader = get_gcs_duckdb_reader(scope, db)
+        if reader is None:
+            return None  # residency-locked / customer / no-HMAC → source
+        return reader.query(scope, plane_sql)
+    except Exception as e:
+        logger.warning(
+            "Plane read failed for generation-time widget SQL on connection %s, "
+            "using source connector: %s", getattr(connection, "id", "?"), e,
+        )
+        return None
+    finally:
+        if reader is not None:
+            reader.close()
+        db.close()
 
 
 def _validate_data_source(data_source: dict, widget_type: str, widget_index: int) -> str | None:

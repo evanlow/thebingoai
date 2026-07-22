@@ -117,7 +117,6 @@ _cron_module.compute_next_run = MagicMock(return_value=_dt(2026, 1, 1, 2, 0, 0))
 
 sys.modules["backend.models.pipeline"] = _pipeline_module
 sys.modules["backend.models.transforms"] = _transforms_module
-sys.modules["backend.data_plane.scope"] = _scope_module
 sys.modules["backend.pipelines.runner"] = _runner_module
 sys.modules["backend.connectors.sql_dlt"] = _sql_dlt_module
 sys.modules["backend.services.watermark_classifier"] = _watermark_module

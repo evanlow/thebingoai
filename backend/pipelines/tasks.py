@@ -141,8 +141,10 @@ def first_ingest_task(connection_id: int, triggered_by_user_id: str | None):
 
     Fired from `api/connections.create_connection` immediately after
     `materialize_templates_for_connection` succeeds. Pulls
-    `now - settings.first_ingest_lookback_days` forward for incremental tables;
-    full-snapshot tables ignore the lookback and load everything.
+    `now - settings.first_ingest_lookback_days` forward for incremental tables
+    when that setting is > 0; at 0 (or below) there is no lower bound and the
+    first run loads all history up to T-1. Full-snapshot tables ignore it
+    either way and load everything.
 
     Runs sequentially (one pipeline per loop iter) so multiple tables on the
     same connection don't fan out a herd of concurrent dlt processes against
@@ -164,10 +166,14 @@ def first_ingest_task(connection_id: int, triggered_by_user_id: str | None):
             logger.info("first_ingest_task: no pipelines for connection %s", connection_id)
             return 0
 
+        # N > 0 → pull `[now − N days, T-1)`. N ≤ 0 → no lower bound; dlt's
+        # sentinel pulls all history (same convention as
+        # `template_materializer._apply_mysql_t1_schedule` / `watermark_tasks`).
+        lookback_days = int(getattr(settings, "first_ingest_lookback_days", 0) or 0)
         backfill_since_iso = (
-            datetime.now(timezone.utc)
-            - timedelta(days=int(getattr(settings, "first_ingest_lookback_days", 1)))
-        ).isoformat()
+            (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
+            if lookback_days > 0 else None
+        )
         ran = 0
         for p in pipelines:
             if p.first_ingest_done:

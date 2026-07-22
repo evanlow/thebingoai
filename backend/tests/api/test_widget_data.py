@@ -675,3 +675,36 @@ def test_source_db_fallback_works_for_mysql_connection(monkeypatch):
     resp = _run(wd.refresh_widget(req, _user(org_id="org-1"), db))
     assert resp is not None
     assert resp.config["value"] == 42
+
+
+def test_refresh_widget_plane_backed_connector_reports_data_plane(monkeypatch):
+    """A plane-backed connector (migrated sqlite, CSV dataset) reads Parquet, so
+    the response must say `data_plane` — MagicMock connectors stay `source`."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+
+    class FakePlaneConnector:
+        serves_from_plane = True
+
+        def execute_query(self, sql, params=None):
+            return FakeQueryResult(columns=["cnt"], rows=[(3,)], row_count=1)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection",
+        lambda conn: FakePlaneConnector(),
+    )
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 3})
+
+    db = _db_with_first(FakeConnection(db_type="dataset"))
+    req = wd.WidgetRefreshRequest(
+        connection_id=42, sql="SELECT COUNT(*) FROM csv_42", mapping={},
+    )
+    resp = _run(wd.refresh_widget(req, _user(), db))
+
+    assert resp.served_from == "data_plane"
+
+    # Pin the real core connector too — the fake above only covers the contract.
+    from backend.connectors.data_plane import DataPlaneConnector
+    assert DataPlaneConnector.serves_from_plane is True

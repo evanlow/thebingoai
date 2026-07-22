@@ -109,7 +109,6 @@ def ensure_shared_sample(db: Session) -> None:
 
     from backend.models.organization import Organization
     from backend.models.user import User
-    from backend.services.data_plane_service import get_plane_for_connection
 
     # 1. System "Samples" org (required so provision-on-miss can load it).
     #    Fixed-PK inserts race across replicas booting concurrently — absorb
@@ -211,14 +210,12 @@ def ensure_shared_sample(db: Session) -> None:
                     "Schema discovery failed for shared sample %s", connection.id, exc_info=True,
                 )
 
-        # 6. Resolve the shared plane first (triggers provision-on-miss under
-        #    lockdown) so the migrator finds a plane to write to.
-        get_plane_for_connection(connection)
-
-        # 7. Migrate sqlite → Parquet once. Idempotent: journal status='migrated'
-        #    returns "skipped"; a failed journal resets to pending on the next run.
-        from backend.migration.substrate import migrate_connection
-        result = migrate_connection(connection.id, db=db)
+        # 6. Resolve the shared plane (triggers provision-on-miss under lockdown)
+        #    then migrate sqlite → Parquet once. Idempotent: journal
+        #    status='migrated' returns "skipped"; a failed journal resets to
+        #    pending on the next run.
+        from backend.migration.substrate import migrate_connection_with_plane
+        result = migrate_connection_with_plane(connection, db=db)
         if result.status == "failed":
             logger.warning("Shared sample migration failed: %s", result.error_message)
             return

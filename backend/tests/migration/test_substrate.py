@@ -185,11 +185,11 @@ class TestSingleTableMigration:
         assert result.tables_migrated == 1
         assert result.rows_migrated == 5
 
-        # write_parquet called once with table_name == "sales"
+        # write_parquet called once, with the table namespaced to the connection
         mock_plane.write_parquet.assert_called_once()
         call_args = mock_plane.write_parquet.call_args
         # Positional: (scope, table_name, arrow_table, mode=...)
-        assert call_args[0][1] == "sales"
+        assert call_args[0][1] == "sqlite_1_sales"
 
         mock_delete.assert_called_once()
         db.commit.assert_called()
@@ -250,7 +250,7 @@ class TestLocalFileMigration:
             assert result.tables_migrated == 1
             assert result.rows_migrated == 4
             mock_plane.write_parquet.assert_called_once()
-            assert mock_plane.write_parquet.call_args[0][1] == "listings"
+            assert mock_plane.write_parquet.call_args[0][1] == "sqlite_1_listings"
 
             mock_download.assert_not_called()
             mock_delete.assert_not_called()
