@@ -379,23 +379,38 @@ async def _persist_turn(
 ):
     """Persist the assistant message + steps. Must succeed BEFORE the turn is
     charged — a failure here propagates so credit is never finalized (the caller
-    charges only after this returns). Save even for empty/tool-only turns."""
-    if final_message or collected_steps:
-        assistant_msg = ConversationService.add_message(db, conversation.id, "assistant", final_message or "")
+    charges only after this returns). Save even for empty/tool-only turns.
 
-        if collected_steps:
-            from backend.models.agent_step import AgentStep
-            for i, step in enumerate(collected_steps):
-                db.add(AgentStep(
-                    message_id=assistant_msg.id,
-                    step_number=i + 1,
-                    agent_type=step.get("agent_type", "unknown"),
-                    step_type=step.get("step_type", "unknown"),
-                    tool_name=step.get("tool_name"),
-                    content=step.get("content", {}),
-                    duration_ms=step.get("duration_ms"),
-                ))
-            db.commit()
+    Runs in a worker thread: committing a many-step turn (JSON step payloads
+    over TLS to the capped managed PG) blocked the event loop long enough to
+    fail liveness probes (2026-07-23 incident)."""
+    if final_message or collected_steps:
+        await asyncio.to_thread(
+            _persist_turn_sync, db, conversation, final_message, collected_steps
+        )
+
+
+def _persist_turn_sync(
+    db: Session,
+    conversation,
+    final_message: str,
+    collected_steps: list,
+):
+    assistant_msg = ConversationService.add_message(db, conversation.id, "assistant", final_message or "")
+
+    if collected_steps:
+        from backend.models.agent_step import AgentStep
+        for i, step in enumerate(collected_steps):
+            db.add(AgentStep(
+                message_id=assistant_msg.id,
+                step_number=i + 1,
+                agent_type=step.get("agent_type", "unknown"),
+                step_type=step.get("step_type", "unknown"),
+                tool_name=step.get("tool_name"),
+                content=step.get("content", {}),
+                duration_ms=step.get("duration_ms"),
+            ))
+        db.commit()
 
 
 async def _postprocess_turn(

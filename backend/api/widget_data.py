@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -741,7 +742,20 @@ async def refresh_widget(
     DuckDB over the DataPlane source Parquet; cold sources fall back. With the
     flag off, behavior is unchanged: the Parquet `_dash_*` cache serves
     unfiltered reads and the source DB serves the rest.
+
+    The serving ladder is entirely synchronous (DuckDB-over-GCS scans, Parquet
+    cache reads, source-DB connectors) — running it on the event loop starved
+    /health and got pods liveness-killed (2026-07-23 incident), so it runs in
+    a worker thread.
     """
+    return await asyncio.to_thread(_refresh_widget_sync, request, current_user, db)
+
+
+def _refresh_widget_sync(
+    request: WidgetRefreshRequest,
+    current_user: User,
+    db: Session,
+):
     dashboard = None
     if request.dashboard_id:
         # Org-wide visibility, matching GET /dashboards/{id}: any org member who
