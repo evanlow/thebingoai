@@ -21,6 +21,11 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting BINGO Backend...")
 
+    # Stall watchdog: logs the blocking stack whenever the event loop freezes
+    # (>5s), so probe-kill incidents leave evidence of the culprit frame.
+    from backend.services.loop_watchdog import start as start_loop_watchdog
+    start_loop_watchdog()
+
     # Fail fast in production if the data-plane lockdown is half-configured.
     from backend.services.data_plane_service import check_internal_gcp_config
     check_internal_gcp_config()
