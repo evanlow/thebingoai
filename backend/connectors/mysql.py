@@ -45,12 +45,19 @@ class MySQLConnector(BaseConnector):
 
     def _get_connect_kwargs(self) -> dict:
         """Map properties to PyMySQL kwargs."""
+        from backend.config import settings
         kwargs = {
             'host': self.host,
             'port': self.port,
             'database': self.database,
             'user': self.username,
-            'password': self.password
+            'password': self.password,
+            # pymysql read_timeout defaults to None (waits forever). Bound connect
+            # and read/write so an idle/cold free-tier MySQL fails fast instead of
+            # hanging past the 60s frontend cap.
+            'connect_timeout': settings.source_connect_timeout_s,
+            'read_timeout': min(settings.query_timeout_ms // 1000, 50),
+            'write_timeout': settings.source_connect_timeout_s,
         }
         if self.ssl_enabled:
             ca_path = self._get_ca_cert_path()
