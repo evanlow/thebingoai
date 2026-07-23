@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # Agent settings
     agent_recursion_limit: int = 100  # Max LangGraph ReAct loop steps per agent invocation
+    data_agent_query_budget: int = 5  # Soft cap on execute_query calls per data_agent run before "summarize now" is injected
 
     # Layer-4 orchestrator response-quality judge (see plan: orchestration error handling)
     # All env-driven via .env; empty defaults here so config is explicit in ops.
