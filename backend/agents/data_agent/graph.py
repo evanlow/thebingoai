@@ -83,7 +83,11 @@ async def invoke_data_agent(
             system_prompt=_resolve_data_agent_prompt(context),
             message=question,
             llm_provider=llm_provider,
-            pre_model_hook=make_loop_detector(max_repeats=2, max_total_calls=25),
+            pre_model_hook=make_loop_detector(
+                max_repeats=2,
+                max_total_calls=25,
+                query_budget=settings.data_agent_query_budget,
+            ),
             agent_type="data_agent",
             user_id=getattr(context, "user_id", None),
             session_id=getattr(context, "session_id", None),

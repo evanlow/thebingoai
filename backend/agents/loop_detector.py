@@ -17,7 +17,7 @@ from backend.agents.exceptions import LoopDetectedError
 logger = logging.getLogger(__name__)
 
 
-def make_loop_detector(max_repeats: int = 2, max_same_tool: int = 10, max_total_calls: int = 25):
+def make_loop_detector(max_repeats: int = 2, max_same_tool: int = 10, max_total_calls: int = 25, query_budget: int = 5):
     limit = max(max_repeats, max_same_tool)
 
     def detect_loop(state):
@@ -52,6 +52,33 @@ def make_loop_detector(max_repeats: int = 2, max_same_tool: int = 10, max_total_
                     "but no useful result. The information is not available through this approach. "
                     "Report this to the user and move on. Do NOT try more variations."
                 ))]}
+
+        # Soft query budget: once the agent has issued `query_budget` execute_query
+        # calls, nudge it to summarize instead of running more. Injected once
+        # (idempotent) so it doesn't repeat on every later model call; the hard
+        # max_total_calls cap below is the untouched backstop.
+        if query_budget:
+            already_warned = any(
+                isinstance(getattr(msg, "content", None), str)
+                and msg.content.startswith("[Query budget]")
+                for msg in messages
+            )
+            if not already_warned:
+                query_calls = sum(
+                    1
+                    for msg in messages
+                    if hasattr(msg, "tool_calls") and msg.tool_calls
+                    for tc in msg.tool_calls
+                    if tc.get("name") == "execute_query"
+                )
+                if query_calls >= query_budget:
+                    logger.warning(
+                        f"Query budget reached: {query_calls}/{query_budget} execute_query calls used, injecting summarize nudge"
+                    )
+                    return {"messages": [SystemMessage(content=(
+                        f"[Query budget] You have run {query_calls} queries. "
+                        "Summarize your findings now and answer the user — do not run more queries."
+                    ))]}
 
         if max_total_calls:
             total = sum(
