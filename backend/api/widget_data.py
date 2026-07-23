@@ -879,15 +879,20 @@ async def refresh_widget(
                       "mysql": "mysql", "bigquery": "bigquery",
                       "bigquery_ga4": "bigquery"}.get(db_type, db_type)
 
-            def _attempt(transpile, with_filter):
-                base = (transpile_to_engine(request.sql, source="bigquery", target=target)
-                        if transpile else request.sql)
+            # source: None = run as-is (native dialect); "bigquery" = legacy BQ
+            # SQL; "postgres" = repair ANSI double-quoted identifiers ("col") to
+            # the target's native quoting — the agent sometimes emits them and
+            # they break on MySQL (see conn 50 / dash 36).
+            def _attempt(source, with_filter):
+                base = (request.sql if source is None
+                        else transpile_to_engine(request.sql, source=source, target=target))
                 s, p = (_prepare(base) if with_filter else (base, None))
                 return connector.execute_query(s, params=p)
 
-            plans = [(False, True), (False, False), (True, True), (True, False)]
+            plans = [(None, True), (None, False), ("bigquery", True),
+                     ("bigquery", False), ("postgres", True), ("postgres", False)]
             if not request.filters:
-                plans = [(False, False), (True, False)]
+                plans = [(None, False), ("bigquery", False), ("postgres", False)]
             first_err = None
             for i, (tr, wf) in enumerate(plans):
                 try:
@@ -1215,15 +1220,19 @@ async def refresh_dashboard_widgets(
                               "mysql": "mysql", "bigquery": "bigquery",
                               "bigquery_ga4": "bigquery"}.get(db_type, db_type)
 
-                    def _attempt_bulk(transpile, with_filter):
-                        base = (transpile_to_engine(sql, source="bigquery", target=target)
-                                if transpile else sql)
+                    # source: None = native as-is; "bigquery" = legacy BQ SQL;
+                    # "postgres" = repair ANSI "col" identifiers to the target's
+                    # native quoting (breaks on MySQL otherwise). See refresh_widget.
+                    def _attempt_bulk(source, with_filter):
+                        base = (sql if source is None
+                                else transpile_to_engine(sql, source=source, target=target))
                         s, p = (_prepare_bulk(base) if with_filter else (base, None))
                         return connector.execute_query(s, params=p)
 
-                    plans = [(False, True), (False, False), (True, True), (True, False)]
+                    plans = [(None, True), (None, False), ("bigquery", True),
+                             ("bigquery", False), ("postgres", True), ("postgres", False)]
                     if not filters:
-                        plans = [(False, False), (True, False)]
+                        plans = [(None, False), ("bigquery", False), ("postgres", False)]
                     first_err = None
                     for _i, (_tr, _wf) in enumerate(plans):
                         try:
