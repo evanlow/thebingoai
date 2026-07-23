@@ -56,10 +56,14 @@ export const useCreditBalance = () => {
     }
   }
 
-  // Fetch on mount
-  onMounted(() => {
-    fetchBalance()
-  })
+  // Fetch on mount — only when called from a component setup. Callers that grab
+  // just `refresh` (useChatStreaming, useBriefing) run outside setup, where
+  // onMounted has no instance to bind to and Vue warns.
+  if (getCurrentInstance()) {
+    onMounted(() => {
+      fetchBalance()
+    })
+  }
 
   return {
     dailyLimit,
