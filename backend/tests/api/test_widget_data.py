@@ -677,6 +677,50 @@ def test_source_db_fallback_works_for_mysql_connection(monkeypatch):
     assert resp.config["value"] == 42
 
 
+def test_refresh_widget_postgres_source_repairs_ansi_quotes_for_mysql(monkeypatch):
+    """Orchestration: a MySQL widget whose stored SQL uses ANSI double-quoted
+    identifiers must fall through the _attempt chain (native → bigquery →
+    postgres) — the postgres-source attempt repairs `"col"` to backticks, and
+    the loop runs that repaired SQL to success."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+
+    result = FakeQueryResult(columns=["amt"], rows=[(7,)], row_count=1)
+
+    def _exec(sql, params=None):
+        # The source only accepts MySQL-native backtick identifiers; ANSI
+        # double-quotes (native + the bigquery attempt's string-literal output)
+        # are rejected, forcing fall-through to the postgres-repair attempt.
+        if "`amt`" in sql:
+            return result
+        raise Exception(f"unknown identifier quoting: {sql}")
+
+    fake_connector = MagicMock()
+    fake_connector.__enter__ = lambda self: self
+    fake_connector.__exit__ = lambda *a: None
+    fake_connector.execute_query.side_effect = _exec
+
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection",
+        lambda conn: fake_connector,
+    )
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 7})
+
+    db = _db_with_first(FakeConnection(db_type="mysql"))
+    req = wd.WidgetRefreshRequest(
+        connection_id=42, sql='SELECT "amt" FROM sales', mapping={},
+    )
+    resp = _run(wd.refresh_widget(req, _user(), db))
+
+    assert resp is not None
+    assert resp.row_count == 1
+    assert resp.config == {"value": 7}
+    # Fell through the native attempt (raw ANSI quotes rejected) to a transpiled
+    # repair, and the winning SQL carries MySQL backticks — i.e. the postgres
+    # source attempt produced it.
+    assert fake_connector.execute_query.call_count >= 2
+    assert "`amt`" in fake_connector.execute_query.call_args_list[-1].args[0]
+
+
 def test_refresh_widget_plane_backed_connector_reports_data_plane(monkeypatch):
     """A plane-backed connector (migrated sqlite, CSV dataset) reads Parquet, so
     the response must say `data_plane` — MagicMock connectors stay `source`."""

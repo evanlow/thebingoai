@@ -249,6 +249,24 @@ def test_transpile_to_engine_mysql_to_duckdb_year_function():
     _assert_valid_duckdb(out)
 
 
+def test_transpile_to_engine_postgres_to_mysql_repairs_ansi_quotes():
+    """The widget read path's ("postgres", …) attempt exists to repair ANSI
+    double-quoted identifiers the agent sometimes emits — they parse fine on
+    Postgres but break on MySQL. source="postgres", target="mysql" must rewrite
+    `"col"` → backticks so the query runs on MySQL."""
+    out = transpile_to_engine('SELECT "col" FROM "orders"', source="postgres", target="mysql")
+    assert '"' not in out          # ANSI double-quotes must be gone
+    assert "`col`" in out          # rewritten to MySQL backticks
+
+
+def test_transpile_to_engine_postgres_to_postgres_short_circuits():
+    """For a Postgres target the ("postgres", …) attempt is a same-dialect no-op:
+    it must return the SQL verbatim (parse-validated), never corrupt native
+    quoting — the widget loop relies on this being harmless."""
+    sql = 'SELECT "col" FROM "tbl"'
+    assert transpile_to_engine(sql, source="postgres", target="postgres") == sql
+
+
 def test_transpile_to_engine_default_target_is_duckdb():
     """Omitting target should default to DuckDB."""
     out = transpile_to_engine("SELECT `c` FROM t", source="mysql")

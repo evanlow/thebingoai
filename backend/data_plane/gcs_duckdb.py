@@ -70,10 +70,17 @@ class GCSDuckDBReader:
 
             from .duckdb_exec import apply_memory_guardrails
 
+            from backend.config import settings
+
             conn = duckdb.connect()
             apply_memory_guardrails(conn)
             conn.execute("INSTALL httpfs")
             conn.execute("LOAD httpfs")
+            # Cap GCS network I/O so a stalled read fails fast instead of hanging
+            # past the frontend's 60s fetch limit (→ `<no response>` timeout).
+            conn.execute(f"SET http_timeout = {settings.duckdb_http_timeout_ms}")
+            conn.execute(f"SET http_retries = {settings.duckdb_http_retries}")
+            conn.execute("SET http_keep_alive = true")
             conn.execute(_secret_sql(self._key_id, self._secret))
             self._conn = conn
         return self._conn

@@ -178,6 +178,17 @@ class Settings(BaseSettings):
     # DuckDB memory guardrails (default memory_limit is ~80% of RAM per connection)
     duckdb_memory_limit: str = "1GB"
     duckdb_temp_directory: str = "/tmp/duckdb_spill"  # spill dir for large aggregations
+    # DuckDB httpfs (GCS reads) network caps — a stalled read must abort under the
+    # frontend's 60s fetch limit instead of hanging to a `<no response>` timeout.
+    duckdb_http_timeout_ms: int = 30000   # per HTTP op to GCS
+    duckdb_http_retries: int = 2
+
+    # Source-DB connect cap for the widget query path (only test_connection set
+    # one before, so an idle/cold source stalled with no client-side timeout).
+    source_connect_timeout_s: int = 10
+    # Per-query source-DB read cap. Sits under the 60s frontend fetch limit so a
+    # slow/stalled source aborts before the client gives up (`<no response>`).
+    source_read_timeout_s: int = 50
 
     # SSO Authentication
     sso_base_url: str = "https://sso.thebingo.ai"

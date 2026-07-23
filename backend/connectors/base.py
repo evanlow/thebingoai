@@ -494,7 +494,12 @@ class BaseConnector(ABC):
             # MySQL max_execution_time is best-effort (requires SET_VARIABLES priv or
             # SUPER; older versions ignore it). The Python-side timeout still fires.
             if self._db_type_name.lower() in ("postgresql", "postgres"):
-                cursor.execute(f"SET LOCAL statement_timeout = '{settings.query_timeout_ms}'")
+                # Cap under the 60s frontend fetch limit (mirrors the mysql read
+                # cap) so a slow-but-alive query aborts before `<no response>`.
+                _pg_stmt_timeout = min(
+                    settings.query_timeout_ms, settings.source_read_timeout_s * 1000
+                )
+                cursor.execute(f"SET LOCAL statement_timeout = '{_pg_stmt_timeout}'")
             elif self._db_type_name.lower() == "mysql":
                 try:
                     cursor.execute(f"SET SESSION max_execution_time = {settings.query_timeout_ms}")
