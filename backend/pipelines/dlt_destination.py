@@ -61,6 +61,18 @@ def make_dataplane_destination(
             if unique_key_by_table is not None:
                 tbl_unique_key = unique_key_by_table.get(table_name_from_dlt, None)
             arrow_tbl = pa.Table.from_pylist(items)
+            # `from_pylist` infers the column set from whichever keys this batch
+            # happens to carry, so batches of one load can write Parquet files
+            # with different schemas under a single external table. It also
+            # makes the plane's column sanitization batch-dependent: the
+            # collision suffix it appends is computed over the columns of the
+            # table it is handed. Pad every batch out to the table's declared
+            # columns so the whole load presents one column set.
+            for col in table.get("columns") or {}:
+                if col not in arrow_tbl.column_names:
+                    arrow_tbl = arrow_tbl.append_column(
+                        col, pa.nulls(arrow_tbl.num_rows),
+                    )
             plane.write_parquet(
                 scope, table_name_from_dlt, arrow_tbl,
                 mode=mode, unique_key=tbl_unique_key,

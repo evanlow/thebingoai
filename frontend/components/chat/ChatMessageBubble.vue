@@ -143,9 +143,9 @@
           </svg>
           {{ message.steps_log.length }} steps
         </button>
-        <div v-if="message.steps_log_expanded" class="mt-1.5 whitespace-pre-wrap">{{ message.steps_log.join('\n') }}
+        <div v-if="message.steps_log_expanded" class="mt-1.5 whitespace-pre-wrap [overflow-wrap:anywhere]">{{ message.steps_log.join('\n') }}
           <div v-if="chatStore.isStreaming && props.isLast" class="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-700">
-            <span class="text-sm text-glow-orange">working...</span>
+            <span class="text-sm text-glow-orange">working... ({{ elapsedLabel }})</span>
           </div>
         </div>
       </div>
@@ -239,6 +239,7 @@
 </template>
 
 <script setup lang="ts">
+import { watch, onUnmounted } from 'vue'
 import type { Message, QueryFile } from '~/stores/chat'
 import type { SkillSuggestion } from '~/types/skillSuggestion'
 import { toast } from 'vue-sonner'
@@ -267,6 +268,33 @@ const dashboardStore = useDashboardStore()
 const authStore = useAuthStore()
 const api = useApi()
 const { resolvedMentions } = useMentions()
+
+// ── Elapsed timer shown next to "working..." ────────────────
+const elapsedSeconds = ref(0)
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
+
+const elapsedLabel = computed(() => {
+  const s = elapsedSeconds.value
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
+})
+
+watch(
+  () => chatStore.isStreaming && !!props.isLast,
+  (running) => {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+    if (!running) return
+    // ponytail: wall-clock from when this bubble starts streaming — close enough
+    // to the run duration; use backend run start if it ever needs to survive reload.
+    const startedAt = Date.now()
+    elapsedSeconds.value = 0
+    elapsedTimer = setInterval(() => {
+      elapsedSeconds.value = Math.floor((Date.now() - startedAt) / 1000)
+    }, 1000)
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => { if (elapsedTimer) clearInterval(elapsedTimer) })
 
 // ── Query result download (CSV / Excel) ─────────────────────
 const downloadingRef = ref<string | null>(null)

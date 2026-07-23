@@ -113,6 +113,12 @@
         :widget-id="widget.id"
         :config="widget.widget.config"
       />
+      <DashboardWidgetSection
+        v-else-if="widget.widget.type === 'section'"
+        :widget-id="widget.id"
+        :config="widget.widget.config"
+        :edit-mode="editMode"
+      />
     </div>
 
     <!-- Provenance footer (view mode only) -->
@@ -197,6 +203,7 @@ const WIDGET_TYPE_LABELS: Record<string, string> = {
   pivot_table: 'Pivot Table',
   text: 'Text',
   filter: 'Filter',
+  section: 'Section',
 }
 
 const widgetDisplayName = computed(() =>

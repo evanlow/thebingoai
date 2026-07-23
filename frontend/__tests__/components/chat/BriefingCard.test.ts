@@ -19,6 +19,8 @@ vi.stubGlobal('useBriefing', () => ({
   error: errorRef,
 }))
 
+vi.stubGlobal('useActiveBriefing', () => ({ open: vi.fn() }))
+
 import BriefingCard from '~/components/chat/BriefingCard.vue'
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -64,12 +66,11 @@ describe('BriefingCard', () => {
     expect(w.text()).toContain('92.4%')
   })
 
-  it('renders sections and key takeaways', () => {
+  it('renders sections and takeaway summary counts', () => {
     setReady()
     const w = mount(BriefingCard, { props: { briefingId: 1 } })
     expect(w.text()).toContain('Strong growth.')
-    expect(w.text()).toContain('one')
-    expect(w.text()).toContain('three')
+    expect(w.text()).toContain('3 takeaways')
   })
 
   it('applies color classes for delta direction', () => {

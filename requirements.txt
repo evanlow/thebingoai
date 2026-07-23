@@ -1,5 +1,8 @@
 fastapi==0.109.0
-uvicorn[standard]==0.27.0
+# uvicorn >=0.34 ships the sansio WebSocket impl. Required because langsmith
+# forces websockets>=15, whose legacy impl dropped `transfer_data_task` — under
+# old uvicorn (<0.34) every WebSocket crashed. Do NOT drop below 0.34.
+uvicorn[standard]==0.51.0
 python-multipart==0.0.6
 openai==2.41.1
 qdrant-client==1.7.1
@@ -25,7 +28,7 @@ redis==5.0.1
 # Database
 sqlalchemy==2.0.36
 alembic==1.13.1
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.10
 PyMySQL==1.1.0
 
 # Authentication

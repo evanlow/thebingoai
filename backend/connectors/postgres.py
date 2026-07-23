@@ -30,12 +30,21 @@ class PostgresConnector(BaseConnector):
 
     def _get_connect_kwargs(self) -> dict:
         """Map properties to psycopg2 kwargs."""
+        from backend.config import settings
         kwargs = {
             'host': self.host,
             'port': self.port,
             'database': self.database,
             'user': self.username,
-            'password': self.password
+            'password': self.password,
+            # Bound connect + detect dead idle sockets fast (managed PG poolers
+            # drop idle conns) so a stalled read doesn't hang past the 60s
+            # frontend cap. Only test_connection had a connect_timeout before.
+            'connect_timeout': settings.source_connect_timeout_s,
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 3,
         }
         if self.ssl_enabled:
             ca_path = self._get_ca_cert_path()

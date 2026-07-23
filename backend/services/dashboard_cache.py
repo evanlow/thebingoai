@@ -156,6 +156,11 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
                 widgets_total -= len(group_widgets)
                 continue
 
+            # Source Parquet lives under the *connection's* scope (that's where
+            # the Pipeline wrote it); `scope` above is the dashboard's org and
+            # stays the write target for the `_dash_*` cache below.
+            src_scope = OwnerScope.from_connection(connection)
+
             connector = get_connector_for_connection(connection)
             try:
                 for widget in group_widgets:
@@ -173,8 +178,10 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
                         # Rewrite source table names (e.g. `orders`) → the
                         # Pipeline's materialized plane table (e.g. `acme__orders`)
                         # so the DuckDB-over-GCS warm below resolves the Parquet.
+                        from backend.utils.sql_refs import qualifier_allowlist
                         query_sql, _ = rewrite_table_refs(
-                            original_sql, plane_table_map(connection, db)
+                            original_sql, plane_table_map(connection, db),
+                            qualifier_allowlist(connection),
                         )
                         date_col = _get_date_column(widget, data_context)
                         if date_col:
@@ -183,7 +190,7 @@ def materialize_dashboard(dashboard_id: int) -> MaterializeResult:
                         result = None
                         if duck_reader is not None:
                             try:
-                                result = duck_reader.query(scope, query_sql)
+                                result = duck_reader.query(src_scope, query_sql)
                             except Exception as duck_err:
                                 logger.warning(
                                     "DuckDB warm failed for widget %s, using source connector: %s",

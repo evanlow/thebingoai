@@ -17,13 +17,14 @@ from .chart import ChartWidget
 from .filter import FilterWidget
 from .kpi import KpiWidget
 from .pivot_table import PivotTableWidget
+from .section import SectionWidget
 from .table import TableWidget
 from .text import TextWidget
 
 WIDGET_REGISTRY: dict[str, BaseWidget] = {
     w.type: w for w in (
         KpiWidget(), ChartWidget(), TableWidget(),
-        PivotTableWidget(), FilterWidget(), TextWidget(),
+        PivotTableWidget(), FilterWidget(), TextWidget(), SectionWidget(),
     )
 }
 
@@ -53,7 +54,7 @@ def build_widgets(lean: list) -> list:
 __all__ = [
     "BaseWidget",
     "KpiWidget", "ChartWidget", "TableWidget", "PivotTableWidget",
-    "FilterWidget", "TextWidget",
+    "FilterWidget", "TextWidget", "SectionWidget",
     "WIDGET_REGISTRY", "build_widgets",
     "_pick",
 ]

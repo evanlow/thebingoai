@@ -42,10 +42,10 @@ describe('analytics client plugin', () => {
     expect(mocks.initAnalytics).toHaveBeenCalledExactlyOnceWith('G-PLUGIN1')
   })
 
-  it('fires page_view with to.path only — never the query string', () => {
+  it('fires page_view with the matched route pattern only — never the query string', () => {
     afterEachCb(
-      { path: '/auth/success', fullPath: '/auth/success?access_token=SECRET' },
-      { path: '/login', fullPath: '/login' },
+      { path: '/auth/success', fullPath: '/auth/success?access_token=SECRET', matched: [{ path: '/auth/success' }] },
+      { path: '/login', fullPath: '/login', matched: [{ path: '/login' }] },
     )
     expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith('page_view', {
       page_path: '/auth/success',
@@ -53,16 +53,46 @@ describe('analytics client plugin', () => {
     expect(JSON.stringify(mocks.trackEvent.mock.calls)).not.toContain('SECRET')
   })
 
-  it('re-sets path-only page_location and page_referrer before each page_view', () => {
+  it('re-sets the route-pattern page_location and page_referrer before each page_view', () => {
     afterEachCb(
-      { path: '/dashboard', fullPath: '/dashboard?id=40' },
-      { path: '/data', fullPath: '/data' },
+      { path: '/dashboard', fullPath: '/dashboard?id=40', matched: [{ path: '/dashboard' }] },
+      { path: '/data', fullPath: '/data', matched: [{ path: '/data' }] },
     )
     expect(mocks.setAnalyticsPage).toHaveBeenCalledExactlyOnceWith('/dashboard', '/data')
     // set must precede the page_view event so the hit carries the stripped URL
     expect(mocks.setAnalyticsPage.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.trackEvent.mock.invocationCallOrder[0],
     )
+  })
+
+  it('reports the share-briefing route as its :token pattern — never the concrete token', () => {
+    const token = '0jSZlt8t1LrG86fqMrv_8NOYKdwLSsj8YnficKrDmGg'
+    afterEachCb(
+      {
+        path: `/share/briefings/${token}`,
+        fullPath: `/share/briefings/${token}`,
+        matched: [{ path: '/share/briefings/:token' }],
+      },
+      { path: '/', fullPath: '/', matched: [{ path: '/' }] },
+    )
+    expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith('page_view', {
+      page_path: '/share/briefings/:token',
+    })
+    expect(mocks.setAnalyticsPage).toHaveBeenCalledExactlyOnceWith('/share/briefings/:token', '/')
+    expect(JSON.stringify(mocks.trackEvent.mock.calls)).not.toContain(token)
+    expect(JSON.stringify(mocks.setAnalyticsPage.mock.calls)).not.toContain(token)
+  })
+
+  it('falls back to a fixed constant (never the raw path) for an unmatched route', () => {
+    const secretLike = '/share/briefings/leaked-if-fallback-used'
+    afterEachCb(
+      { path: secretLike, fullPath: secretLike, matched: [] },
+      { path: '/', fullPath: '/', matched: [{ path: '/' }] },
+    )
+    expect(mocks.trackEvent).toHaveBeenCalledExactlyOnceWith('page_view', {
+      page_path: '/unmatched',
+    })
+    expect(JSON.stringify(mocks.trackEvent.mock.calls)).not.toContain('leaked-if-fallback-used')
   })
 
   it('binds identity immediately (null before login) and on user change', () => {

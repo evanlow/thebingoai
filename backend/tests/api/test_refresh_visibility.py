@@ -72,7 +72,7 @@ def seeded(db):
 
 def test_org_member_sees_org_dashboard(db, seeded):
     found = (
-        _dashboard_visible_to(db.query(Dashboard), seeded["member"])
+        _dashboard_visible_to(db.query(Dashboard), seeded["member"], db)
         .filter(Dashboard.id == seeded["dashboard"].id)
         .first()
     )
@@ -81,7 +81,7 @@ def test_org_member_sees_org_dashboard(db, seeded):
 
 def test_other_org_user_does_not_see_dashboard(db, seeded):
     found = (
-        _dashboard_visible_to(db.query(Dashboard), seeded["outsider"])
+        _dashboard_visible_to(db.query(Dashboard), seeded["outsider"], db)
         .filter(Dashboard.id == seeded["dashboard"].id)
         .first()
     )
@@ -90,7 +90,7 @@ def test_other_org_user_does_not_see_dashboard(db, seeded):
 
 def test_no_org_user_sees_only_own(db, seeded):
     found = (
-        _dashboard_visible_to(db.query(Dashboard), seeded["loner"])
+        _dashboard_visible_to(db.query(Dashboard), seeded["loner"], db)
         .filter(Dashboard.id == seeded["dashboard"].id)
         .first()
     )

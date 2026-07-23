@@ -16,6 +16,7 @@ from backend.agents.dashboard_agent.widget_specs.widgets import (
     PivotTableWidget,
     FilterWidget,
     TextWidget,
+    SectionWidget,
 )
 
 
@@ -33,7 +34,7 @@ def test_pick_drops_absent_and_none():
 # --------------------------------------------------------------------------- #
 
 def test_registry_keys_match_types():
-    assert set(WIDGET_REGISTRY) == {"kpi", "chart", "table", "pivot_table", "filter", "text"}
+    assert set(WIDGET_REGISTRY) == {"kpi", "chart", "table", "pivot_table", "filter", "text", "section"}
     for wtype, builder in WIDGET_REGISTRY.items():
         assert builder.type == wtype
         assert isinstance(builder, BaseWidget)
@@ -227,8 +228,39 @@ def test_text_alignment_optional():
     full = TextWidget().build({"content": "## Detail", "alignment": "center"}, "t_1")
     bare = TextWidget().build({"content": "## Detail"}, "t_2")
     assert "dataSource" not in full
-    assert full["widget"]["config"] == {"content": "## Detail", "alignment": "center"}
-    assert bare["widget"]["config"] == {"content": "## Detail"}
+    # Markdown-heading content is auto-flagged isSection so the frontend groups it.
+    assert full["widget"]["config"] == {"content": "## Detail", "alignment": "center", "isSection": True}
+    assert bare["widget"]["config"] == {"content": "## Detail", "isSection": True}
+
+
+def test_text_isSection_heuristic_and_explicit():
+    heading = TextWidget().build({"content": "## Trends"}, "t_h")
+    plain = TextWidget().build({"content": "just a note"}, "t_p")
+    explicit = TextWidget().build({"content": "## Trends", "isSection": False}, "t_e")
+    assert heading["widget"]["config"]["isSection"] is True   # '#'-prefixed → section
+    assert plain["widget"]["config"]["isSection"] is False    # narrative → not a section
+    assert explicit["widget"]["config"]["isSection"] is False  # explicit flag wins
+
+
+# --------------------------------------------------------------------------- #
+# SectionWidget (no dataSource)
+# --------------------------------------------------------------------------- #
+
+def test_section_minimal_build():
+    w = SectionWidget().build({"title": "Trends & Breakdown"}, "section_1")
+    assert w["id"] == "section_1"
+    assert w["widget"] == {"type": "section", "config": {"title": "Trends & Breakdown"}}
+    assert "dataSource" not in w          # has_data_source = False
+    assert "sources" not in w
+    # Default section layout: full-width, single-row band.
+    assert w["position"]["w"] == 12 and w["position"]["h"] == 1
+
+
+def test_section_color_clamp():
+    ok = SectionWidget().build({"title": "T", "sectionColor": "violet"}, "s_ok")
+    bad = SectionWidget().build({"title": "T", "sectionColor": "chartreuse"}, "s_bad")
+    assert ok["widget"]["config"]["sectionColor"] == "violet"   # known token kept
+    assert "sectionColor" not in bad["widget"]["config"]        # unknown token dropped
 
 
 # --------------------------------------------------------------------------- #

@@ -17,7 +17,7 @@ class ChartWidget(BaseWidget):
         "- `chartType`* (bar|line|pie|doughnut|area|scatter|bubble|funnel|timeline)\n"
         "- `title` (string), `description` (string)\n"
         "- `options` (object): stacked, indexAxis, xAxisMode, showValues, showLegend,\n"
-        "  legendPosition, showGrid, sortBy, sortDirection, referenceLines, sliceLabel, ...\n"
+        "  legendPosition, showGrid, sortBy, sortDirection, referenceLines, referenceBands, sliceLabel, ...\n"
         "  funnel: `funnelShape` (smoothed|stepped), `funnelLabelMode` (number|percentage|numberPercentage),\n"
         "  `funnelPercentType` (max|previous), `funnelColorMode` (single|byValue)\n"
         "  timeline: `timelineGroupByRowLabel`, `timelineColorBy` (row|bar), `timelineAltRows`\n"

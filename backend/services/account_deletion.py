@@ -35,7 +35,7 @@ def tombstone_account(db, user, new_email: str) -> None:
     from backend.models.heartbeat_job import HeartbeatJob
     from backend.models.custom_agent import CustomAgent
     from backend.models.dashboard import Dashboard
-    from backend.models.pipeline import Pipeline
+    from backend.models.pipeline import Pipeline, PipelineSchedule
     from backend.models.transforms import DbtModel
 
     if not new_email:
@@ -77,6 +77,22 @@ def tombstone_account(db, user, new_email: str) -> None:
         .filter(Pipeline.created_by_user_id == user_id)
         .update(
             {Pipeline.enabled: False, Pipeline.next_run_at: None},
+            synchronize_session=False,
+        )
+    )
+
+    # 3b. Disable the new-model schedules under those pipelines. dispatch_pipelines
+    #     joins Pipeline.enabled so an orphan schedule cannot fire today, but
+    #     leaving it armed would resurrect the cron if the pipeline is re-enabled.
+    schedules_disabled = (
+        db.query(PipelineSchedule)
+        .filter(
+            PipelineSchedule.pipeline_id.in_(
+                db.query(Pipeline.id).filter(Pipeline.created_by_user_id == user_id)
+            )
+        )
+        .update(
+            {PipelineSchedule.enabled: False, PipelineSchedule.next_run_at: None},
             synchronize_session=False,
         )
     )
@@ -129,7 +145,7 @@ def tombstone_account(db, user, new_email: str) -> None:
     db.commit()
     logger.info(
         "tombstone_account: user %s tombstoned as %s — disabled %d conn, %d pipeline, "
-        "%d transform, %d heartbeat, %d agent, %d dashboard schedule",
-        user_id, new_email, conn_disabled, pipelines_disabled, transforms_disabled,
-        hb_disabled, agents_disabled, dash_disabled,
+        "%d pipeline schedule, %d transform, %d heartbeat, %d agent, %d dashboard schedule",
+        user_id, new_email, conn_disabled, pipelines_disabled, schedules_disabled,
+        transforms_disabled, hb_disabled, agents_disabled, dash_disabled,
     )

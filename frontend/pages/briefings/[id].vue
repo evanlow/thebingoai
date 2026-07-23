@@ -64,90 +64,49 @@
           {{ exporting ? 'Generating…' : 'Export PDF' }}
         </button>
         <button
-          class="text-sm px-3 py-1 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
-          @click="copyLink"
+          data-testid="briefing-share-toggle"
+          class="text-sm px-3 py-1 rounded-full border transition-colors disabled:opacity-50"
+          :class="shareUrl || shareActive
+            ? 'border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400'
+            : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800'"
+          :disabled="sharing"
+          @click="shareUrl ? copyShareUrl() : enableSharing()"
         >
-          Copy link
+          <!-- 'Shared · New link' (not 'Copy link'): after a reload the raw token
+               is unrecoverable (hashed at rest), so clicking mints a new link —
+               the label says so instead of silently rotating. -->
+          {{ shareUrl ? 'Shared · Copy link' : shareActive ? 'Shared · New link' : 'Share to web' }}
         </button>
       </div>
+      <p v-if="shareError" data-pdf-ignore="true" class="text-sm text-rose-600 mb-4 text-right">
+        {{ shareError }}
+      </p>
+      <p v-if="shareUrl || shareActive" data-pdf-ignore="true" class="text-sm text-neutral-500 mb-4 text-right">
+        <!-- The URL is rendered as selectable text on purpose: clipboard write can
+             fail (permission denied) or silently no-op (non-secure context), and
+             this is then the owner's only way to retrieve the link. -->
+        <span
+          v-if="shareUrl"
+          data-testid="briefing-share-url"
+          class="block select-all break-all text-neutral-600 dark:text-neutral-400"
+        >{{ shareUrl }}</span>
+        Anyone with the link can read this briefing.
+        <button class="underline hover:text-neutral-700" :disabled="sharing" @click="disableSharing">Turn off</button>
+      </p>
 
-      <div data-pdf-block>
-        <p class="text-sm uppercase tracking-wider text-neutral-500 mb-3">
-          Dashboard #{{ briefing.dashboard_id }}
-          <template v-if="briefing.date_range_from"> &middot; {{ formatRange(briefing) }}</template>
-        </p>
-
-        <h1 class="font-serif text-4xl font-bold leading-tight text-neutral-900 dark:text-neutral-100 mb-5 tracking-tight">
-          {{ briefing.payload!.headline }}
-        </h1>
-
-        <div
-          class="flex items-center gap-3 text-sm text-neutral-600 dark:text-neutral-400 mb-5 pb-4 border-b border-neutral-100 dark:border-neutral-800"
-        >
-          <div class="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-pink-500" />
-          <span><strong>Compiled by Bingo</strong> &middot; {{ formatDate(briefing.created_at) }}</span>
-        </div>
-
-        <p class="text-lg leading-relaxed text-neutral-800 dark:text-neutral-200 mb-6">
-          {{ briefing.payload!.deck }}
-        </p>
-      </div>
-
-      <div
-        v-if="briefing.payload!.kpis.length"
-        data-pdf-block
-        class="grid gap-3 p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg mb-7"
-        :style="{ gridTemplateColumns: `repeat(${briefing.payload!.kpis.length}, minmax(0,1fr))` }"
-      >
-        <div
-          v-for="(k, i) in briefing.payload!.kpis"
-          :key="i"
-          class="pl-3"
-          :class="{ 'border-l border-neutral-200 dark:border-neutral-700': i > 0 }"
-        >
-          <div class="text-sm uppercase tracking-wide text-neutral-500">{{ k.label }}</div>
-          <div class="text-2xl font-semibold mt-1 text-neutral-900 dark:text-neutral-100">{{ k.value }}</div>
-          <div v-if="k.delta_vs_prev" class="text-sm mt-1" :class="deltaClass(k.delta_direction)">
-            {{ k.delta_vs_prev }}
-          </div>
-        </div>
-      </div>
-
-      <section v-for="(s, idx) in briefing.payload!.sections" :key="idx" data-pdf-block class="mb-7">
-        <h2 class="font-serif text-2xl font-bold text-neutral-900 dark:text-neutral-100 mb-3">
-          <span class="text-neutral-400 font-normal mr-2">{{ idx + 1 }}.</span>{{ stripLeadingNumber(s.heading) }}
-        </h2>
-        <div class="text-[15px] leading-relaxed text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap">
-          {{ s.prose }}
-        </div>
-        <BriefingWidgetEmbed
-          v-if="s.widget_id"
-          :widget-id="s.widget_id"
-          :dashboard-id="briefing.dashboard_id"
-          :snapshot="briefing.payload!.widget_snapshots?.[String(s.widget_id)]"
-          class="mt-4"
-          @loaded="markWidgetLoaded"
-        />
-      </section>
-
-      <aside
-        data-pdf-block
-        class="rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-5 mt-4"
-      >
-        <p class="text-sm uppercase tracking-wider font-semibold text-yellow-900 dark:text-yellow-200 mb-2">
-          Key takeaways
-        </p>
-        <ul class="list-disc pl-5 space-y-1 text-yellow-950 dark:text-yellow-200">
-          <li v-for="(t, i) in briefing.payload!.key_takeaways" :key="i" class="text-sm">{{ t }}</li>
-        </ul>
-      </aside>
+      <BriefingBody
+        :payload="briefing.payload!"
+        :context-label="contextLabel"
+        :created-at="briefing.created_at"
+        :dashboard-id="briefing.dashboard_id"
+        @loaded="markWidgetLoaded"
+      />
     </article>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { stripLeadingNumber } from '~/utils/stripLeadingNumber'
 import { trackEvent } from '~/utils/analytics'
 
 const route = useRoute()
@@ -173,11 +132,12 @@ async function onExportPdf() {
   await exportPdf(articleRef.value, briefing.value.payload.headline, expectedWidgets.value)
 }
 
-function deltaClass(dir?: 'up' | 'down' | 'flat' | null) {
-  if (dir === 'up') return 'text-emerald-600'
-  if (dir === 'down') return 'text-rose-600'
-  return 'text-neutral-500'
-}
+const contextLabel = computed(() => {
+  const b = briefing.value
+  if (!b) return ''
+  const range = b.date_range_from ? ` · ${formatRange(b)}` : ''
+  return `Dashboard #${b.dashboard_id}${range}`
+})
 
 function formatRange(b: any) {
   if (!b.date_range_from || !b.date_range_to) return ''
@@ -193,18 +153,101 @@ function formatRange(b: any) {
   return `${from} – ${to}`
 }
 
-function formatDate(s: string) {
-  return new Date(s).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const shareUrl = ref<string | null>(null)
+const shareError = ref<string | null>(null)
+const sharing = ref(false)
+// A share row exists server-side. Distinct from shareUrl: the raw token is
+// hashed at rest, so after a reload we can know sharing is ON but never
+// reconstruct the URL.
+const shareActive = ref(false)
+
+// Hydrate share status per briefing id. Also the reset that keeps stale share
+// state from leaking across ids when the page component is reused (see the
+// resetWidgets() watcher above).
+watch(
+  briefingId,
+  async (id) => {
+    shareUrl.value = null
+    shareError.value = null
+    shareActive.value = false
+    if (!id) return
+    try {
+      const { fetchWithRefresh } = useApi()
+      const resp = await fetchWithRefresh(`/api/briefings/${id}/share`, { method: 'GET' })
+      if (briefingId.value !== id) return // navigated away mid-flight — stale response
+      shareActive.value = !!resp?.active
+    } catch {
+      // Status probe only — on failure the button just reads 'Share to web'.
+    }
+  },
+  { immediate: true },
+)
+
+async function copyShareUrl() {
+  if (!shareUrl.value) return
+  try {
+    await navigator.clipboard?.writeText(shareUrl.value)
+  } catch {
+    // Clipboard permission denied — the URL is still shown on screen.
+  }
 }
 
-async function copyLink() {
-  await navigator.clipboard.writeText(window.location.href)
+async function enableSharing() {
+  if (!briefing.value) return
+  if (sharing.value) return
+  const id = briefing.value.id
+  sharing.value = true
+  shareError.value = null
+  try {
+    const { fetchWithRefresh } = useApi()
+    const resp = await fetchWithRefresh(`/api/briefings/${id}/share`, {
+      method: 'POST',
+    })
+    // Navigated to another briefing while the POST was in flight: applying the
+    // response now would show (and copy) briefing A's link on briefing B.
+    if (briefingId.value !== id) return
+    // No server-built URL in the response: the browser already knows its own
+    // origin. Mirrors stores/auth.ts's window.location.origin pattern for
+    // our-own-app URLs handed to a user — no env var can be wrong or forgotten.
+    // The token rides in the FRAGMENT, not the path: fragments never leave the
+    // browser, so the raw credential stays out of server/proxy access logs and
+    // Referer headers. The share page reads it from location.hash.
+    shareUrl.value = `${window.location.origin}/share/briefings#${resp.token}`
+    shareActive.value = true
+    try {
+      await navigator.clipboard?.writeText(shareUrl.value)
+    } catch {
+      // Clipboard denial is not a share failure: the link was created and is
+      // shown on screen. Surfacing it as shareError invited a re-click, which
+      // rotates the token and kills the link that just succeeded.
+    }
+  } catch (e: any) {
+    // The 400 here is the fail-closed guard: a briefing without widget_snapshots
+    // can't be shared, because the public view would otherwise live-query.
+    shareError.value = e?.data?.detail || 'Could not create a share link.'
+  } finally {
+    sharing.value = false
+  }
+}
+
+async function disableSharing() {
+  if (!briefing.value) return
+  if (sharing.value) return
+  const id = briefing.value.id
+  sharing.value = true
+  shareError.value = null
+  try {
+    const { fetchWithRefresh } = useApi()
+    await fetchWithRefresh(`/api/briefings/${id}/share`, { method: 'DELETE' })
+    if (briefingId.value !== id) return // navigated away mid-flight — stale response
+    shareUrl.value = null
+    shareError.value = null
+    shareActive.value = false
+  } catch (e: any) {
+    shareError.value = e?.data?.detail || 'Could not turn off sharing.'
+  } finally {
+    sharing.value = false
+  }
 }
 
 async function retry() {

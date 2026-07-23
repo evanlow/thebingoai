@@ -26,6 +26,21 @@ class _FakeCreditMgr:
         self.voided = True
 
 
+def test_widget_catalog_excludes_filter_widgets():
+    widgets = [
+        {"id": "chart_rev", "widget": {"type": "chart", "title": "Revenue"}},
+        {"id": "flt_region", "widget": {"type": "filter", "title": "Region"}},
+    ]
+    catalog = briefing_runner._build_widget_catalog(widgets)
+    assert "chart_rev" in catalog
+    assert "flt_region" not in catalog
+
+
+def test_widget_catalog_all_filters_reads_as_no_widgets():
+    widgets = [{"id": "flt", "widget": {"type": "filter"}}]
+    assert briefing_runner._build_widget_catalog(widgets) == "This dashboard has no widgets."
+
+
 def test_run_returns_failed_status_when_orchestrator_raises():
     briefing = MagicMock(id=1, user_id="u1", dashboard_id=10, status="generating", error=None)
     user = MagicMock(id="u1")

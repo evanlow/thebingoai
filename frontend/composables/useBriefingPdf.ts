@@ -49,6 +49,26 @@ export function paginate(heights: number[], contentH: number, gap: number): PdfO
   return ops
 }
 
+/** Load a PNG and return its dataURL + aspect ratio (w/h) for jsPDF stamping. */
+async function loadLogo(url: string): Promise<{ dataUrl: string; aspect: number }> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`logo fetch failed: ${res.status}`)
+  const blob = await res.blob()
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result as string)
+    r.onerror = () => reject(new Error('logo read failed'))
+    r.readAsDataURL(blob)
+  })
+  const aspect = await new Promise<number>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img.naturalWidth / img.naturalHeight)
+    img.onerror = () => reject(new Error('logo decode failed'))
+    img.src = dataUrl
+  })
+  return { dataUrl, aspect }
+}
+
 /** Crop a vertical band [srcTopMm, srcBotMm) of `src` (whose full height is
  *  `fullMm`) into a new canvas, for oversized-block page splitting. */
 function cropCanvas(
@@ -145,7 +165,7 @@ export function useBriefingPdf() {
       await nextFrame()
       await nextFrame()
 
-      const html2canvas = (await import('html2canvas')).default
+      const html2canvas = (await import('html2canvas-pro')).default
       const { jsPDF } = await import('jspdf')
 
       const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
@@ -193,6 +213,28 @@ export function useBriefingPdf() {
           ? c
           : cropCanvas(c, op.srcTop, op.srcBot, heights[op.block])
         doc.addImage(img, 'JPEG', margin, margin + op.y, contentW, op.h)
+      }
+
+      // Footer watermark: full-opacity wordmark bottom-right on every page.
+      // Branding must never break the export — any logo failure skips it.
+      try {
+        // Dark-text Primary variant — the _M sidebar asset has white lettering, invisible on the white page.
+        const logo = await loadLogo('/logo/BINGO%20Logo%20Design_FA_Primary.png')
+        let w = 30
+        let h = w / logo.aspect
+        if (h > margin - 2) { // clamp inside the margin band; keep aspect
+          h = margin - 2
+          w = h * logo.aspect
+        }
+        const x = pageW - margin - w
+        const y = pageH - margin + (margin - h) / 2
+        const pages = doc.getNumberOfPages()
+        for (let i = 1; i <= pages; i++) {
+          doc.setPage(i)
+          doc.addImage(logo.dataUrl, 'PNG', x, y, w, h)
+        }
+      } catch (e) {
+        console.warn('Briefing PDF watermark skipped', e)
       }
 
       doc.save(`briefing-${slug(headline)}.pdf`)

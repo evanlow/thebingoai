@@ -225,7 +225,7 @@ class ProfileRenderer:
             else:
                 connections_str = ", ".join(str(c) for c in ctx.available_connections)
             section = f"## Available Database Connections\n{connections_str}"
-            section += "\nUse these for dataSource.connectionId in dashboard widgets."
+            section += "\nUse one of these IDs as each widget's top-level connectionId."
             if ctx.target_connection_id is not None:
                 section += (
                     f"\n\nPrimary connection to use: {ctx.target_connection_id}"

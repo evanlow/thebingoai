@@ -22,10 +22,30 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# expire_on_commit=False: chat.py / websocket.py hand ORM rows (history Messages,
+# custom agents, skills) to the orchestrator and close the session before the run
+# (see the comment there). With the default True, add_message()'s commit blanks
+# those rows, and the first attribute read inside the agent — on a now-detached
+# instance — raises DetachedInstanceError. Scoped to those two handlers: everywhere
+# else wants the default, where a commit invalidates the identity map so the next
+# read sees the database rather than a stale in-memory value.
+DetachedReadSessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, expire_on_commit=False, bind=engine
+)
+
 
 def get_db() -> Session:
     """FastAPI dependency for database sessions."""
     db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_detached_read_db() -> Session:
+    """FastAPI dependency for handlers that read ORM rows after closing the session."""
+    db = DetachedReadSessionLocal()
     try:
         yield db
     finally:

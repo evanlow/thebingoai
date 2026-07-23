@@ -10,31 +10,21 @@
     <!-- Scrolling body -->
     <div class="flex-1 overflow-y-auto px-7 py-6 space-y-6">
 
-      <!-- Section 1: Daily Credits + Daily Consumption -->
+      <!-- Section 1: Workspace Credits + Consumption -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
 
-        <!-- Daily Credits -->
+        <!-- Workspace Credits -->
         <div class="rounded-xl border border-gray-200 dark:border-neutral-700 p-6 flex flex-col gap-3">
-          <p class="text-sm font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Daily Credits</p>
+          <p class="text-sm font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Workspace Credits</p>
           <div class="flex items-baseline gap-2">
             <span class="text-5xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ Math.round(remaining) }}</span>
-            <span class="text-sm text-gray-500 dark:text-neutral-400">of {{ Math.round(dailyLimit) }} remaining</span>
+            <span class="text-sm text-gray-500 dark:text-neutral-400">credits remaining</span>
           </div>
-          <div class="h-1 rounded-full bg-gray-100 dark:bg-neutral-700 overflow-hidden">
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              :class="usedPercent >= 90 ? 'bg-red-500' : 'bar-orange-flow'"
-              :style="{ width: `${usedPercent}%` }"
-            />
-          </div>
-          <p class="text-sm text-gray-400 dark:text-neutral-500">
-            {{ Math.round(usedToday) }} used today · resets at 00:00 UTC<span v-if="resetCountdown"> · {{ resetCountdown }}</span>
-          </p>
         </div>
 
-        <!-- Daily Consumption -->
+        <!-- Consumption -->
         <div class="rounded-xl border border-gray-200 dark:border-neutral-700 p-6 flex flex-col gap-3">
-          <p class="text-sm font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Daily Consumption · Last 14 Days</p>
+          <p class="text-sm font-medium tracking-wider uppercase text-gray-400 dark:text-neutral-500">Consumption · Last 14 Days</p>
           <div class="flex-1 min-h-[160px] flex flex-col justify-center">
             <div v-if="dailyTotalsLoading" class="h-40 rounded-lg bg-gray-100 dark:bg-neutral-700 animate-pulse" />
             <div v-else-if="dailyTotals.length === 0" class="h-40 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-500">
@@ -50,7 +40,7 @@
       <div class="rounded-xl border border-gray-200 dark:border-neutral-700 p-6 space-y-4">
         <div>
           <h3 class="text-base font-medium text-gray-900 dark:text-white">Bring your own API key</h3>
-          <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">Use your own API keys to bypass daily credit limits. Usage rolls up on your provider's invoice, not ours.</p>
+          <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">Use your own API keys to bypass credit limits. Usage rolls up on your provider's invoice, not ours.</p>
         </div>
 
         <!-- Stored keys -->
@@ -141,7 +131,7 @@
           <h3 class="text-base font-medium text-gray-900 dark:text-white">Usage History</h3>
           <button
             @click="handleExportCsv"
-            class="text-sm px-3 py-1.5 rounded-md border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors"
+            class="text-sm px-3 py-1.5 rounded-md bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 transition-colors"
           >
             Export CSV
           </button>
@@ -201,25 +191,15 @@
 </template>
 
 <script setup lang="ts">
-import { differenceInMinutes } from 'date-fns'
 import { parseUtcDate } from '~/utils/format'
 
 const {
-  dailyLimit, usedToday, remaining, usedPercent, resetsAt,
+  remaining,
   historyItems, historyPage, historyTotalPages, historyLoading, nextPage, prevPage,
   dailyTotals, dailyTotalsLoading,
   apiKeys, saveApiKey, deleteApiKey,
   exportHistoryCsv,
 } = useCreditSettings()
-
-const resetCountdown = computed(() => {
-  if (!resetsAt.value) return null
-  const mins = differenceInMinutes(new Date(resetsAt.value), new Date())
-  if (mins <= 0) return null
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return h > 0 ? `in ${h}h ${m}m` : `in ${m}m`
-})
 
 const hasModelField = computed(() => historyItems.value.some(i => (i as any).model != null))
 const hasTokensField = computed(() => historyItems.value.some(i => (i as any).tokens != null))

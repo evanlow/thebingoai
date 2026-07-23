@@ -39,9 +39,10 @@ interface InsideItem { x: number, y: number, text: string }
 // clamp within [top, bottom]. Two passes (down then up) settle the stack.
 export function resolveColumn(items: OutsideItem[], top: number, bottom: number, lineHeight: number) {
   items.sort((a, b) => a.targetY - b.targetY)
-  for (const it of items) it.y = it.targetY
-  for (let i = 1; i < items.length; i++) {
-    if (items[i].y < items[i - 1].y + lineHeight) items[i].y = items[i - 1].y + lineHeight
+  let prev = -Infinity
+  for (const it of items) {
+    it.y = Math.max(it.targetY, top, prev + lineHeight)
+    prev = it.y
   }
   if (items.length && items[items.length - 1].y > bottom) {
     items[items.length - 1].y = bottom
@@ -49,7 +50,6 @@ export function resolveColumn(items: OutsideItem[], top: number, bottom: number,
       if (items[i].y > items[i + 1].y - lineHeight) items[i].y = items[i + 1].y - lineHeight
     }
   }
-  if (items.length && items[0].y < top) items[0].y = top
 }
 
 export const pieOuterLabelsPlugin: Plugin = {
@@ -124,15 +124,10 @@ export const pieOuterLabelsPlugin: Plugin = {
       })
     })
 
-    // Inside labels: uniform white with a thin dark outline so they read
-    // consistently on any slice fill (light or dark) without per-slice color.
+    // Inside labels: plain fill (no outline) to match other charts' datalabels.
     ctx.textAlign = 'center'
-    ctx.lineJoin = 'round'
-    ctx.lineWidth = 3
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)'
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = themeColor
     for (const it of inside) {
-      ctx.strokeText(it.text, it.x, it.y)
       ctx.fillText(it.text, it.x, it.y)
     }
 

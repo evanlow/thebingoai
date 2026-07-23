@@ -25,17 +25,24 @@ async def execute_sql_query(
     Only SELECT queries are permitted. Multi-statement queries and
     dangerous keywords (INSERT, UPDATE, DELETE, DROP, etc.) are blocked.
     """
-    # Verify connection ownership — accept either numeric id or UUID
+    # Verify connection ownership — accept either numeric id or UUID.
+    # The shared read-only sample is queryable by every user.
+    from sqlalchemy import or_
+    from backend.services.seed import shared_sample_clause
     key_str = str(connection_id)
     q = db.query(DatabaseConnection)
+    accessible = or_(
+        DatabaseConnection.user_id == current_user.id,
+        shared_sample_clause(),
+    )
     if key_str.isdigit():
         connection = q.filter(
-            DatabaseConnection.user_id == current_user.id,
+            accessible,
             DatabaseConnection.id == int(key_str),
         ).first()
     else:
         connection = q.filter(
-            DatabaseConnection.user_id == current_user.id,
+            accessible,
             DatabaseConnection.uuid == key_str,
         ).first()
 

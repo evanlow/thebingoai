@@ -77,7 +77,6 @@
                 >
                   <span class="text-sm text-gray-600 dark:text-neutral-300 truncate flex-1 min-w-0">{{ col.name }}</span>
                   <span class="text-sm text-violet-400 bg-gray-100 dark:bg-neutral-700 px-1 py-0.5 rounded font-mono shrink-0">{{ col.type }}</span>
-                  <span v-if="col.nullable" class="text-sm text-gray-400 dark:text-neutral-500 shrink-0">?</span>
                 </div>
               </div>
             </div>

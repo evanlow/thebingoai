@@ -37,7 +37,7 @@
               <textarea
                 v-model="localSql"
                 :readonly="!editMode"
-                class="relative w-full h-full px-3 py-2.5 font-mono text-sm leading-relaxed resize-none bg-transparent caret-black dark:caret-white text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
+                class="sql-editor-textarea relative w-full h-full px-3 py-2.5 font-mono text-sm leading-relaxed resize-none bg-transparent caret-black dark:caret-white text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-colors"
                 :class="editMode ? '' : 'cursor-default'"
                 :style="{ color: highlightedSql ? 'transparent' : undefined, caretColor: colorMode.value === 'dark' ? 'white' : 'black' }"
                 spellcheck="false"
@@ -293,6 +293,18 @@ function save() {
 </script>
 
 <style scoped>
+/* Overlay and textarea must wrap identically, or the caret drifts from its line
+   on scroll (heights diverge when one breaks a long token and the other doesn't). */
+.sql-highlight,
+.sql-editor-textarea {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 2;
+  /* Reserve equal scrollbar gutter on both layers so the textarea's scrollbar
+     doesn't shrink its wrap width relative to the overlay (caret drift on scroll). */
+  scrollbar-gutter: stable;
+}
 .sql-highlight :deep(span) {
   font-family: inherit;
   font-size: inherit;

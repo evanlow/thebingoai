@@ -8,7 +8,7 @@ vi.stubGlobal('watch', watch)
 
 // ── Mock html2canvas + jsPDF (browser-only; no canvas in happy-dom) ──
 const html2canvasMock = vi.fn()
-vi.mock('html2canvas', () => ({ default: html2canvasMock }))
+vi.mock('html2canvas-pro', () => ({ default: html2canvasMock }))
 
 const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
 vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
@@ -16,14 +16,46 @@ vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
 const addImageMock = vi.fn()
 const addPageMock = vi.fn()
 const saveMock = vi.fn()
+const setPageMock = vi.fn()
+const setGStateMock = vi.fn()
+const saveGraphicsStateMock = vi.fn()
+const restoreGraphicsStateMock = vi.fn()
 function jsPDFImpl(this: any) {
   this.internal = { pageSize: { getWidth: () => 210, getHeight: () => 297 } }
   this.addImage = addImageMock
   this.addPage = addPageMock
   this.save = saveMock
+  this.setPage = setPageMock
+  this.setGState = setGStateMock
+  this.saveGraphicsState = saveGraphicsStateMock
+  this.restoreGraphicsState = restoreGraphicsStateMock
+  this.getNumberOfPages = () => 1 + addPageMock.mock.calls.length
 }
 const jsPDFMock = vi.fn(jsPDFImpl)
-vi.mock('jspdf', () => ({ jsPDF: jsPDFMock }))
+const gStateMock = vi.fn(function (this: any, opts: any) { Object.assign(this, opts) })
+vi.mock('jspdf', () => ({ jsPDF: jsPDFMock, GState: gStateMock }))
+
+// Logo loading stubs: fetch → blob → FileReader dataURL → Image aspect (4:1).
+const fetchMock = vi.fn(async () => ({ ok: true, blob: async () => ({}) as Blob }))
+vi.stubGlobal('fetch', fetchMock)
+class FakeFileReader {
+  result: string | null = null
+  onload: (() => void) | null = null
+  onerror: (() => void) | null = null
+  readAsDataURL(_b: Blob) {
+    this.result = 'data:image/png;base64,LOGO'
+    queueMicrotask(() => this.onload?.())
+  }
+}
+vi.stubGlobal('FileReader', FakeFileReader)
+class FakeImage {
+  naturalWidth = 400
+  naturalHeight = 100
+  onload: (() => void) | null = null
+  onerror: ((e?: unknown) => void) | null = null
+  set src(_v: string) { queueMicrotask(() => this.onload?.()) }
+}
+vi.stubGlobal('Image', FakeImage)
 
 import { useBriefingPdf, paginate } from '~/composables/useBriefingPdf'
 
@@ -35,6 +67,13 @@ describe('useBriefingPdf', () => {
     addPageMock.mockClear()
     saveMock.mockClear()
     jsPDFMock.mockClear()
+    setPageMock.mockClear()
+    setGStateMock.mockClear()
+    saveGraphicsStateMock.mockClear()
+    restoreGraphicsStateMock.mockClear()
+    gStateMock.mockClear()
+    fetchMock.mockClear()
+    fetchMock.mockImplementation(async () => ({ ok: true, blob: async () => ({}) as Blob }))
   })
 
   describe('slug', () => {
@@ -113,6 +152,9 @@ describe('useBriefingPdf', () => {
       return { querySelectorAll: () => blocks } as unknown as HTMLElement
     }
 
+    const blockImages = () => addImageMock.mock.calls.filter((c) => typeof c[0] !== 'string')
+    const footerImages = () => addImageMock.mock.calls.filter((c) => typeof c[0] === 'string')
+
     it('is a no-op when el is null', async () => {
       const { exportPdf } = useBriefingPdf()
       await exportPdf(null, 'x', 0)
@@ -133,10 +175,47 @@ describe('useBriefingPdf', () => {
       expect(saveMock).not.toHaveBeenCalled()
     })
 
+    it('captures each block via html2canvas-pro with white background, 2x scale, and CORS', async () => {
+      const { exportPdf } = useBriefingPdf()
+      const el = makeEl([100, 100])
+      const blocks = el.querySelectorAll('[data-pdf-block]')
+      await exportPdf(el, 'x', 0)
+      expect(html2canvasMock).toHaveBeenCalledTimes(2)
+      expect(html2canvasMock).toHaveBeenNthCalledWith(
+        1,
+        blocks[0],
+        expect.objectContaining({
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          onclone: expect.any(Function),
+        }),
+      )
+      expect(html2canvasMock.mock.calls[1][0]).toBe(blocks[1])
+    })
+
+    it('onclone strips dark/theme classes and pads blocks in the clone only', async () => {
+      const { exportPdf } = useBriefingPdf()
+      await exportPdf(makeEl([100]), 'x', 0)
+      const onclone = html2canvasMock.mock.calls[0][1].onclone
+      const removed: string[] = []
+      const appended: unknown[] = []
+      const styleEl = { textContent: '' }
+      const doc2 = {
+        documentElement: { classList: { remove: (...cls: string[]) => removed.push(...cls) } },
+        createElement: () => styleEl,
+        head: { appendChild: (n: unknown) => appended.push(n) },
+      } as unknown as Document
+      onclone(doc2)
+      expect(removed).toEqual(['dark', 'theme-kraft', 'theme-cool', 'theme-ink'])
+      expect(appended).toEqual([styleEl])
+      expect(styleEl.textContent).toBe('[data-pdf-block]{padding-bottom:10px}')
+    })
+
     it('places two fitting blocks on one page and saves with a slugged filename', async () => {
       const { exportPdf } = useBriefingPdf()
       await exportPdf(makeEl([100, 100]), 'Revenue held flat!', 0)
-      expect(addImageMock).toHaveBeenCalledTimes(2)
+      expect(blockImages()).toHaveLength(2)
       expect(addPageMock).not.toHaveBeenCalled()
       expect(saveMock).toHaveBeenCalledWith('briefing-revenue-held-flat.pdf')
       // GA4 export event fires only after a successful save
@@ -147,7 +226,7 @@ describe('useBriefingPdf', () => {
       const { exportPdf } = useBriefingPdf()
       await exportPdf(makeEl([200, 100]), 'x', 0) // 200+gap+100 > 273
       expect(addPageMock).toHaveBeenCalledTimes(1)
-      expect(addImageMock).toHaveBeenCalledTimes(2)
+      expect(blockImages()).toHaveLength(2)
     })
 
     it('splits an oversized block into bands, one addPage per extra band', async () => {
@@ -162,7 +241,7 @@ describe('useBriefingPdf', () => {
       })
       const { exportPdf } = useBriefingPdf()
       await exportPdf(makeEl([600]), 'x', 0) // 600 / 273 → 3 bands
-      expect(addImageMock).toHaveBeenCalledTimes(3)
+      expect(blockImages()).toHaveLength(3)
       expect(addPageMock).toHaveBeenCalledTimes(2)
     })
 
@@ -175,6 +254,41 @@ describe('useBriefingPdf', () => {
       expect(exporting.value).toBe(false)
       // failed export must not report a briefing_export_pdf event
       expect(trackEventMock).not.toHaveBeenCalled()
+    })
+
+    describe('footer watermark', () => {
+      it('stamps the full-opacity logo bottom-right on every page', async () => {
+        const { exportPdf } = useBriefingPdf()
+        await exportPdf(makeEl([200, 100]), 'x', 0) // 2 pages
+        // one footer stamp per page
+        expect(footerImages()).toHaveLength(2)
+        expect(setPageMock.mock.calls.map((c) => c[0])).toEqual([1, 2])
+        // dark-text Primary asset — the _M variant's white lettering is invisible on the white page
+        expect(fetchMock).toHaveBeenCalledWith('/logo/BINGO%20Logo%20Design_FA_Primary.png')
+        // full opacity: no graphics-state fade applied
+        expect(setGStateMock).not.toHaveBeenCalled()
+        expect(gStateMock).not.toHaveBeenCalled()
+        // geometry: 30mm wide, aspect 4:1 → h 7.5; x right-aligned to content edge; y in bottom margin band
+        const [dataUrl, fmt, x, y, w, h] = footerImages()[0]
+        expect(dataUrl).toBe('data:image/png;base64,LOGO')
+        expect(fmt).toBe('PNG')
+        expect(w).toBe(30)
+        expect(h).toBeCloseTo(7.5)
+        expect(x).toBeCloseTo(210 - 12 - 30)
+        expect(y).toBeCloseTo(297 - 12 + (12 - 7.5) / 2)
+        // watermark never blocks the save
+        expect(saveMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('skips the watermark but still saves when the logo fails to load', async () => {
+        fetchMock.mockImplementationOnce(async () => ({ ok: false, blob: async () => ({}) as Blob }))
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const { exportPdf } = useBriefingPdf()
+        await exportPdf(makeEl([100]), 'x', 0)
+        expect(footerImages()).toHaveLength(0)
+        expect(saveMock).toHaveBeenCalledTimes(1)
+        warnSpy.mockRestore()
+      })
     })
   })
 

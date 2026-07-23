@@ -1,7 +1,12 @@
 <template>
-  <!-- GridStack container -->
-  <div ref="containerRef" class="grid-stack w-full" :class="editMode ? 'edit-mode' : ''">
-    <!-- GridStack items are created imperatively by the composable -->
+  <div ref="wrapperRef" class="relative">
+    <!-- Section bands — painted behind the grid items -->
+    <DashboardSectionBands :sections="sections" :bounds="bounds" />
+
+    <!-- GridStack container -->
+    <div ref="containerRef" class="grid-stack w-full" :class="editMode ? 'edit-mode' : ''">
+      <!-- GridStack items are created imperatively by the composable -->
+    </div>
   </div>
 
   <!-- Teleport widget content into each GridStack item's content div -->
@@ -24,12 +29,15 @@
 
 <script setup lang="ts">
 import type { DashboardWidget } from '~/types/dashboard'
+import type { DashboardSection, SectionBounds } from '~/composables/useDashboardSections'
 import { useDashboardGrid } from '~/composables/useDashboardGrid'
 import { useDashboardStore } from '~/stores/dashboard'
 
 const props = defineProps<{
   widgets: DashboardWidget[]
   editMode: boolean
+  sections: DashboardSection[]
+  bounds: Record<string, SectionBounds>
 }>()
 
 const emit = defineEmits<{
@@ -39,10 +47,15 @@ const emit = defineEmits<{
 
 const store = useDashboardStore()
 const containerRef = ref<HTMLElement | null>(null)
+const wrapperRef = ref<HTMLElement | null>(null)
 const widgetsRef = computed(() => props.widgets)
 
 const { contentRefs, renderedWidgets, resizeWidget } = useDashboardGrid(containerRef, widgetsRef)
 provide('resizeWidget', resizeWidget)
+
+// Sections are derived by the page (which also renders the jump nav);
+// this component only paints the bands and exposes the measuring root.
+defineExpose({ wrapperEl: wrapperRef })
 
 function onRemove(id: string) {
   store.removeWidget(id)

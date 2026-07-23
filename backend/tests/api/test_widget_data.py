@@ -14,6 +14,7 @@ endpoint handler is async def, so each call goes through `asyncio.run(...)`.
 from __future__ import annotations
 
 import asyncio
+from collections import namedtuple
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -60,13 +61,18 @@ def _db_with_first(*side):
     chain returns `side[0]`, then `side[1]`, etc. Callers that need both
     dashboard + connection lookups pass two values. The query mock is
     self-returning so chains of any depth (e.g. the org-visibility predicate's
-    outerjoin + double filter) resolve to the same `.first`."""
+    outerjoin + double filter) resolve to the same `.first`.
+
+    Once `side` is exhausted every further `.first()` yields None rather than
+    raising StopIteration — `_readable_connection` issues a second, shared-sample
+    query whenever the ownership lookup misses."""
     db = MagicMock()
     q = db.query.return_value
     q.outerjoin.return_value = q
     q.filter.return_value = q
     if side:
-        q.first.side_effect = list(side)
+        remaining = iter(list(side))
+        q.first.side_effect = lambda *a, **k: next(remaining, None)
     return db
 
 
@@ -90,7 +96,8 @@ def _setup_rewrite_noop(monkeypatch):
     inside _serve_widget_via_dataplane — patch the source module."""
     monkeypatch.setattr(
         "backend.utils.sql_refs.rewrite_table_refs",
-        lambda sql, table_map: (sql, set()),
+        # Real signature is (sql, mapping, allowed_schemas=None) -> (sql, ok).
+        lambda sql, mapping, allowed_schemas=None: (sql, True),
     )
     monkeypatch.setattr(
         "backend.utils.sql_refs.extract_table_refs",
@@ -192,7 +199,8 @@ def test_serve_via_dataplane_local_plane_warm_table_returns_response(monkeypatch
     )
     monkeypatch.setattr(
         "backend.utils.sql_refs.rewrite_table_refs",
-        lambda sql, table_map: (sql, set()),
+        # Real signature is (sql, mapping, allowed_schemas=None) -> (sql, ok).
+        lambda sql, mapping, allowed_schemas=None: (sql, True),
     )
     monkeypatch.setattr(
         "backend.services.data_plane_service.plane_table_map",
@@ -485,6 +493,77 @@ def test_bulk_refresh_uses_one_shared_reader_for_all_widgets(monkeypatch):
     assert all(resp.widgets[w]["served_from"] == "data_plane" for w in ("w1", "w2", "w3"))
 
 
+def _capture_serve_readers(monkeypatch):
+    """Replace _serve_widget_via_dataplane with a recorder of (conn_id, reader).
+
+    Returns the list it appends to. Each call reports a served widget so the
+    bulk loop takes the plane branch and never reaches the source fallback.
+    """
+    seen = []
+
+    def _fake_serve(request, dashboard, current_user, db, reader=None):
+        seen.append((request.connection_id, reader))
+        return SimpleNamespace(
+            config={"value": 1}, served_from="data_plane",
+            refreshed_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    monkeypatch.setattr(wd, "_serve_widget_via_dataplane", _fake_serve)
+    return seen
+
+
+def _setup_bulk_sample_routing(monkeypatch, sample_ids):
+    """Bulk-refresh harness whose shared-sample lookup returns `sample_ids`."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: True)
+    _setup_duckdb_ready(monkeypatch)
+    sentinel = SimpleNamespace(name="shared-reader", close=lambda: None)
+    monkeypatch.setattr(
+        "backend.services.data_plane_service.get_gcs_duckdb_reader",
+        lambda scope, db: sentinel,
+    )
+    seen = _capture_serve_readers(monkeypatch)
+    # `.all()` serves the shared-sample id lookup at the top of the bulk loop.
+    # It is also what _readable_org_ids reads, and that subscripts its rows —
+    # so a namedtuple, which answers both `r.id` and `r[0]`.
+    Row = namedtuple("Row", "id")
+    db = _db_with_first(SimpleNamespace(id=1, user_id="u-1", data_context={}, widgets=[]))
+    db.query.return_value.all.return_value = [Row(i) for i in sample_ids]
+    return sentinel, seen, db
+
+
+def test_bulk_refresh_sample_widget_gets_own_reader_not_shared(monkeypatch):
+    """The shared reader is scoped to the CALLER's bucket; the sample lives in
+    the Samples org bucket. Sample widgets must get reader=None so _serve builds
+    a reader for the sample's own scope — anything else reads the wrong bucket."""
+    sentinel, seen, db = _setup_bulk_sample_routing(monkeypatch, sample_ids=[99])
+    db.query.return_value.first.side_effect = None
+    db.query.return_value.first.return_value = SimpleNamespace(
+        id=1, user_id="u-1", data_context={},
+        widgets=[_bulk_widget("w_sample", connection_id=99),
+                 _bulk_widget("w_own", connection_id=42)],
+    )
+
+    _run(wd.refresh_dashboard_widgets(1, None, _user(org_id="org-1"), db))
+
+    assert dict(seen) == {99: None, 42: sentinel}
+
+
+def test_bulk_refresh_sample_id_matches_when_widget_stores_it_as_string(monkeypatch):
+    """Widgets JSONB may carry connectionId as a string while sample_conn_ids
+    holds DB ints. Without the int() normalization the membership test silently
+    goes false and the sample widget reads the caller's bucket."""
+    sentinel, seen, db = _setup_bulk_sample_routing(monkeypatch, sample_ids=[99])
+    db.query.return_value.first.side_effect = None
+    db.query.return_value.first.return_value = SimpleNamespace(
+        id=1, user_id="u-1", data_context={},
+        widgets=[_bulk_widget("w_sample", connection_id="99")],
+    )
+
+    _run(wd.refresh_dashboard_widgets(1, None, _user(org_id="org-1"), db))
+
+    assert seen == [(99, None)]
+
+
 def test_bulk_refresh_source_fallback_reuses_one_connector(monkeypatch):
     """N+1 fix: widgets sharing a connection build one connector (not one each)
     on the source-DB fallback, and it is closed once."""
@@ -596,3 +675,80 @@ def test_source_db_fallback_works_for_mysql_connection(monkeypatch):
     resp = _run(wd.refresh_widget(req, _user(org_id="org-1"), db))
     assert resp is not None
     assert resp.config["value"] == 42
+
+
+def test_refresh_widget_postgres_source_repairs_ansi_quotes_for_mysql(monkeypatch):
+    """Orchestration: a MySQL widget whose stored SQL uses ANSI double-quoted
+    identifiers must fall through the _attempt chain (native → bigquery →
+    postgres) — the postgres-source attempt repairs `"col"` to backticks, and
+    the loop runs that repaired SQL to success."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+
+    result = FakeQueryResult(columns=["amt"], rows=[(7,)], row_count=1)
+
+    def _exec(sql, params=None):
+        # The source only accepts MySQL-native backtick identifiers; ANSI
+        # double-quotes (native + the bigquery attempt's string-literal output)
+        # are rejected, forcing fall-through to the postgres-repair attempt.
+        if "`amt`" in sql:
+            return result
+        raise Exception(f"unknown identifier quoting: {sql}")
+
+    fake_connector = MagicMock()
+    fake_connector.__enter__ = lambda self: self
+    fake_connector.__exit__ = lambda *a: None
+    fake_connector.execute_query.side_effect = _exec
+
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection",
+        lambda conn: fake_connector,
+    )
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 7})
+
+    db = _db_with_first(FakeConnection(db_type="mysql"))
+    req = wd.WidgetRefreshRequest(
+        connection_id=42, sql='SELECT "amt" FROM sales', mapping={},
+    )
+    resp = _run(wd.refresh_widget(req, _user(), db))
+
+    assert resp is not None
+    assert resp.row_count == 1
+    assert resp.config == {"value": 7}
+    # Fell through the native attempt (raw ANSI quotes rejected) to a transpiled
+    # repair, and the winning SQL carries MySQL backticks — i.e. the postgres
+    # source attempt produced it.
+    assert fake_connector.execute_query.call_count >= 2
+    assert "`amt`" in fake_connector.execute_query.call_args_list[-1].args[0]
+
+
+def test_refresh_widget_plane_backed_connector_reports_data_plane(monkeypatch):
+    """A plane-backed connector (migrated sqlite, CSV dataset) reads Parquet, so
+    the response must say `data_plane` — MagicMock connectors stay `source`."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+
+    class FakePlaneConnector:
+        serves_from_plane = True
+
+        def execute_query(self, sql, params=None):
+            return FakeQueryResult(columns=["cnt"], rows=[(3,)], row_count=1)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection",
+        lambda conn: FakePlaneConnector(),
+    )
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 3})
+
+    db = _db_with_first(FakeConnection(db_type="dataset"))
+    req = wd.WidgetRefreshRequest(
+        connection_id=42, sql="SELECT COUNT(*) FROM csv_42", mapping={},
+    )
+    resp = _run(wd.refresh_widget(req, _user(), db))
+
+    assert resp.served_from == "data_plane"
+
+    # Pin the real core connector too — the fake above only covers the contract.
+    from backend.connectors.data_plane import DataPlaneConnector
+    assert DataPlaneConnector.serves_from_plane is True

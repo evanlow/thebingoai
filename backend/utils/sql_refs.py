@@ -145,9 +145,37 @@ def extract_table_refs(sql: str) -> list[str]:
     return sorted(list(tables))
 
 
-def rewrite_table_refs(sql: str, mapping: dict[str, str]) -> tuple[str, bool]:
+def qualifier_allowlist(connection) -> set[str] | None:
+    """Schemas whose qualifier may be dropped when rewriting *connection*'s
+    tables to bare-named plane views.
+
+    A ref qualified with a schema outside this set is a different table that
+    merely shares the bare name (e.g. ``archive.orders`` vs the piped
+    ``public.orders``) and must not be rewritten. ``None`` = drop any
+    qualifier — BigQuery-style sources, where ``proj.ds.x`` qualifiers always
+    refer to the connection's own tables.
+    """
+    db_type = (getattr(connection, "db_type", "") or "").lower()
+    if db_type in ("postgres", "postgresql"):
+        return {"public"}
+    if db_type == "sqlite":
+        return {"main"}
+    if db_type in ("mssql", "sqlserver"):
+        return {"dbo"}
+    if db_type == "mysql":
+        database = (getattr(connection, "database", "") or "").lower()
+        return {database} if database else None
+    return None
+
+
+def rewrite_table_refs(
+    sql: str, mapping: dict[str, str], allowed_schemas: set[str] | None = None
+) -> tuple[str, bool]:
     """Rewrite table references in *sql* using *mapping* (old_name → new_name, case-insensitive).
-    Returns (rewritten_sql, success). success=False if sql could not be parsed."""
+    Returns (rewritten_sql, success). success=False if sql could not be parsed.
+
+    *allowed_schemas*: schema qualifiers that may be dropped in the rewrite
+    (see `qualifier_allowlist`). None drops any qualifier."""
     try:
         parsed = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
     except Exception:
@@ -157,9 +185,13 @@ def rewrite_table_refs(sql: str, mapping: dict[str, str]) -> tuple[str, bool]:
 
     def _rewriter(node: exp.Expression) -> exp.Expression:
         if isinstance(node, exp.Table) and node.name and node.name.lower() in normalized_mapping:
+            if node.db and allowed_schemas is not None and node.db.lower() not in allowed_schemas:
+                return node  # other-schema table sharing the bare name — not ours
             new_name = normalized_mapping[node.name.lower()]
             new_node = node.copy()
             new_node.this.args["this"] = new_name  # mutate the Identifier's raw string
+            new_node.set("db", None)       # plane views are bare-named — drop schema
+            new_node.set("catalog", None)  # …and catalog, so public.x / proj.ds.x resolve
             return new_node
         return node
 

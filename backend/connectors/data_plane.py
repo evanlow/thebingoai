@@ -13,15 +13,24 @@ logger = logging.getLogger(__name__)
 class DataPlaneConnector:
     """Wraps a DataPlane instance so it fits the connector interface."""
 
-    def __init__(self, plane, scope: OwnerScope) -> None:
+    # Read path is the DataPlane (Parquet), not an origin database — widget
+    # refresh reports `served_from="data_plane"` on this.
+    serves_from_plane = True
+
+    def __init__(self, plane, scope: OwnerScope, table_prefix: str | None = None) -> None:
         self._plane = plane
         self._scope = scope
+        # An owner scope is shared by every connection that owner has, so the
+        # plane's table list spans all of them. `table_prefix` narrows it to the
+        # tables one connection owns; None means "every table in the scope"
+        # (the plane-as-a-connection case, and pre-prefix migrations).
+        self._table_prefix = table_prefix
 
     @classmethod
-    def from_connection(cls, connection) -> "DataPlaneConnector":
+    def from_connection(cls, connection, table_prefix: str | None = None) -> "DataPlaneConnector":
         from backend.services.data_plane_service import get_plane_for_connection
         plane, scope = get_plane_for_connection(connection)
-        return cls(plane, scope)
+        return cls(plane, scope, table_prefix)
 
     def test_connection(self) -> bool:
         try:
@@ -30,8 +39,17 @@ class DataPlaneConnector:
         except Exception as exc:
             raise ConnectionError(f"DataPlane not reachable: {exc}") from exc
 
+    def get_schemas(self) -> list[str]:
+        return ["main"]  # the plane is flat — one namespace
+
     def get_tables(self, schema: Optional[str] = None) -> list[str]:
-        return self._plane.list_tables(self._scope)
+        tables = self._plane.list_tables(self._scope)
+        if self._table_prefix:
+            tables = [t for t in tables if t.startswith(self._table_prefix)]
+        return tables
+
+    def get_foreign_keys(self, table_name: str, schema: Optional[str] = None) -> list[dict]:
+        return []  # Parquet carries no FK metadata
 
     def get_table_schema(self, table_name: str, schema: Optional[str] = None) -> TableSchema:
         arrow_schema = self._plane.get_schema(self._scope, table_name)

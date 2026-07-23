@@ -7,7 +7,7 @@ reuse the same context-building logic without duplicating it.
 
 from dataclasses import dataclass, field
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
 from backend.agents.context import AgentContext, ConnectionInfo
@@ -53,14 +53,22 @@ async def build_orchestrator_context(
         DatabaseConnection.id, DatabaseConnection.name,
         DatabaseConnection.db_type, DatabaseConnection.database,
     )
+    from sqlalchemy import or_
+    from backend.services.seed import shared_sample_clause
     if connection_ids:
         accessible_connections = db.query(*conn_columns).filter(
             DatabaseConnection.id.in_(connection_ids),
-            DatabaseConnection.user_id == user.id
+            or_(
+                DatabaseConnection.user_id == user.id,
+                shared_sample_clause(),
+            ),
         ).all()
     else:
         accessible_connections = db.query(*conn_columns).filter(
-            DatabaseConnection.user_id == user.id
+            or_(
+                DatabaseConnection.user_id == user.id,
+                shared_sample_clause(),
+            )
         ).all()
     accessible_ids = [c.id for c in accessible_connections]
     connection_metadata = [
@@ -82,8 +90,19 @@ async def build_orchestrator_context(
         allowed_tool_keys = PolicyService.get_team_allowed_tools(db, team_id)
         team_allowed_connections = PolicyService.get_team_allowed_connections(db, team_id)
         if team_allowed_connections:
-            team_connection_ids = [c for c in accessible_ids if c in team_allowed_connections]
-        custom_agents = db.query(CustomAgentModel).filter(
+            # The shared sample is never on a team whitelist — keep it visible.
+            from backend.services.seed import shared_sample_ids
+            sample_ids = shared_sample_ids(db)
+            team_connection_ids = [
+                c for c in accessible_ids
+                if c in team_allowed_connections or c in sample_ids
+            ]
+        # joinedload(profile): _build_dynamic_tools reads agent.profile after the
+        # chat/websocket handlers close the session, and a lazy load on a detached
+        # row raises DetachedInstanceError.
+        custom_agents = db.query(CustomAgentModel).options(
+            joinedload(CustomAgentModel.profile)
+        ).filter(
             CustomAgentModel.user_id == user.id,
             CustomAgentModel.team_id == team_id,
             CustomAgentModel.is_active == True,

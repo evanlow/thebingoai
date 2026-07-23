@@ -111,6 +111,8 @@ function aggregateValues(values: any[], aggregation: string): number | null {
     .filter(n => !isNaN(n))
   if (!nums.length) return null
   if (aggregation === 'sum') return nums.reduce((a, b) => a + b, 0)
+  // Round avg to 2dp to match the backend transform (round(sum/len, 2)); display
+  // layer may still reformat further via decimalPlaces / roundValues.
   if (aggregation === 'avg') return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100
   if (aggregation === 'min') return Math.min(...nums)
   if (aggregation === 'max') return Math.max(...nums)

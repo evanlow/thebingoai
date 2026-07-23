@@ -57,6 +57,7 @@ def build_briefing_tools(
                 kpis (list[Kpi]): 0–3 KPI tiles. Each: {label, value, delta_vs_prev?, delta_direction?}.
                 sections (list[Section]): ≥1 numbered sections. Each: {heading, prose, widget_id?}.
                 key_takeaways (list[str]): exactly 3 bullets.
+                recommended_actions (list[str]): 2–4 concrete next steps derived from the key findings.
         """
         try:
             validated = BriefingPayload.model_validate(payload)
@@ -80,9 +81,28 @@ def build_briefing_tools(
                 from backend.models.dashboard import Dashboard
                 from backend.models.user import User
                 from backend.api.widget_data import render_widget_snapshots
+                from backend.services.briefing_runner import non_filter_widgets
                 dashboard = db.query(Dashboard).filter(Dashboard.id == briefing.dashboard_id).first()
                 user = db.query(User).filter(User.id == context.user_id).first()
-                widget_ids = [s.widget_id for s in validated.sections if s.widget_id]
+
+                # The prompt catalog omits filter widgets, but analyze_dashboard still
+                # shows them, so drop any section that references one rather than
+                # rendering a dashboard control as if it were data.
+                if dashboard:
+                    referenceable = {
+                        w.get("id") for w in non_filter_widgets(dashboard.widgets or [])
+                    }
+                    for section in payload_dump["sections"]:
+                        if section.get("widget_id") and section["widget_id"] not in referenceable:
+                            logger.info(
+                                "Briefing %s: dropping non-referenceable widget_id %r",
+                                briefing_id, section["widget_id"],
+                            )
+                            section["widget_id"] = None
+
+                widget_ids = [
+                    s["widget_id"] for s in payload_dump["sections"] if s.get("widget_id")
+                ]
                 if dashboard and user and widget_ids:
                     payload_dump["widget_snapshots"] = await render_widget_snapshots(
                         dashboard, widget_ids, user, db,

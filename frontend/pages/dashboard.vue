@@ -179,12 +179,22 @@
           @add-widget="handleAddWidget"
         />
 
+        <!-- Section jump nav — solid bar, frozen above the scrolling grid -->
+        <DashboardSectionNav
+          :sections="sections"
+          :bounds="sectionBounds"
+          :grid-wrapper="gridRef?.wrapperEl ?? null"
+        />
+
         <!-- Grid + inline editor -->
         <div class="flex flex-1 overflow-hidden">
-          <div class="flex-1 overflow-y-auto p-4">
+          <div class="flex-1 overflow-y-auto p-4" data-dashboard-scroll>
             <DashboardGrid
+              ref="gridRef"
               :widgets="store.currentWidgets"
               :edit-mode="store.editMode"
+              :sections="sections"
+              :bounds="sectionBounds"
               @open-sql-editor="openSqlEditor"
               @edit-config="openConfigEditor"
             />
@@ -226,12 +236,12 @@
         size="sm"
       >
         <div class="space-y-4">
-          <p class="text-sm text-gray-600 dark:text-neutral-400">
-            This will permanently delete <span class="font-medium text-gray-900 dark:text-neutral-100">{{ store.currentDashboard?.title }}</span> and all its widgets. This action cannot be undone.
+          <p class="text-sm text-gray-600 dark:text-neutral-300">
+            This will permanently delete <span class="font-medium text-gray-900 dark:text-white">{{ store.currentDashboard?.title }}</span> and all its widgets. This action cannot be undone.
           </p>
           <div>
             <label class="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
-              Type <span class="font-semibold">{{ store.currentDashboard?.title }}</span> to confirm
+              Type <span class="font-semibold text-gray-900 dark:text-white">{{ store.currentDashboard?.title }}</span> to confirm
             </label>
             <input
               v-model="deleteConfirmText"
@@ -274,6 +284,7 @@ import { useWorkspaceStore } from '~/stores/workspace'
 import { toDashboardListItem } from '~/types/dashboard'
 import type { DashboardWidget } from '~/types/dashboard'
 import DashboardWidgetEditor from '~/components/dashboard/editors/DashboardWidgetEditor.vue'
+import { useDashboardSections } from '~/composables/useDashboardSections'
 import DashboardAnalyzePanel from '~/components/dashboard/DashboardAnalyzePanel.vue'
 import DashboardBriefsPanel from '~/components/dashboard/DashboardBriefsPanel.vue'
 import DashboardTable from '~/components/dashboard/DashboardTable.vue'
@@ -329,6 +340,12 @@ watch(
 )
 
 // ── Drill-down state ──────────────────────────────────────
+const gridRef = ref<{ wrapperEl: HTMLElement | null } | null>(null)
+const { sections, bounds: sectionBounds } = useDashboardSections(
+  computed(() => store.currentWidgets),
+  computed(() => gridRef.value?.wrapperEl ?? null),
+)
+
 const sqlEditorWidget = ref<DashboardWidget | null>(null)
 const sqlEditorError = ref<string | null>(null)
 const configEditorWidget = ref<DashboardWidget | null>(null)

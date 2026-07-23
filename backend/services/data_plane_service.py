@@ -250,6 +250,17 @@ def plane_table_map(connection, db) -> dict[str, str]:
                 )
                 continue
             mapping[key] = p.target_table
+
+        # New model (`_materialize_sql_pipeline_v2`): one Pipeline per connection
+        # with target_table=None, per-table specs on its schedules. `setdefault`
+        # keeps the legacy pipeline above winning on a source-table collision.
+        for sched in (getattr(p, "schedules", None) or []):
+            for spec in (getattr(sched, "tables", None) or []):
+                if not spec.get("enabled", True):
+                    continue
+                src, tgt = spec.get("source_table"), spec.get("target_table")
+                if src and tgt:
+                    mapping.setdefault(str(src).lower(), tgt)
     return mapping
 
 

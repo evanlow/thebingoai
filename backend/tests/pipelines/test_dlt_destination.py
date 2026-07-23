@@ -66,6 +66,33 @@ def test_destination_forwards_unique_key():
     assert plane.write_parquet.call_args.kwargs["unique_key"] == uk
 
 
+def test_every_batch_of_a_load_presents_the_same_columns():
+    """A column that only shows up late in a load must still be present in the
+    earlier batches' Arrow tables — otherwise the batches write Parquet with
+    different schemas under one external table, and the plane's column
+    sanitizer (which resolves collisions per table it is handed) can map one
+    source column to different physical names across the load."""
+    import dlt
+    from backend.pipelines.dlt_destination import make_dataplane_destination
+
+    plane = MagicMock()
+    dest, _ = make_dataplane_destination(plane, _scope(), "tbl")
+
+    @dlt.resource(name="tbl", write_disposition="append")
+    def rows():
+        # batch_size is 5000, so `late` first appears in the second batch.
+        for i in range(5000):
+            yield {"early": i}
+        yield {"early": 5000, "late": 1}
+
+    dlt.pipeline(pipeline_name="test_batch_columns", destination=dest).run(rows)
+
+    batches = [c.args[2] for c in plane.write_parquet.call_args_list]
+    assert len(batches) > 1, "expected the load to span more than one batch"
+    for arrow_tbl in batches:
+        assert {"early", "late"} <= set(arrow_tbl.column_names)
+
+
 def test_destination_replace_disposition_maps_to_overwrite():
     """write_disposition='replace' (mode=full backfill) must arrive at the
     plane as mode='overwrite' so it pins the snapshot partition."""

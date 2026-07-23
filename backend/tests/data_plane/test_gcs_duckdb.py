@@ -36,6 +36,42 @@ def test_view_sql_sanitizes_and_reads_parquet():
     assert "hive_partitioning=true" in v
 
 
+def test_get_conn_applies_http_caps(monkeypatch):
+    """_get_conn must bound GCS network I/O (PR #148) so a stalled read fails
+    fast instead of hanging past the frontend's 60s cap. Spy on the connection's
+    execute() to confirm the three SET pragmas are issued with the configured
+    values, while delegating to a real DuckDB conn so httpfs still loads."""
+    import duckdb
+
+    from backend.config import settings
+
+    real_connect = duckdb.connect
+    recorded: list[str] = []
+
+    class _RecordingConn:
+        def __init__(self, real):
+            self._real = real
+
+        def execute(self, sql, *args, **kwargs):
+            recorded.append(sql)
+            return self._real.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: _RecordingConn(real_connect()))
+
+    reader = GCSDuckDBReader("bkt", "GOOGKEY", "secret")
+    try:
+        reader._get_conn()
+    finally:
+        reader.close()
+
+    assert f"SET http_timeout = {settings.duckdb_http_timeout_ms}" in recorded
+    assert f"SET http_retries = {settings.duckdb_http_retries}" in recorded
+    assert "SET http_keep_alive = true" in recorded
+
+
 def _write(path):
     pq.write_table(
         pa.table({"region": ["EMEA", "APAC"], "amount": pa.array([10, 7], type=pa.int64())}),

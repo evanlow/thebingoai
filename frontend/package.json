@@ -4,7 +4,7 @@
   "homepage": "https://thebingo.ai",
   "repository": "https://github.com/thebingoai/thebingoai",
   "license": "SEE LICENSE IN LICENSE",
-  "version": "0.2.16",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -33,7 +33,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "gridstack": "^12.4.2",
-    "html2canvas": "1.4.1",
+    "html2canvas-pro": "^1.5.8",
     "jspdf": "3.0.4",
     "lucide-vue-next": "^0.468.0",
     "markdown-it": "^14.1.0",

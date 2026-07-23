@@ -34,7 +34,7 @@ def _patch(monkeypatch, **overrides):
     )
     monkeypatch.setattr(
         "backend.utils.sql_refs.rewrite_table_refs",
-        overrides.get("rewrite", lambda sql, m: (sql, {})),
+        overrides.get("rewrite", lambda sql, m, allowed_schemas=None: (sql, {})),
     )
     monkeypatch.setattr(
         "backend.utils.sql_refs.extract_table_refs",
@@ -68,7 +68,7 @@ def test_returns_none_when_no_pipelines(monkeypatch):
 
 
 def test_returns_none_when_rewrite_raises(monkeypatch):
-    def _boom(sql, m):
+    def _boom(sql, m, allowed_schemas=None):
         raise ValueError("unparseable")
     _patch(monkeypatch, rewrite=_boom)
     assert tools._serve_query_via_dataplane(_conn(), "SELECT 1", MagicMock()) is None

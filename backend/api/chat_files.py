@@ -243,6 +243,12 @@ async def cancel_dataset(
         )
 
     if connection:
+        # The shared sample is read-only for everyone — never deletable here,
+        # even if a lookup ever resolves it again (defense in depth).
+        from backend.services.seed import is_shared_sample
+        if is_shared_sample(connection):
+            raise HTTPException(status_code=403, detail="Sample connection is read-only")
+
         # Revoke any running Celery task
         try:
             from backend.tasks.upload_tasks import celery_app as _celery

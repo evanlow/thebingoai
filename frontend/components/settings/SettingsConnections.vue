@@ -722,6 +722,11 @@
         its profiled schema, and will break any skills or jobs that reference it.
       </p>
 
+      <p v-if="cascadeWarning" class="text-sm text-red-600 dark:text-red-400 mb-4">
+        {{ cascadeWarning }} Deleting it also deletes those pipelines and their
+        run history. Click Delete again to confirm.
+      </p>
+
       <label class="block text-sm text-gray-700 dark:text-neutral-300 mb-1.5">
         Type <code class="text-violet-600 dark:text-violet-400 font-mono">{{ deletingConnection?.name }}</code> to confirm
       </label>
@@ -946,6 +951,7 @@ const saving = ref(false)
 const connectionSuccessMessage = ref('')
 const connectionFailedMessage = ref('')
 const showDeleteDialog = ref(false)
+const cascadeWarning = ref<string | null>(null)
 const deletingConnection = ref<DatabaseConnection | null>(null)
 const wasEditingBeforeDelete = ref(false)
 const deleting = ref(false)
@@ -1840,11 +1846,13 @@ function openDeleteDialog(connection: DatabaseConnection) {
   if (wasEditingBeforeDelete.value) showFormSheet.value = false
   deletingConnection.value = connection
   deleteConfirmInput.value = ''
+  cascadeWarning.value = null
   showDeleteDialog.value = true
 }
 
 function cancelDelete() {
   showDeleteDialog.value = false
+  cascadeWarning.value = null
   if (wasEditingBeforeDelete.value) {
     showFormSheet.value = true
     wasEditingBeforeDelete.value = false
@@ -1867,14 +1875,25 @@ async function confirmDelete() {
 
   try {
     deleting.value = true
-    await api.connections.delete(String(deletingConnection.value.id))
+    // First attempt runs without cascade so the backend 409s with the
+    // dependent-pipeline list; the second click (warning shown) cascades.
+    await api.connections.delete(
+      String(deletingConnection.value.id),
+      { cascade: cascadeWarning.value !== null },
+    )
     toast.success('Connection deleted successfully')
     showDeleteDialog.value = false
+    cascadeWarning.value = null
     showFormSheet.value = false
     wasEditingBeforeDelete.value = false
     await fetchConnections()
   } catch (err: any) {
     const detail = err?.data?.detail
+    const status = err?.status ?? err?.statusCode
+    if (status === 409 && detail?.code === 'connection_in_use' && cascadeWarning.value === null) {
+      cascadeWarning.value = detail.message
+      return
+    }
     const errorMessage =
       (detail && typeof detail === 'object' ? detail.message : detail) ||
       err?.message ||

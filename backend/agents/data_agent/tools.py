@@ -77,7 +77,8 @@ def _serve_query_via_dataplane(connection, sql: str, db) -> Optional[Any]:
             return None
 
     try:
-        base_sql, _ = rewrite_table_refs(transpiled, table_map)
+        from backend.utils.sql_refs import qualifier_allowlist
+        base_sql, _ = rewrite_table_refs(transpiled, table_map, qualifier_allowlist(connection))
     except Exception:
         return None  # unparseable post-transpile SQL → live source
 
@@ -247,11 +248,13 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
             return {"error": "Connection not authorized"}
 
         # Get connection details
+        from backend.services.seed import readable_connection_clause
+
         db = SessionLocal()
         try:
             connection = db.query(DatabaseConnection).filter(
                 DatabaseConnection.id == connection_id,
-                DatabaseConnection.user_id == context.user_id
+                readable_connection_clause(context.user_id),
             ).first()
 
             if not connection:
@@ -359,11 +362,13 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
         if table_data is None:
             return {"error": f"Table '{table_name}' not found in schema cache."}
 
+        from backend.services.seed import readable_connection_clause
+
         db = SessionLocal()
         try:
             connection = db.query(DatabaseConnection).filter(
                 DatabaseConnection.id == connection_id,
-                DatabaseConnection.user_id == context.user_id,
+                readable_connection_clause(context.user_id),
             ).first()
 
             if not connection:

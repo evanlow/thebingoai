@@ -21,6 +21,11 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting BINGO Backend...")
 
+    # Stall watchdog: logs the blocking stack whenever the event loop freezes
+    # (>5s), so probe-kill incidents leave evidence of the culprit frame.
+    from backend.services.loop_watchdog import start as start_loop_watchdog
+    start_loop_watchdog()
+
     # Fail fast in production if the data-plane lockdown is half-configured.
     from backend.services.data_plane_service import check_internal_gcp_config
     check_internal_gcp_config()
@@ -46,6 +51,16 @@ async def lifespan(app: FastAPI):
                 "DISABLE_LOCAL_DATA_PLANE=true but no plane provisioner registered. "
                 "bingo-admin plugin on_startup must call register_plane_provisioner()."
             )
+
+    # Provision the ONE shared Airbnb sample (system org + Parquet) once the
+    # plane provisioner is wired up. Best-effort — never block boot.
+    try:
+        from backend.database.session import SessionLocal
+        from backend.services.seed import ensure_shared_sample
+        with SessionLocal() as db:
+            ensure_shared_sample(db)
+    except Exception:
+        logger.warning("Shared sample provisioning failed", exc_info=True)
 
     # Backfill dynamic SQL pipeline templates for core connectors (postgres /
     # mysql / sqlite) which are registered at module import in

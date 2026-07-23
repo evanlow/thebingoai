@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { initAnalytics, trackEvent, setAnalyticsUser, setAnalyticsPage } from '~/utils/analytics'
 
 describe('analytics', () => {
@@ -14,7 +14,7 @@ describe('analytics', () => {
     expect(window.dataLayer).toBeUndefined()
   })
 
-  it('init wires dataLayer, strips query from page_location, and injects the gtag script tag', () => {
+  it('init wires dataLayer, seeds page_location with origin only, and injects the gtag script tag', () => {
     // Simulate landing on an OAuth return URL — the query must never reach GA.
     window.history.replaceState({}, '', '/auth/success?access_token=SECRET_TOKEN')
     initAnalytics('G-TEST123')
@@ -23,14 +23,37 @@ describe('analytics', () => {
     const pageSet = entries.find(
       (e) => e[0] === 'set' && !!(e[1] as Record<string, unknown>)?.page_location
     )
-    expect((pageSet![1] as Record<string, unknown>).page_location).toBe(
-      window.location.origin + '/auth/success'
-    )
+    expect((pageSet![1] as Record<string, unknown>).page_location).toBe(window.location.origin)
     expect(JSON.stringify(entries)).not.toContain('SECRET_TOKEN')
     const script = document.head.querySelector(
       'script[src="https://www.googletagmanager.com/gtag/js?id=G-TEST123"]'
     )
     expect(script).toBeTruthy()
+  })
+
+  it('init never seeds page_location with a secret-bearing pathname', async () => {
+    // The briefing share token IS the path segment, not a query param —
+    // window.location.pathname itself is the secret here. `enabled` is
+    // module-local state left over from earlier tests in this file, so
+    // reset modules and re-import to get initAnalytics back to its
+    // pre-init state before exercising it against a fresh location.
+    vi.resetModules()
+    window.dataLayer = undefined as unknown as unknown[]
+    window.history.replaceState({}, '', '/share/briefings/SECRET_TOKEN_123')
+    const fresh = await import('~/utils/analytics')
+    fresh.initAnalytics('G-TEST456')
+    const entries = window.dataLayer!.map((e) => Array.from(e as ArrayLike<unknown>))
+    const pageSet = entries.find(
+      (e) => e[0] === 'set' && !!(e[1] as Record<string, unknown>)?.page_location
+    )
+    expect((pageSet![1] as Record<string, unknown>).page_location).toBe(window.location.origin)
+    expect(JSON.stringify(entries)).not.toContain('SECRET_TOKEN_123')
+    // Clean up the script tag this isolated module instance injected into the
+    // shared happy-dom document, so later tests in this file (which assert
+    // on the original module's single script tag) aren't affected.
+    document.head
+      .querySelector('script[src="https://www.googletagmanager.com/gtag/js?id=G-TEST456"]')
+      ?.remove()
   })
 
   it('trackEvent pushes the event with params', () => {

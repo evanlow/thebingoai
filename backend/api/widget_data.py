@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -495,15 +496,22 @@ def _readable_connection(db, connection_id, current_user, dashboard):
     Shared (cross-org) dashboards: the connection must belong to a user in the
     dashboard's (host) org — read-only serving from host parquet only.
     """
+    from backend.services.seed import shared_sample_clause
     _, is_shared = _serving_org_and_shared(dashboard, current_user) if dashboard else (None, False)
     q = db.query(DatabaseConnection).filter(DatabaseConnection.id == connection_id)
     if is_shared:
-        return (
+        connection = (
             q.join(User, DatabaseConnection.user_id == User.id)
             .filter(User.org_id == str(dashboard.org_id))
             .first()
         )
-    return q.filter(DatabaseConnection.user_id == current_user.id).first()
+    else:
+        connection = q.filter(DatabaseConnection.user_id == current_user.id).first()
+    if connection is not None:
+        return connection
+    # Shared read-only sample: readable by any user, independent of dashboard.
+    # Checked only on ownership miss so the common case stays one query.
+    return q.filter(shared_sample_clause()).first()
 
 
 def _shared_serve_ctx(is_shared: bool, serving_org):
@@ -634,7 +642,10 @@ def _serve_widget_via_dataplane(
     # Widget SQL is written against source table names (e.g. `orders`); rewrite
     # them to the Pipeline's materialized plane table (e.g. `acme__orders`) so
     # the Parquet glob resolves. No-op when the connection has no pipelines.
-    base_sql, _ = rewrite_table_refs(request.sql, plane_table_map(connection, db))
+    from backend.utils.sql_refs import qualifier_allowlist
+    base_sql, _ = rewrite_table_refs(
+        request.sql, plane_table_map(connection, db), qualifier_allowlist(connection)
+    )
 
     # ── Dev: local plane → serve live over local Parquet ──────────────────
     if isinstance(plane, LocalFilesystemDataPlane):
@@ -731,7 +742,20 @@ async def refresh_widget(
     DuckDB over the DataPlane source Parquet; cold sources fall back. With the
     flag off, behavior is unchanged: the Parquet `_dash_*` cache serves
     unfiltered reads and the source DB serves the rest.
+
+    The serving ladder is entirely synchronous (DuckDB-over-GCS scans, Parquet
+    cache reads, source-DB connectors) — running it on the event loop starved
+    /health and got pods liveness-killed (2026-07-23 incident), so it runs in
+    a worker thread.
     """
+    return await asyncio.to_thread(_refresh_widget_sync, request, current_user, db)
+
+
+def _refresh_widget_sync(
+    request: WidgetRefreshRequest,
+    current_user: User,
+    db: Session,
+):
     dashboard = None
     if request.dashboard_id:
         # Org-wide visibility, matching GET /dashboards/{id}: any org member who
@@ -835,6 +859,11 @@ async def refresh_widget(
         # Route bigquery_ga4 widget SQL through the data plane (managed
         # materialised view) instead of the raw GA4 source connector.
         served_from = "source"
+        if getattr(connector, "serves_from_plane", False) is True:
+            # Migrated sqlite / CSV dataset: connector reads the DataPlane
+            # (Parquet), not the origin database. Identity check — any
+            # attribute-synthesising stand-in (MagicMock) must not opt in.
+            served_from = "data_plane"
         if connection.db_type == "bigquery_ga4":
             sql, params = _prepare(request.sql)
             from backend.data_plane.scope import OwnerScope
@@ -864,15 +893,20 @@ async def refresh_widget(
                       "mysql": "mysql", "bigquery": "bigquery",
                       "bigquery_ga4": "bigquery"}.get(db_type, db_type)
 
-            def _attempt(transpile, with_filter):
-                base = (transpile_to_engine(request.sql, source="bigquery", target=target)
-                        if transpile else request.sql)
+            # source: None = run as-is (native dialect); "bigquery" = legacy BQ
+            # SQL; "postgres" = repair ANSI double-quoted identifiers ("col") to
+            # the target's native quoting — the agent sometimes emits them and
+            # they break on MySQL (see conn 50 / dash 36).
+            def _attempt(source, with_filter):
+                base = (request.sql if source is None
+                        else transpile_to_engine(request.sql, source=source, target=target))
                 s, p = (_prepare(base) if with_filter else (base, None))
                 return connector.execute_query(s, params=p)
 
-            plans = [(False, True), (False, False), (True, True), (True, False)]
+            plans = [(None, True), (None, False), ("bigquery", True),
+                     ("bigquery", False), ("postgres", True), ("postgres", False)]
             if not request.filters:
-                plans = [(False, False), (True, False)]
+                plans = [(None, False), ("bigquery", False), ("postgres", False)]
             first_err = None
             for i, (tr, wf) in enumerate(plans):
                 try:
@@ -994,11 +1028,29 @@ async def refresh_dashboard_widgets(
     # exactly as before (dev serves via its local-plane branch).
     duck_enabled = _duckdb_serving_enabled(org_id)
     shared_reader = None
+    # Widgets pointing at the shared sample resolve to the Samples-org bucket, not
+    # the viewer's org bucket — the shared reader is bound to the wrong bucket for
+    # them. Serve those with a per-widget reader (reader=None) instead.
+    sample_conn_ids: set = set()
     if duck_enabled:
         from backend.data_plane.scope import OwnerScope
         from backend.services.data_plane_service import get_gcs_duckdb_reader
         reader_scope = OwnerScope("org", org_id) if org_id else OwnerScope("user", current_user.id)
         shared_reader = get_gcs_duckdb_reader(reader_scope, db)
+
+        from backend.services.seed import shared_sample_clause
+        widget_conn_ids = [
+            w.get("dataSource", {}).get("connectionId")
+            for w in widgets if w.get("dataSource")
+        ]
+        widget_conn_ids = [cid for cid in widget_conn_ids if cid]
+        if widget_conn_ids:
+            sample_conn_ids = {
+                r.id for r in db.query(DatabaseConnection.id).filter(
+                    DatabaseConnection.id.in_(widget_conn_ids),
+                    shared_sample_clause(),
+                ).all()
+            }
 
     # Source-DB fallback memoized per connection_id so widgets sharing a
     # connection don't each re-fetch the DatabaseConnection row and rebuild a
@@ -1035,6 +1087,12 @@ async def refresh_dashboard_widgets(
             connection_id = data_source.get("connectionId")
             sql = data_source.get("sql")
             mapping = data_source.get("mapping")
+            # Widgets JSONB may carry connectionId as a string; sample_conn_ids
+            # holds DB ints, so normalize before the membership test below.
+            try:
+                connection_id = int(connection_id)
+            except (TypeError, ValueError):
+                pass
 
             if not connection_id or not sql or not mapping:
                 results[widget_id] = {"error": "Incomplete dataSource (missing connectionId, sql, or mapping)"}
@@ -1074,7 +1132,7 @@ async def refresh_dashboard_widgets(
                                 widget_sources=widget.get("sources"),
                             ),
                             dashboard, current_user, db,
-                            reader=shared_reader,
+                            reader=(None if connection_id in sample_conn_ids else shared_reader),
                         )
                     if served is not None:
                         _widget_cache_store(widget_cache_key, bulk_cache_ttl, served)
@@ -1144,6 +1202,9 @@ async def refresh_dashboard_widgets(
                     )
 
                 served_from = "source"
+                if getattr(connector, "serves_from_plane", False) is True:
+                    # Migrated sqlite / CSV dataset: connector reads the DataPlane.
+                    served_from = "data_plane"
                 if connection.db_type == "bigquery_ga4":
                     fb_sql, params = _prepare_bulk(sql)
                     from backend.data_plane.scope import OwnerScope as _OS
@@ -1173,15 +1234,19 @@ async def refresh_dashboard_widgets(
                               "mysql": "mysql", "bigquery": "bigquery",
                               "bigquery_ga4": "bigquery"}.get(db_type, db_type)
 
-                    def _attempt_bulk(transpile, with_filter):
-                        base = (transpile_to_engine(sql, source="bigquery", target=target)
-                                if transpile else sql)
+                    # source: None = native as-is; "bigquery" = legacy BQ SQL;
+                    # "postgres" = repair ANSI "col" identifiers to the target's
+                    # native quoting (breaks on MySQL otherwise). See refresh_widget.
+                    def _attempt_bulk(source, with_filter):
+                        base = (sql if source is None
+                                else transpile_to_engine(sql, source=source, target=target))
                         s, p = (_prepare_bulk(base) if with_filter else (base, None))
                         return connector.execute_query(s, params=p)
 
-                    plans = [(False, True), (False, False), (True, True), (True, False)]
+                    plans = [(None, True), (None, False), ("bigquery", True),
+                             ("bigquery", False), ("postgres", True), ("postgres", False)]
                     if not filters:
-                        plans = [(False, False), (True, False)]
+                        plans = [(None, False), ("bigquery", False), ("postgres", False)]
                     first_err = None
                     for _i, (_tr, _wf) in enumerate(plans):
                         try:

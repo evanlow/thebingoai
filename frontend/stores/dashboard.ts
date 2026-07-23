@@ -578,5 +578,10 @@ function getDefaultWidgetConfig(type: WidgetType): DashboardWidget['widget'] {
         type: 'filter',
         config: { controls: [] },
       }
+    case 'section':
+      return {
+        type: 'section',
+        config: { title: 'New Section' },
+      }
   }
 }

@@ -185,11 +185,11 @@ class TestSingleTableMigration:
         assert result.tables_migrated == 1
         assert result.rows_migrated == 5
 
-        # write_parquet called once with table_name == "sales"
+        # write_parquet called once, with the table namespaced to the connection
         mock_plane.write_parquet.assert_called_once()
         call_args = mock_plane.write_parquet.call_args
         # Positional: (scope, table_name, arrow_table, mode=...)
-        assert call_args[0][1] == "sales"
+        assert call_args[0][1] == "sqlite_1_sales"
 
         mock_delete.assert_called_once()
         db.commit.assert_called()
@@ -221,6 +221,46 @@ class TestMultiTableMigration:
         assert result.tables_migrated == 3
         assert result.rows_migrated == 30
         assert mock_plane.write_parquet.call_count == 3
+
+
+class TestLocalFileMigration:
+    @patch("backend.services.object_storage.download_bytes")
+    @patch("backend.services.object_storage.delete_object")
+    @patch("backend.services.data_plane_service.get_default_plane")
+    def test_absolute_path_reads_in_place_and_preserves_file(
+        self, mock_get_plane, mock_delete, mock_download
+    ):
+        """Bundled local sqlite (absolute path): no blob download, no blob
+        delete, dataset_table_name preserved, file untouched on disk."""
+        blob = make_sqlite_db({"listings": [{"id": str(i), "city": "kl"} for i in range(4)]})
+        with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as tmp:
+            tmp.write(blob)
+            local_path = tmp.name
+
+        try:
+            mock_plane = MagicMock()
+            mock_get_plane.return_value = mock_plane
+
+            connection = _make_mock_connection(dataset_table_name=local_path)
+            db = _make_fresh_db(connection=connection, journal=None)
+
+            result = migrate_connection(1, dry_run=False, db=db)
+
+            assert result.status == "migrated"
+            assert result.tables_migrated == 1
+            assert result.rows_migrated == 4
+            mock_plane.write_parquet.assert_called_once()
+            assert mock_plane.write_parquet.call_args[0][1] == "sqlite_1_listings"
+
+            mock_download.assert_not_called()
+            mock_delete.assert_not_called()
+            assert connection.dataset_table_name == local_path
+            assert os.path.isfile(local_path)
+        finally:
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
 
 
 class TestResumability:

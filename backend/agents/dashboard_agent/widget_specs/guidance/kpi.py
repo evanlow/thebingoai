@@ -3,7 +3,7 @@
 KPI_GUIDANCE = """### autoTrend vs Legacy Trend
 
 **autoTrend: true (recommended):** SQL returns multiple time-ordered rows. The system automatically:
-- Computes the headline value using the `aggregation` method (default: 'first')
+- Computes the headline value using the `aggregation` method — always set it explicitly to match the KPI's purpose (sum, avg, countDistinct, last, ...). If omitted, the backend falls back to the first row's value.
 - Derives trend direction and % change
 
 **Trend calculation is controlled by `periodLabel`:**
@@ -68,7 +68,8 @@ Mapping: `{"type": "kpi", "valueColumn": "current_value", "trendValueColumn": "p
 - **Bound date-based queries** — only the current + previous period matter, so add a WHERE on the date column (e.g. last 60 days for "vs last month") instead of scanning full history
 - Use `aggregation: "last"` for the most recent value in a time-series
 - Use `aggregation: "sum"` for totals across all rows
-- Position KPIs in the executive summary row directly below the filter bar: y=2, w=3 or w=4, h=2
+- KPIs live ONLY in the executive summary band directly below the filter bar — the backend packs the row; never emit a KPI inside a later section
+- Mix the band: headline level(s) with `autoTrend`, plus a target-progress KPI when a goal exists — not five identical counts
 - Set `compactNumbers: true` whenever the value can exceed ~10,000 (renders 1.2M instead of 1,200,000)
 - When the user mentions a goal/target/quota, render it as progress:
   `"comparison": {"type": "value", "targetValue": <goal>, "showAsProgress": true}` plus `"progressVisual": "bar"` in config

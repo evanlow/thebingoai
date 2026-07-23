@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from backend.database.session import SessionLocal
+from backend.database.session import SessionLocal, DetachedReadSessionLocal
 from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
 from backend.schemas.chat import ResolvedMention
@@ -19,6 +19,104 @@ from backend.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
+
+
+async def _finalize_credit_turn(credit_mgr, retry_succeeded, orchestrator_errored=False) -> None:
+    """Close a turn's credit context: record usage + debit the org pool.
+
+    Called after the answer is persisted and before `done` is forwarded, so the
+    client's post-`done` balance refresh reads the debited pool while a persist
+    failure still aborts the turn uncharged. Voids first when the turn didn't
+    resolve the user's question so they aren't charged for it. No-op when
+    credit_mgr is None. The caller nulls credit_mgr after this returns so it is
+    invoked exactly once per turn — `__aexit__` is not itself idempotent.
+
+    ``orchestrator_errored`` is the streaming counterpart of the REST path's
+    ``success=False``: stream_orchestrator catches its own exceptions and
+    reports them as an ``error`` EVENT rather than raising, so nothing here
+    sees a failure unless the caller flags it. Same precedence as chat.py — an
+    outright failure outranks an unresolved retry.
+
+    The void/charge decision itself lives in `finalize_credit_turn` so the REST
+    path (chat.py) applies the identical rules; this wrapper only pins the
+    websocket-specific ordering described above.
+    """
+    from backend.services.token_tracking_service import finalize_credit_turn
+    if orchestrator_errored:
+        void_reason = "orchestrator reported failure"
+    elif retry_succeeded is False:
+        void_reason = "layer4_retry_failed"
+    else:
+        void_reason = None
+    await finalize_credit_turn(credit_mgr, void_reason)
+
+
+async def _complete_turn(
+    db,
+    conversation,
+    is_new: bool,
+    user_message: str,
+    final_message: str,
+    collected_steps: list,
+    retry_succeeded,
+    judge_metadata,
+    credit_mgr,
+    pending_done_event,
+    send,
+    request_id: str,
+    user: User,
+    active_thread_id: str,
+    orchestrator_errored: bool = False,
+) -> None:
+    """Finish a turn after the orchestrator's `done`, in strict order:
+    persist → capture → charge → forward `done` → best-effort post-process.
+
+    Persist runs FIRST; its failure propagates *before* the charge, so a turn
+    whose answer wasn't saved is never billed (the caller finalizes the credit
+    context with the exception, which skips the charge). `done` is forwarded only
+    after the charge lands, so the client's balance refresh reads the debited
+    pool. Post-processing failures are swallowed — the turn is already complete.
+    """
+    # 1. Persist the answer + steps. Must succeed before charging.
+    await _persist_turn(db, conversation, final_message, collected_steps)
+
+    # 2. Capture an unresolved Layer-4 retry failure (independent of billing;
+    #    the actual void happens inside _finalize_credit_turn).
+    if retry_succeeded is False and judge_metadata:
+        try:
+            from backend.services.agent_failure_capture import capture_failure
+            capture_failure(
+                db=db,
+                user_id=user.id,
+                conversation_id=conversation.id,
+                thread_id=conversation.thread_id,
+                user_question=user_message,
+                response_initial=judge_metadata.get("initial_response", ""),
+                response_after_retry=judge_metadata.get("retry_response", ""),
+                judge_reason_initial=judge_metadata.get("judge_reason_initial", ""),
+                judge_reason_retry=judge_metadata.get("judge_reason_retry", ""),
+                judge_directive=judge_metadata.get("judge_directive", ""),
+                model=settings.default_llm_model or settings.default_llm_provider,
+                judge_model=judge_metadata.get("judge_model", ""),
+                orchestrator_steps=collected_steps or None,
+            )
+        except Exception as _capture_err:
+            logger.warning("Layer-4 capture failed: %s", _capture_err)
+
+    # 3. Charge now that the answer is safe (voids first if the turn failed or
+    #    the retry never resolved), then forward `done`.
+    await _finalize_credit_turn(credit_mgr, retry_succeeded, orchestrator_errored)
+    if pending_done_event is not None:
+        await send(pending_done_event)
+
+    # 4. Best-effort post-processing; a failure here must not undo the charge.
+    try:
+        await _postprocess_turn(
+            db, conversation, is_new, user_message, final_message,
+            collected_steps, send, request_id, user, active_thread_id,
+        )
+    except Exception as _pp_err:
+        logger.warning("Post-processing failed after turn completed: %s", _pp_err)
 
 
 async def _get_user_from_token(token: str) -> Optional[User]:
@@ -79,11 +177,16 @@ async def _resolve_conversation(
     else:
         conversation = ConversationService.create_conversation(db, user.id, title="New Task")
 
-    # Validate connection access
+    # Validate connection access (own connections + the shared read-only sample)
     if connection_ids:
+        from sqlalchemy import or_
+        from backend.services.seed import shared_sample_clause
         accessible = db.query(DatabaseConnection.id).filter(
             DatabaseConnection.id.in_(connection_ids),
-            DatabaseConnection.user_id == user.id,
+            or_(
+                DatabaseConnection.user_id == user.id,
+                shared_sample_clause(),
+            ),
         ).all()
         if len(accessible) != len(connection_ids):
             await send({"type": "chat.error", "request_id": request_id, "thread_id": conversation.thread_id, "content": "Access denied to one or more connections"})
@@ -99,9 +202,14 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
     _resolve_attachments cannot find them with a normal chat_file_service lookup.
     This helper reconstructs the data that build_user_message() needs.
     """
+    from sqlalchemy import or_
+    from backend.services.seed import shared_sample_clause
     conn = db.query(DatabaseConnection).filter(
         DatabaseConnection.id == connection_id,
-        DatabaseConnection.user_id == user.id,
+        or_(
+            DatabaseConnection.user_id == user.id,
+            shared_sample_clause(),
+        ),
     ).first()
     if conn is None:
         logger.warning("_build_dataset_file_content: connection %d not found for user %s", connection_id, user.id)
@@ -263,7 +371,49 @@ async def _fire_chat_response_plugins(user_id, thread_id, user_message, assistan
         logger.warning("fire_chat_response_plugins error: %s", exc)
 
 
-async def _persist_and_postprocess(
+async def _persist_turn(
+    db: Session,
+    conversation,
+    final_message: str,
+    collected_steps: list,
+):
+    """Persist the assistant message + steps. Must succeed BEFORE the turn is
+    charged — a failure here propagates so credit is never finalized (the caller
+    charges only after this returns). Save even for empty/tool-only turns.
+
+    Runs in a worker thread: committing a many-step turn (JSON step payloads
+    over TLS to the capped managed PG) blocked the event loop long enough to
+    fail liveness probes (2026-07-23 incident)."""
+    if final_message or collected_steps:
+        await asyncio.to_thread(
+            _persist_turn_sync, db, conversation, final_message, collected_steps
+        )
+
+
+def _persist_turn_sync(
+    db: Session,
+    conversation,
+    final_message: str,
+    collected_steps: list,
+):
+    assistant_msg = ConversationService.add_message(db, conversation.id, "assistant", final_message or "")
+
+    if collected_steps:
+        from backend.models.agent_step import AgentStep
+        for i, step in enumerate(collected_steps):
+            db.add(AgentStep(
+                message_id=assistant_msg.id,
+                step_number=i + 1,
+                agent_type=step.get("agent_type", "unknown"),
+                step_type=step.get("step_type", "unknown"),
+                tool_name=step.get("tool_name"),
+                content=step.get("content", {}),
+                duration_ms=step.get("duration_ms"),
+            ))
+        db.commit()
+
+
+async def _postprocess_turn(
     db: Session,
     conversation,
     is_new: bool,
@@ -275,26 +425,9 @@ async def _persist_and_postprocess(
     user: User,
     active_thread_id: str,
 ):
-    """Persist assistant message, steps, generate title/summary, broadcast completion."""
-    # Persist assistant message (save even if empty — tool-only turns
-    # like ask_user_question still need steps persisted)
-    if final_message or collected_steps:
-        assistant_msg = ConversationService.add_message(db, conversation.id, "assistant", final_message or "")
-
-        if collected_steps:
-            from backend.models.agent_step import AgentStep
-            for i, step in enumerate(collected_steps):
-                db.add(AgentStep(
-                    message_id=assistant_msg.id,
-                    step_number=i + 1,
-                    agent_type=step.get("agent_type", "unknown"),
-                    step_type=step.get("step_type", "unknown"),
-                    tool_name=step.get("tool_name"),
-                    content=step.get("content", {}),
-                    duration_ms=step.get("duration_ms"),
-                ))
-            db.commit()
-
+    """Best-effort tail: title/summary generation + completion broadcasts. Runs
+    AFTER the answer is persisted, charged, and `done` is forwarded, so a failure
+    here neither undoes the charge nor errors an already-completed turn."""
     # Generate title for new conversations. Broadcast via the connection manager so
     # every tab's sidebar refreshes live, not just the tab that sent the message.
     if is_new and (final_message or collected_steps):
@@ -400,6 +533,12 @@ async def _wait_for_file_processing(
 
     elapsed = 0
     while pending:
+        # Don't hold the pooled connection across the sleep: profiling can run for
+        # minutes, and a connection left idle-in-transaction gets reaped by the
+        # pooler. Closing also drops the identity map, so the query below opens a
+        # fresh transaction and reads the Celery worker's committed write directly —
+        # no refresh() needed.
+        db.close()
         await asyncio.sleep(POLL_INTERVAL_S)
         elapsed += POLL_INTERVAL_S
 
@@ -412,7 +551,6 @@ async def _wait_for_file_processing(
             if conn is None:
                 resolved.append(cid)
                 continue
-            db.refresh(conn)  # see updates from Celery worker session
             if conn.profiling_status == "ready":
                 resolved.append(cid)
             elif conn.profiling_status == "failed":
@@ -467,7 +605,7 @@ async def _handle_chat_send(
 
     import redis as sync_redis
     redis_client = sync_redis.from_url(settings.redis_url, decode_responses=True)
-    db: Session = SessionLocal()
+    db: Session = DetachedReadSessionLocal()
     active_thread_id: Optional[str] = thread_id  # tracks actual thread_id for cleanup
 
     async def send(payload: dict) -> None:
@@ -560,7 +698,10 @@ async def _handle_chat_send(
                 if cap == "org_pool":
                     msg = "Organization credit pool exhausted. Contact your bingo admin."
                 else:
-                    msg = "Daily credits used up. Resets at midnight."
+                    # Not a daily cap — that was removed. A "user_daily" reason
+                    # is now a per-request minimum shortfall from
+                    # provider_wrapper, which no midnight reset will fix.
+                    msg = "Not enough credits to run this request."
                 await send({
                     "type": "chat.error",
                     "request_id": request_id,
@@ -575,10 +716,24 @@ async def _handle_chat_send(
 
         # Stream orchestrator
         from backend.database.session import SessionLocal as _SF
+
+        # Return the pooled connection before the (minutes-long) stream — held open it
+        # sits idle-in-transaction, the pooler reaps it, and the post-stream writes die
+        # with "SSL connection has been closed unexpectedly". Rows loaded above
+        # (conversation, history, ctx.custom_agents, ctx.user_skills) survive as
+        # detached-but-populated objects because this handler's session comes from
+        # DetachedReadSessionLocal (expire_on_commit=False)
+        # — only their column attrs are safe past this point, never a lazy relationship.
+        # The session re-opens lazily (pre-pinged) on the next statement; the orchestrator
+        # has its own session factory (_SF) and does not use this one.
+        db.close()
+
         final_message = ""
         collected_steps = []
         collected_retry_succeeded = None
         collected_judge_metadata = None
+        pending_done_event = None
+        orchestrator_errored = False
 
         async for event in stream_orchestrator(
             message,
@@ -602,12 +757,29 @@ async def _handle_chat_send(
             event_type = event.get("type", "")
             ws_type = f"chat.{event_type}" if event_type else "chat.unknown"
 
-            # Capture Layer-4 metadata from done event before forwarding
+            # Buffer the `done` event: capture Layer-4 metadata but do NOT forward
+            # it yet. The answer must be persisted and the turn charged first, then
+            # `done` is sent — so the client's balance refresh reads the debited
+            # pool AND a persist failure can still abort the turn without charging.
             if event_type == "done":
                 if "steps" in event:
                     collected_steps = event.get("steps", [])
                 collected_retry_succeeded = event.pop("retry_succeeded", None)
                 collected_judge_metadata = event.pop("judge_metadata", None)
+                pending_done_event = {
+                    "type": ws_type,
+                    "request_id": request_id,
+                    "thread_id": conversation.thread_id,
+                    "content": event.get("content") or event.get("status"),
+                    **({k: v for k, v in event.items() if k not in ("type", "content", "status")}),
+                }
+                continue  # `done` is terminal; forward it after persist + charge
+
+            # stream_orchestrator reports its own failures as an `error` event
+            # and then stops without a `done` (graph.py) — nothing raises, so
+            # this flag is the only signal that the turn produced no answer.
+            if event_type == "error":
+                orchestrator_errored = True
 
             await send({
                 "type": ws_type,
@@ -620,46 +792,17 @@ async def _handle_chat_send(
             if event_type == "token":
                 final_message += event.get("content", "")
 
-        # Persist message, steps, generate title/summary, broadcast completion
-        await _persist_and_postprocess(
+        # Complete the turn in order: persist → charge → forward `done` →
+        # post-process. Persist failure raises out of here BEFORE the charge, so
+        # the handler below finalizes with the exception (no charge). _credit_mgr
+        # is nulled only on success so the except/finally don't re-exit it.
+        await _complete_turn(
             db, conversation, is_new_conversation, message, final_message,
-            collected_steps, send, request_id, user, active_thread_id,
+            collected_steps, collected_retry_succeeded, collected_judge_metadata,
+            _credit_mgr, pending_done_event, send, request_id, user, active_thread_id,
+            orchestrator_errored,
         )
-
-        # Layer 5: void credit + capture failure case if Layer-4 retry still failed
-        if collected_retry_succeeded is False:
-            if _credit_mgr is not None and hasattr(_credit_mgr, "void"):
-                try:
-                    _credit_mgr.void("layer4_retry_failed")
-                except Exception as _void_err:
-                    logger.warning("Credit void failed: %s", _void_err)
-            if collected_judge_metadata:
-                try:
-                    from backend.services.agent_failure_capture import capture_failure
-                    capture_failure(
-                        db=db,
-                        user_id=user.id,
-                        conversation_id=conversation.id,
-                        thread_id=conversation.thread_id,
-                        user_question=message,
-                        response_initial=collected_judge_metadata.get("initial_response", ""),
-                        response_after_retry=collected_judge_metadata.get("retry_response", ""),
-                        judge_reason_initial=collected_judge_metadata.get("judge_reason_initial", ""),
-                        judge_reason_retry=collected_judge_metadata.get("judge_reason_retry", ""),
-                        judge_directive=collected_judge_metadata.get("judge_directive", ""),
-                        model=settings.default_llm_model or settings.default_llm_provider,
-                        judge_model=collected_judge_metadata.get("judge_model", ""),
-                        orchestrator_steps=collected_steps or None,
-                    )
-                except Exception as _capture_err:
-                    logger.warning("Layer-4 capture failed: %s", _capture_err)
-
-        # --- Finalize credit usage (bingo-credits plugin) ---
-        if _credit_mgr is not None:
-            try:
-                await _credit_mgr.__aexit__(None, None, None)
-            except Exception as _credit_err:
-                logger.warning("Credit usage recording failed: %s", _credit_err)
+        _credit_mgr = None
 
     except Exception as e:
         if _credit_mgr is not None:

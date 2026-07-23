@@ -7,6 +7,10 @@ vi.stubGlobal('ref', ref)
 vi.stubGlobal('computed', computed)
 vi.stubGlobal('onMounted', vi.fn((cb: () => void) => cb())) // call immediately
 vi.stubGlobal('useState', (_key: string, init: () => any) => ref(init()))
+// Truthy by default = "inside a component setup" → the onMounted guard fires.
+// Individual tests override to null to simulate a non-setup caller.
+const mockGetCurrentInstance = vi.fn<() => any>(() => ({}))
+vi.stubGlobal('getCurrentInstance', mockGetCurrentInstance)
 
 const mockFetchWithRefresh = vi.fn()
 vi.stubGlobal('useApi', () => ({
@@ -30,6 +34,7 @@ function makeBalance(overrides = {}) {
 describe('useCreditBalance', () => {
   beforeEach(() => {
     mockFetchWithRefresh.mockReset()
+    mockGetCurrentInstance.mockReturnValue({}) // default: inside setup
   })
 
   it('fetches balance on mount and exposes reactive fields', async () => {
@@ -101,5 +106,20 @@ describe('useCreditBalance', () => {
     await vi.waitUntil(() => mockFetchWithRefresh.mock.calls.length > 0)
 
     expect(loading.value).toBe(false)
+  })
+
+  it('does not auto-fetch on mount when called outside a component setup', async () => {
+    // getCurrentInstance() === null → the onMounted guard must skip registration
+    // (callers grabbing only `refresh`, e.g. useChatStreaming/useBriefing, run
+    // outside setup where onMounted would warn with no instance to bind to).
+    mockGetCurrentInstance.mockReturnValue(null)
+    mockFetchWithRefresh.mockResolvedValue(makeBalance())
+
+    const { refresh } = useCreditBalance()
+    expect(mockFetchWithRefresh).not.toHaveBeenCalled()
+
+    // …but on-demand refresh still works.
+    await refresh()
+    expect(mockFetchWithRefresh).toHaveBeenCalledTimes(1)
   })
 })

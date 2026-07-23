@@ -141,12 +141,13 @@ async def _do_create_dashboard(
     """Business logic for create_dashboard tool."""
     from backend.models.database_connection import DatabaseConnection
     from backend.config import settings as _settings
+    from backend.services.seed import readable_connection_clause
 
     db = db_session_factory()
     try:
         fresh_ids = [
             row.id for row in db.query(DatabaseConnection.id)
-            .filter(DatabaseConnection.user_id == context.user_id)
+            .filter(readable_connection_clause(context.user_id))
             .all()
         ]
     finally:
@@ -230,11 +231,13 @@ async def _do_update_dashboard(
         })
 
     # Refresh available connections and load existing dashboard in one session
+    from backend.services.seed import readable_connection_clause
+
     db = db_session_factory()
     try:
         fresh_ids = [
             row.id for row in db.query(DatabaseConnection.id)
-            .filter(DatabaseConnection.user_id == context.user_id)
+            .filter(readable_connection_clause(context.user_id))
             .all()
         ]
         context.available_connections = fresh_ids
@@ -321,12 +324,13 @@ def _do_list_connections(
 ) -> str:
     """Business logic for list_connections tool."""
     from backend.models.database_connection import DatabaseConnection
+    from backend.services.seed import readable_connection_clause
 
     db = db_session_factory()
     try:
         connections = (
             db.query(DatabaseConnection)
-            .filter(DatabaseConnection.user_id == context.user_id)
+            .filter(readable_connection_clause(context.user_id))
             .all()
         )
         items = []

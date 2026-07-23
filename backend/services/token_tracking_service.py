@@ -213,12 +213,14 @@ class TokenTrackingService:
 
 
 class InsufficientCreditsError(Exception):
-    """Raised when a user has exhausted their daily credit limit.
+    """Raised when a user cannot pay for a turn.
 
-    The optional ``reason`` attribute distinguishes which cap fired
-    (``"user_daily"`` — default — vs ``"org_pool"``). API layers surface
-    that key as ``cap`` in the 402 envelope so the frontend can render the
-    right copy.
+    The per-user daily cap has been removed; spending is gated on the workspace
+    (org) credit pool. The optional ``reason`` attribute distinguishes which
+    shortfall fired (``"user_daily"`` — default, a per-request minimum shortfall
+    from provider_wrapper, kept for envelope compatibility — vs ``"org_pool"``
+    exhaustion). API layers surface that key as ``cap`` in the 402 envelope so
+    the frontend can render the right copy.
     """
 
     def __init__(self, message: str = "", *, reason: str = "user_daily") -> None:
@@ -230,10 +232,13 @@ class CreditContextManager:
     """
     Community-edition credit context manager.
 
-    Checks the user's daily credit limit on entry and records one credit of
-    usage on successful exit.  Mirrors the interface expected by chat.py,
-    websocket.py, and the Celery task files so that the enterprise bingo_admin
-    plugin can drop in as a replacement without any call-site changes.
+    Community is self-hosted: users pay their LLM provider directly with their
+    own API keys, so there is nothing to gate or debit — this manager records a
+    one-credit usage row on successful exit (usage history/stats only) and never
+    blocks a turn. The org credit pool is an enterprise concept; when the
+    bingo_admin plugin is loaded it drops in as a replacement at every call site
+    (chat.py, websocket.py, the Celery task files) and does the real gating and
+    per-turn debit.
 
     Supports both async (FastAPI handlers) and sync (Celery tasks) protocols.
     """
@@ -245,7 +250,7 @@ class CreditContextManager:
         title: str,
         provider_name,
         conversation_id,
-        block_on_insufficient: bool = True,
+        block_on_insufficient: bool = True,  # kept for call-site compat; community never blocks
     ):
         self.db = db
         self.user_id = user_id
@@ -255,10 +260,6 @@ class CreditContextManager:
         self.block_on_insufficient = block_on_insufficient
         self._voided = False
         self._void_reason: str = ""
-        # Phase 4 of multi-user-org: resolve the user's org once at setup so
-        # _check / _record can debit the org pool alongside the daily counter.
-        from backend.services.org_credit_pool import lookup_user_org_id
-        self.org_id: Optional[str] = lookup_user_org_id(db, user_id)
 
     def void(self, reason: str = "unresolved") -> None:
         """Skip credit recording on exit.
@@ -275,102 +276,17 @@ class CreditContextManager:
     # Internal helpers (sync, safe to call from both async and sync paths)
     # ------------------------------------------------------------------
 
-    def _ensure_balance_row(self) -> int:
-        """Return daily_limit for this user, creating a balance row if absent."""
-        row = self.db.execute(
-            text("SELECT daily_limit FROM user_credit_balances WHERE user_id = :uid"),
-            {"uid": self.user_id},
-        ).fetchone()
-        if row is None:
-            default_limit = _default_user_daily_credits()
-            self.db.execute(
-                text(
-                    "INSERT INTO user_credit_balances (user_id, daily_limit, created_at) "
-                    "VALUES (:uid, :limit, :now)"
-                ),
-                {"uid": self.user_id, "limit": default_limit, "now": datetime.utcnow()},
-            )
-            self.db.commit()
-            credit_logger.info("[credit] user %s: no balance row found — created with daily_limit=%d", self.user_id, default_limit)
-            return default_limit
-        return int(row[0])
-
-    def _today_usage(self) -> int:
-        """Sum of credits_used for this user today."""
-        row = self.db.execute(
-            text(
-                "SELECT COALESCE(SUM(credits_used), 0) FROM credit_usage "
-                "WHERE user_id = :uid AND date = :today"
-            ),
-            {"uid": self.user_id, "today": date.today()},
-        ).fetchone()
-        return int(row[0]) if row else 0
-
     def _check(self):
-        daily_limit = self._ensure_balance_row()
-        used = self._today_usage()
-        credit_logger.info(
-            "[credit] user %s: daily_limit=%d, used_today=%d, block_on_insufficient=%s",
-            self.user_id, daily_limit, used, self.block_on_insufficient,
-        )
-        if daily_limit == 0 or used >= daily_limit:
-            credit_logger.warning(
-                "[credit] user %s: daily limit %d reached (used=%d), block=%s",
-                self.user_id, daily_limit, used, self.block_on_insufficient,
-            )
-            if self.block_on_insufficient:
-                raise InsufficientCreditsError(
-                    f"Daily credit limit of {daily_limit} reached.",
-                    reason="user_daily",
-                )
-
-        # Phase 4 of multi-user-org: refuse the turn early when the org's
-        # credit pool is already empty. The atomic decrement in _record()
-        # still guards against TOCTOU races; this check just provides a
-        # fast pre-flight so we don't insert a credit_usage row we'd have
-        # to roll back.
-        if self.org_id is not None:
-            from backend.services.org_credit_pool import check_org_pool
-            balance = check_org_pool(self.db, self.org_id)
-            if balance is not None and balance <= 0:
-                credit_logger.warning(
-                    "[credit] org %s: pool exhausted (balance=%d), block=%s",
-                    self.org_id, balance, self.block_on_insufficient,
-                )
-                if self.block_on_insufficient:
-                    raise InsufficientCreditsError(
-                        "Organization credit pool exhausted.",
-                        reason="org_pool",
-                    )
+        # Self-hosted community pays the LLM provider directly (own API keys) —
+        # there is no balance to gate on. Enterprise gating lives in the
+        # bingo_admin drop-in replacement.
+        return
 
     def _record(self):
         today = date.today()
-        # Phase 4 of multi-user-org: decrement the org pool inside the same
-        # transaction as the credit_usage insert. If the atomic update can't
-        # match (race with another worker, balance just hit zero), abort the
-        # whole record path so we don't double-bill the user-side counter.
-        if self.org_id is not None:
-            from backend.services.org_credit_pool import try_decrement_org_pool
-            new_balance = try_decrement_org_pool(self.db, self.org_id, amount=1)
-            if new_balance is None:
-                # try_decrement_org_pool returns None when the column is
-                # missing (community pre-Phase-0) OR when the row had < 1
-                # credit. Differentiate by re-reading: a missing column
-                # also returns None from check_org_pool, but a column-present
-                # exhaustion returns 0.
-                from backend.services.org_credit_pool import check_org_pool
-                balance_after = check_org_pool(self.db, self.org_id)
-                if balance_after is not None:
-                    credit_logger.warning(
-                        "[credit] org %s: pool decrement lost race (balance=%d)",
-                        self.org_id, balance_after,
-                    )
-                    self.db.rollback()
-                    raise InsufficientCreditsError(
-                        "Organization credit pool exhausted.",
-                        reason="org_pool",
-                    )
-
+        # Stats only — no org-pool decrement. The pool is billed per-turn by the
+        # enterprise manager; community keeps the usage-history row so the
+        # credit-history UI stays populated.
         self.db.execute(
             text(
                 "INSERT INTO credit_usage "
@@ -391,6 +307,33 @@ class CreditContextManager:
             self.user_id, self.title, today,
         )
 
+    def _record_safe(self):
+        """Record usage without ever failing the turn.
+
+        Billing is bookkeeping that runs *after* the answer is produced and
+        persisted, so a DB hiccup on the INSERT must not propagate. Left
+        unguarded it escapes the credit block and hits whatever wraps it — in
+        the heartbeat tasks that is ``record_run_failure``, which would flip an
+        already-committed COMPLETED run to FAILED and skip delivering a result
+        the user never got charged for anyway. Roll back and swallow: the turn
+        stays free but the caller's session is left usable (mirrors the
+        enterprise bingo_admin manager's ``_bill``).
+        """
+        try:
+            self._record()
+        except Exception:
+            credit_logger.exception(
+                "[credit] user %s: failed to record 1 credit — turn goes unbilled",
+                self.user_id,
+            )
+            try:
+                self.db.rollback()
+            except Exception:
+                credit_logger.exception(
+                    "[credit] user %s: rollback failed after a record error",
+                    self.user_id,
+                )
+
     # ------------------------------------------------------------------
     # Async context manager (FastAPI / chat / websocket)
     # ------------------------------------------------------------------
@@ -401,7 +344,7 @@ class CreditContextManager:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None and not self._voided:
-            self._record()
+            self._record_safe()
         return False
 
     # ------------------------------------------------------------------
@@ -414,5 +357,28 @@ class CreditContextManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None and not self._voided:
-            self._record()
+            self._record_safe()
         return False
+
+
+async def finalize_credit_turn(credit_mgr, void_reason: Optional[str] = None) -> None:
+    """Close a turn's credit context: void when given a reason, then charge.
+
+    Shared by the REST (``chat.py``) and websocket paths so both decide billing
+    identically — a turn that is free over the websocket must be free over POST
+    /api/chat too. ``void_reason`` is None for a clean turn; pass a string to
+    skip the charge (orchestrator failure, unresolved Layer-4 retry, …).
+
+    No-op when ``credit_mgr`` is None. Call exactly once per turn: ``__aexit__``
+    is not itself idempotent. Works with either manager (the community one here
+    or the enterprise bingo_admin drop-in) — ``void`` is probed, not assumed, so
+    a third-party replacement without it still charges rather than crashing.
+    """
+    if credit_mgr is None:
+        return
+    if void_reason and hasattr(credit_mgr, "void"):
+        credit_mgr.void(void_reason)
+    try:
+        await credit_mgr.__aexit__(None, None, None)
+    except Exception as credit_err:
+        credit_logger.warning("Credit usage recording failed: %s", credit_err)

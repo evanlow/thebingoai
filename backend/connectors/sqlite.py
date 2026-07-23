@@ -54,8 +54,10 @@ class SqliteFileConnector:
                 from backend.database.session import SessionLocal
                 use_session = SessionLocal()
             from backend.migration.substrate import MigrationJournal
+            # Column query, not the ORM row: the session may be closed below and
+            # a plain tuple survives that.
             journal = (
-                use_session.query(MigrationJournal)
+                use_session.query(MigrationJournal.dataplane_table_prefix)
                 .filter(
                     MigrationJournal.connection_id == connection.id,
                     MigrationJournal.status == "migrated",
@@ -73,7 +75,10 @@ class SqliteFileConnector:
 
         if journal is not None:
             from backend.connectors.data_plane import DataPlaneConnector
-            return DataPlaneConnector.from_connection(connection)
+            # Prefix scopes the plane's table list to this connection's tables.
+            # NULL on journals written before prefixing existed — those wrote
+            # bare table names, so they stay unfiltered.
+            return DataPlaneConnector.from_connection(connection, journal[0])
 
         from backend.config import settings
         from backend.connectors._sqlite_cache import download_and_cache_sqlite_blob

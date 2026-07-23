@@ -89,6 +89,11 @@ def _validate_tools_and_connections(db: Session, team_id: str, tool_keys: List[s
         )
 
     if connection_ids:
+        # The shared sample is readable by everyone and never whitelisted.
+        from backend.services.seed import shared_sample_ids
+        sample_ids = shared_sample_ids(db)
+        connection_ids = [c for c in connection_ids if c not in sample_ids]
+    if connection_ids:
         valid_conn, violations_conn = PolicyService.validate_agent_connections(db, team_id, connection_ids)
         if not valid_conn:
             raise HTTPException(
@@ -234,10 +239,13 @@ async def get_effective_tools(
     agent_tools = agent.tool_keys or []
     agent_connections = agent.connection_ids or []
 
+    # The shared sample is readable by everyone and never whitelisted.
+    from backend.services.seed import shared_sample_ids
+    sample_ids = shared_sample_ids(db)
     effective_tools = [t for t in agent_tools if t in allowed_tools]
-    effective_connections = [c for c in agent_connections if c in allowed_connections]
+    effective_connections = [c for c in agent_connections if c in allowed_connections or c in sample_ids]
     filtered_tools = [t for t in agent_tools if t not in allowed_tools]
-    filtered_connections = [c for c in agent_connections if c not in allowed_connections]
+    filtered_connections = [c for c in agent_connections if c not in allowed_connections and c not in sample_ids]
 
     return EffectiveToolsResponse(
         agent_id=agent_id,

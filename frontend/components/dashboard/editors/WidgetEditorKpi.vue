@@ -41,6 +41,12 @@
           </p>
         </div>
 
+        <div
+          v-if="!kpiMapping?.valueColumn"
+          class="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+        >
+          Select a field to display data.
+        </div>
         <div class="space-y-1.5">
           <label class="text-sm text-gray-600 dark:text-neutral-400">Field</label>
           <select
@@ -556,14 +562,18 @@ function computeAggregatedValue(
   if (aggregation === 'count') {
     return rows.reduce((acc, r) => acc + (r[colIdx] !== null && r[colIdx] !== undefined ? 1 : 0), 0)
   }
+  // First/Last are row picks, not numeric aggregations — return the raw cell
+  // (a dimension's first row may legitimately be non-numeric).
+  if (aggregation === 'first') return rows[0]?.[colIdx] ?? null
+  if (aggregation === 'last') return rows[rows.length - 1]?.[colIdx] ?? null
   const nums = rows.map(r => r[colIdx]).filter((v): v is number => typeof v === 'number')
   if (!nums.length) return rows[0]?.[colIdx] ?? null
   switch (aggregation) {
     case 'sum': return nums.reduce((a, b) => a + b, 0)
-    case 'avg': return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100
+    // Raw average — display formatting (decimalPlaces) owns rounding
+    case 'avg': return nums.reduce((a, b) => a + b, 0) / nums.length
     case 'min': return Math.min(...nums)
     case 'max': return Math.max(...nums)
-    case 'last': return nums[nums.length - 1]
     default: return nums[0]
   }
 }
@@ -578,8 +588,12 @@ function recomputeValue(valueColumn: string, aggregation: string) {
 
 function onValueColumnChange(event: Event) {
   const col = (event.target as HTMLSelectElement).value
-  emit('update:mapping', { valueColumn: col })
-  recomputeValue(col, kpiMapping.value?.aggregation ?? 'first')
+  const existingAgg = kpiMapping.value?.aggregation
+  // Persist the aggregation the UI displays as default — otherwise the editor
+  // shows "Sum" while the backend transform falls back to first-row.
+  const agg = existingAgg ?? (primaryRole.value === 'metric' ? 'sum' : 'first')
+  emit('update:mapping', existingAgg ? { valueColumn: col } : { valueColumn: col, aggregation: agg })
+  recomputeValue(col, agg)
 }
 
 function onAggregationChange(event: Event) {

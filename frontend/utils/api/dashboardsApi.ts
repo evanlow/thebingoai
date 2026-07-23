@@ -29,12 +29,14 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
       return fetchWithRefresh('/api/dashboards/widgets/refresh', {
         method: 'POST',
         body: data,
+        timeout: 120_000,  // match backend query budget; 60s default aborts slow source-DB queries
       })
     },
     async refreshAll(dashboardId: number, filters?: Array<{ column: string; op: string; value: any }>) {
       return fetchWithRefresh(`/api/dashboards/${dashboardId}/refresh`, {
         method: 'POST',
         body: { filters: filters ?? null },
+        timeout: 120_000,  // match backend query budget; 60s default aborts slow source-DB queries
       })
     },
     async suggestFix(data: { connection_id: number; sql: string; error_message: string; mapping: any; widget_title?: string; widget_description?: string }) {

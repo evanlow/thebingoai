@@ -3,6 +3,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from backend.main import app
@@ -20,6 +21,14 @@ def test_engine():
         "postgresql://thebingo_user:thebingo_password@postgres:5432/thebingo_test",
     )
     engine = create_engine(url, future=True)
+    try:
+        with engine.connect():
+            pass
+    except OperationalError as e:
+        # Skip rather than error: the default suite must stay runnable without a
+        # provisioned test database (CI, fresh clone). See the module docstring of
+        # test_session_lifecycle.py for the setup these tests need.
+        pytest.skip(f"no test database at {url}: {e}")
     Base.metadata.create_all(engine)
     yield engine
     Base.metadata.drop_all(engine)
@@ -84,6 +93,18 @@ def authenticated_client(db_session, sample_user):
     try:
         with TestClient(app) as client:
             client.headers.update({"Authorization": "Bearer test-token"})
+            yield client
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def anonymous_client(db_session):
+    """TestClient with NO auth override and NO Authorization header — the only
+    honest way to prove the public endpoint needs no identity."""
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        with TestClient(app) as client:
             yield client
     finally:
         app.dependency_overrides.clear()

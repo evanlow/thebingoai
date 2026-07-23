@@ -54,3 +54,31 @@ def test_section_widget_id_optional():
 def test_kpi_delta_direction_enum():
     with pytest.raises(ValidationError):
         Kpi.model_validate({"label": "x", "value": "1", "delta_direction": "sideways"})
+
+
+def test_recommended_actions_optional():
+    p = BriefingPayload.model_validate(_valid_payload())
+    assert p.recommended_actions is None
+
+
+def test_recommended_actions_accepted():
+    data = _valid_payload()
+    data["recommended_actions"] = ["do this", "then that"]
+    p = BriefingPayload.model_validate(data)
+    assert p.recommended_actions == ["do this", "then that"]
+
+
+def test_recommended_actions_max_four():
+    data = _valid_payload()
+    data["recommended_actions"] = ["a"] * 5
+    with pytest.raises(ValidationError):
+        BriefingPayload.model_validate(data)
+
+
+def test_recommended_actions_min_two():
+    """The prompt and the tool docstring both promise 2-4; the schema is the only
+    thing enforcing it."""
+    data = _valid_payload()
+    data["recommended_actions"] = ["just the one"]
+    with pytest.raises(ValidationError):
+        BriefingPayload.model_validate(data)
