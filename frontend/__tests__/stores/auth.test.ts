@@ -213,6 +213,44 @@ describe('auth store', () => {
     )
   })
 
+  // ── lazy-load authConfig guard on every SSO flow ─────────────────────
+  // When the boot config fetch failed (authConfig null), each SSO flow must
+  // fetch /api/auth/config first and then send the request WITH X-API-Key.
+  const CONFIG_RESP = { provider: 'sso', publishable_key: 'pk_boot_1', google_oauth_url: 'https://oauth.test/go' }
+  const GENERIC_RESP = {
+    access_token: 'at', refresh_token: 'rt', is_first_login: false,
+    id: '1', email: 'a@b.com', org_id: null, sso_id: 's1', auth_provider: 'sso', created_at: '',
+  }
+
+  it.each([
+    ['register',           '/sso-api/auth/register',            (s: any) => s.register('a@b.com', 'pw')],
+    ['verifyEmail',        '/sso-api/auth/verify-email',        (s: any) => s.verifyEmail('tok')],
+    ['resendVerification', '/sso-api/auth/resend-verification', (s: any) => s.resendVerification('a@b.com')],
+    ['forgotPassword',     '/sso-api/auth/forgot-password',     (s: any) => s.forgotPassword('a@b.com')],
+    ['resetPassword',      '/sso-api/auth/reset-password',      (s: any) => s.resetPassword('tok', 'newpw')],
+  ])('%s() lazy-loads authConfig and sends X-API-Key when config was null at boot', async (_name, endpoint, call) => {
+    vi.mocked($fetch).mockResolvedValue(GENERIC_RESP as any)      // default for all later calls
+    vi.mocked($fetch).mockResolvedValueOnce(CONFIG_RESP as any)   // first call = loadAuthConfig
+    const store = useAuthStore()
+    expect(store.authConfig).toBeNull()
+    await call(store)
+    expect(vi.mocked($fetch).mock.calls[0][0]).toBe('/api/auth/config')
+    expect(vi.mocked($fetch)).toHaveBeenCalledWith(
+      endpoint,
+      expect.objectContaining({ headers: { 'X-API-Key': 'pk_boot_1' } }),
+    )
+  })
+
+  it('loginWithGoogle() lazy-loads authConfig then redirects with api_key when config was null at boot', async () => {
+    vi.mocked($fetch).mockResolvedValueOnce(CONFIG_RESP as any)   // loadAuthConfig
+    const store = useAuthStore()
+    expect(store.authConfig).toBeNull()
+    await store.loginWithGoogle()
+    expect(vi.mocked($fetch).mock.calls[0][0]).toBe('/api/auth/config')
+    expect(window.location.href).toContain('https://oauth.test/go')
+    expect(window.location.href).toContain('api_key=pk_boot_1')
+  })
+
   // ── forgotPassword ────────────────────────────────────────────────
   it('forgotPassword() calls /sso-api/auth/forgot-password', async () => {
     vi.mocked($fetch).mockResolvedValueOnce({})
