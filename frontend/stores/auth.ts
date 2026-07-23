@@ -86,6 +86,8 @@ export const useAuthStore = defineStore('auth', {
       const headers: Record<string, string> = {}
       if (this.authConfig?.publishable_key) {
         headers['X-API-Key'] = this.authConfig.publishable_key
+      } else {
+        console.error('_ssoHeaders: missing publishable_key — SSO request will be sent without X-API-Key')
       }
       return headers
     },
@@ -113,6 +115,7 @@ export const useAuthStore = defineStore('auth', {
       this.error = null
 
       try {
+        if (!this.authConfig) await this.loadAuthConfig()
         await $fetch('/sso-api/auth/register', {
           method: 'POST',
           headers: this._ssoHeaders(),
@@ -135,6 +138,7 @@ export const useAuthStore = defineStore('auth', {
       this.error = null
 
       try {
+        if (!this.authConfig) await this.loadAuthConfig()
         const data = await $fetch<{ access_token: string; refresh_token: string; is_first_login?: boolean }>(
           '/sso-api/auth/login',
           {
@@ -198,6 +202,7 @@ export const useAuthStore = defineStore('auth', {
       this.error = null
 
       try {
+        if (!this.authConfig) await this.loadAuthConfig()
         const data = await $fetch<{ access_token: string; refresh_token: string; is_first_login?: boolean }>(
           '/sso-api/auth/verify-email',
           {
@@ -227,6 +232,7 @@ export const useAuthStore = defineStore('auth', {
 
     async resendVerification(email: string) {
       try {
+        if (!this.authConfig) await this.loadAuthConfig()
         await $fetch('/sso-api/auth/resend-verification', {
           method: 'POST',
           headers: this._ssoHeaders(),
@@ -274,6 +280,7 @@ export const useAuthStore = defineStore('auth', {
 
     async forgotPassword(email: string) {
       try {
+        if (!this.authConfig) await this.loadAuthConfig()
         await $fetch('/sso-api/auth/forgot-password', {
           method: 'POST',
           headers: this._ssoHeaders(),
@@ -287,6 +294,7 @@ export const useAuthStore = defineStore('auth', {
 
     async resetPassword(token: string, newPassword: string) {
       try {
+        if (!this.authConfig) await this.loadAuthConfig()
         await $fetch('/sso-api/auth/reset-password', {
           method: 'POST',
           headers: this._ssoHeaders(),

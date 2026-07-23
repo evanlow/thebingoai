@@ -107,6 +107,23 @@ describe('auth store', () => {
     expect(store.refreshToken).toBe('rt')
   })
 
+  it('login() lazy-loads authConfig and sends X-API-Key when config was null at boot', async () => {
+    // Simulates a failed/late boot fetch: authConfig starts null. login() must
+    // fetch /api/auth/config first, then send the login with the X-API-Key header.
+    vi.mocked($fetch)
+      .mockResolvedValueOnce({ provider: 'sso', publishable_key: 'pk_boot_1' }) // loadAuthConfig
+      .mockResolvedValueOnce({ access_token: 'at', refresh_token: 'rt' })       // login
+      .mockResolvedValueOnce({ id: '1', email: 'a@b.com', org_id: null, sso_id: 's1', auth_provider: 'sso', created_at: '' }) // fetchUser
+    const store = useAuthStore()
+    expect(store.authConfig).toBeNull()
+    const result = await store.login({ email: 'a@b.com', password: 'pass' })
+    expect(result.success).toBe(true)
+    expect(vi.mocked($fetch)).toHaveBeenCalledWith(
+      '/sso-api/auth/login',
+      expect.objectContaining({ headers: { 'X-API-Key': 'pk_boot_1' } }),
+    )
+  })
+
   // ── logout ────────────────────────────────────────────────────────
   it('logout() calls /api/auth/logout with refresh token', async () => {
     vi.mocked($fetch).mockResolvedValueOnce({})
