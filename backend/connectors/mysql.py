@@ -56,7 +56,7 @@ class MySQLConnector(BaseConnector):
             # and read/write so an idle/cold free-tier MySQL fails fast instead of
             # hanging past the 60s frontend cap.
             'connect_timeout': settings.source_connect_timeout_s,
-            'read_timeout': min(settings.query_timeout_ms // 1000, 50),
+            'read_timeout': settings.source_read_timeout_s,
             'write_timeout': settings.source_connect_timeout_s,
         }
         if self.ssl_enabled:

@@ -174,6 +174,7 @@ export const useAuthStore = defineStore('auth', {
     // ─── Google OAuth ───────────────────────────────────────────
 
     async loginWithGoogle() {
+      if (!this.authConfig) await this.loadAuthConfig()
       if (!this.authConfig?.google_oauth_url) {
         console.error('Google OAuth not available')
         return
@@ -259,6 +260,7 @@ export const useAuthStore = defineStore('auth', {
     async _doRefreshToken() {
       try {
         if (!this.refreshToken) return false
+        if (!this.authConfig) await this.loadAuthConfig()
         const data = await $fetch<{ access_token: string }>(
           '/sso-api/auth/token/refresh',
           {

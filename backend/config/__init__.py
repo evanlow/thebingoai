@@ -186,6 +186,9 @@ class Settings(BaseSettings):
     # Source-DB connect cap for the widget query path (only test_connection set
     # one before, so an idle/cold source stalled with no client-side timeout).
     source_connect_timeout_s: int = 10
+    # Per-query source-DB read cap. Sits under the 60s frontend fetch limit so a
+    # slow/stalled source aborts before the client gives up (`<no response>`).
+    source_read_timeout_s: int = 50
 
     # SSO Authentication
     sso_base_url: str = "https://sso.thebingo.ai"
