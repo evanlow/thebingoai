@@ -151,6 +151,59 @@ def _bulk_widget_loading_for(current_user: User) -> bool:
         return False
 
 
+# Widget config keys that hold query result data (potentially large).
+# List view needs no data at all → strip rows/columns/data.
+# Skeleton (dashboard open) needs structure to render the layout instantly but
+# not the heavy value arrays → strip rows/data, KEEP columns (tables need column
+# defs to render headers; the live refresh fills rows/data right after).
+_LITE_CONFIG_KEYS = ("rows", "columns", "data")
+_SKELETON_CONFIG_KEYS = ("rows", "data")
+
+
+def _strip_widgets(widgets, keys) -> list:
+    """Return widgets with the given config keys removed from each widget.config.
+    Non-dict/legacy shapes pass through untouched.
+    """
+    out = []
+    for w in widgets or []:
+        if not isinstance(w, dict):
+            out.append(w)
+            continue
+        inner = w.get("widget")
+        if isinstance(inner, dict) and isinstance(inner.get("config"), dict):
+            config = {k: v for k, v in inner["config"].items() if k not in keys}
+            out.append({**w, "widget": {**inner, "config": config}})
+        else:
+            out.append(w)
+    return out
+
+
+def _lite_widgets(widgets) -> list:
+    """List response: strip all result data (list UI reads only type/position)."""
+    return _strip_widgets(widgets, _LITE_CONFIG_KEYS)
+
+
+def _skeleton_widgets(widgets) -> list:
+    """Dashboard-open response: strip heavy value arrays (rows/data) but keep
+    columns + structure so the layout paints instantly before the live refresh
+    lands. Only strips widgets that HAVE a dataSource (a refresh will refill
+    them); static/no-source widgets keep their baked data — nothing would refill
+    it otherwise.
+    """
+    out = []
+    for w in widgets or []:
+        if not isinstance(w, dict) or not w.get("dataSource"):
+            out.append(w)
+            continue
+        inner = w.get("widget")
+        if isinstance(inner, dict) and isinstance(inner.get("config"), dict):
+            config = {k: v for k, v in inner["config"].items() if k not in _SKELETON_CONFIG_KEYS}
+            out.append({**w, "widget": {**inner, "config": config}})
+        else:
+            out.append(w)
+    return out
+
+
 def _dashboard_to_response(
     dashboard: Dashboard,
     *,
@@ -158,6 +211,8 @@ def _dashboard_to_response(
     org_names: Optional[dict] = None,
     owner_emails: Optional[dict] = None,
     bulk_widget_loading: bool = False,
+    lite: bool = False,
+    skeleton: bool = False,
 ) -> DashboardResponse:
     org_id = str(dashboard.org_id) if dashboard.org_id else None
     is_shared = bool(org_id and home_org_id and org_id != str(home_org_id))
@@ -171,7 +226,11 @@ def _dashboard_to_response(
         id=dashboard.id,
         title=dashboard.title,
         description=dashboard.description,
-        widgets=dashboard.widgets or [],
+        widgets=(
+            _lite_widgets(dashboard.widgets) if lite
+            else _skeleton_widgets(dashboard.widgets) if skeleton
+            else (dashboard.widgets or [])
+        ),
         data_context=dashboard.data_context,
         created_at=str(dashboard.created_at),
         updated_at=str(dashboard.updated_at),
@@ -213,6 +272,7 @@ async def list_dashboards(
             org_names=org_names,
             owner_emails=owner_emails,
             bulk_widget_loading=bulk_widget_loading,
+            lite=True,  # list view never needs widget result data
         )
         for d in dashboards
     ]
@@ -221,10 +281,17 @@ async def list_dashboards(
 @router.get("/{dashboard_id}", response_model=DashboardResponse)
 async def get_dashboard(
     dashboard_id: int,
+    skeleton: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get a specific dashboard."""
+    """Get a specific dashboard.
+
+    `skeleton=true` strips the heavy baked value arrays (rows/data) but keeps
+    columns + structure, so the frontend can paint the dashboard layout instantly
+    on open and fill widget data via the live refresh — avoids a slow full-baked
+    payload blocking the first render.
+    """
     dashboard = (
         _dashboard_visible_to(db.query(Dashboard), current_user, db)
         .filter(Dashboard.id == dashboard_id)
@@ -241,6 +308,7 @@ async def get_dashboard(
         org_names=org_names,
         owner_emails=owner_emails,
         bulk_widget_loading=_bulk_widget_loading_for(current_user),
+        skeleton=skeleton,
     )
 
 

@@ -764,7 +764,9 @@ html.font-lg .mention-pc           { font-size: 14px; }
 /* Page transitions — fade + slide from right */
 .page-fade-slide-enter-active,
 .page-fade-slide-leave-active {
-  transition: opacity 0.3s ease-out;
+  /* 0.15s each way — out-in runs them serially, so this halves the ~0.6s dead
+     gap where the next page hasn't appeared yet. */
+  transition: opacity 0.15s ease-out;
 }
 .page-fade-slide-enter-from,
 .page-fade-slide-leave-to {
@@ -801,6 +803,13 @@ html.font-lg .mention-pc           { font-size: 14px; }
 /* Dark mode overrides */
 .dark .grid-stack-item-content {
   @apply bg-neutral-800 border-neutral-700;
+}
+
+/* Section widgets: keep the card transparent in dark mode too, so the neutral-800
+   card bg doesn't show through the headroom above the colored bar as a black strip. */
+.dark .grid-stack-item-content:has(.section-widget-bar) {
+  background: transparent;
+  border: none;
 }
 
 .dark .grid-stack-placeholder > .placeholder-content {

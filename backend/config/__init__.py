@@ -174,6 +174,7 @@ class Settings(BaseSettings):
     # Widget result cache (per-Org flag `widget_result_cache`)
     widget_cache_ttl_unfiltered: int = 3600   # exact until materialize bumps the generation
     widget_cache_ttl_filtered: int = 120      # filtered reads scan live Parquet; short staleness window
+    widget_cache_ttl_source: int = 120        # live source-DB fallback: short window so repeat opens are fast without pinning stale data
     widget_cache_max_bytes: int = 2_000_000   # skip caching payloads larger than this
 
     # DuckDB memory guardrails (default memory_limit is ~80% of RAM per connection)

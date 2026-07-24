@@ -232,6 +232,86 @@ describe('dashboard store', () => {
     expect(store.connectionTypes).toEqual({})
   })
 
+  it('$resetAll clears the widget source cache', () => {
+    const store = useDashboardStore()
+    store.setWidgetSourceData('w-1', ['a'], [[1]])
+    store.$resetAll()
+    expect(store.widgetSourceData).toEqual({})
+  })
+
+  // ── widgetSourceData cache ─────────────────────────────────────────
+  it('closeDashboard clears the widget source cache', () => {
+    const store = useDashboardStore()
+    store.setWidgetSourceData('w-1', ['a'], [[1]])
+    store.closeDashboard()
+    expect(store.widgetSourceData).toEqual({})
+  })
+
+  it('setWidgetSourceData evicts the oldest entry past the cap', () => {
+    const store = useDashboardStore()
+    for (let i = 0; i < 55; i++) store.setWidgetSourceData(`w-${i}`, ['a'], [[i]])
+    const keys = Object.keys(store.widgetSourceData)
+    expect(keys.length).toBe(50)
+    expect(store.widgetSourceData['w-0']).toBeUndefined()  // oldest evicted
+    expect(store.widgetSourceData['w-54']).toBeDefined()   // newest kept
+  })
+
+  // ── fetchDashboards staleness guard ────────────────────────────────
+  it('fetchDashboards skips the refetch when the list is fresh', async () => {
+    apiDashboards.list = vi.fn().mockResolvedValue([{ id: 1, title: 't', widgets: [], created_at: '', updated_at: '' }])
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboards()
+    await store.fetchDashboards()  // within LIST_FRESH_MS → no second call
+    expect(apiDashboards.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('fetchDashboards refetches when forced', async () => {
+    apiDashboards.list = vi.fn().mockResolvedValue([{ id: 1, title: 't', widgets: [], created_at: '', updated_at: '' }])
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboards()
+    await store.fetchDashboards(true)
+    expect(apiDashboards.list).toHaveBeenCalledTimes(2)
+  })
+
+  // ── fullyLoadedId gate (lite-stub crash guard) ─────────────────────
+  it('fetchDashboard marks the dashboard fully loaded', async () => {
+    apiDashboards.get = vi.fn().mockResolvedValue({ id: 7, title: 't', widgets: [], created_at: '', updated_at: '' })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    expect(store.fullyLoadedId).toBeNull()
+    await store.fetchDashboard(7)
+    expect(store.fullyLoadedId).toBe(7)
+  })
+
+  it('closeDashboard and $resetAll clear fullyLoadedId', async () => {
+    apiDashboards.get = vi.fn().mockResolvedValue({ id: 7, title: 't', widgets: [], created_at: '', updated_at: '' })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboard(7)
+    store.closeDashboard()
+    expect(store.fullyLoadedId).toBeNull()
+    await store.fetchDashboard(7)
+    store.$resetAll()
+    expect(store.fullyLoadedId).toBeNull()
+  })
+
+  it('fetchDashboards preserves the open dashboard full widgets (lite refresh)', async () => {
+    // Full widgets already loaded for id 7 (has columns — the lite list omits them).
+    const fullWidget = { id: 'w', position: { x: 0, y: 0, w: 6, h: 5 }, widget: { type: 'table', config: { columns: [{ key: 'a' }], rows: [[1]] } } }
+    apiDashboards.get = vi.fn().mockResolvedValue({ id: 7, title: 't', widgets: [fullWidget], created_at: '', updated_at: '' })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboard(7)
+    // Lite list refresh returns the same dashboard WITHOUT columns/rows.
+    apiDashboards.list = vi.fn().mockResolvedValue([{ id: 7, title: 't', widgets: [{ id: 'w', position: { x: 0, y: 0, w: 6, h: 5 }, widget: { type: 'table', config: {} } }], created_at: '', updated_at: '' }])
+    await store.fetchDashboards(true)
+    // Open dashboard's full widgets survive → no undefined columns to crash on.
+    const d = store.dashboards.find(x => x.id === 7)!
+    expect((d.widgets[0].widget.config as any).columns).toEqual([{ key: 'a' }])
+  })
+
   // ── GA4 events ────────────────────────────────────────────────────
   describe('GA4 events', () => {
     beforeEach(() => {

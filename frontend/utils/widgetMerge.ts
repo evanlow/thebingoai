@@ -1,3 +1,4 @@
+import { markRaw } from 'vue'
 import type { DashboardWidget } from '~/types/dashboard'
 
 /**
@@ -37,6 +38,11 @@ export function mergeRefreshedConfig(
   // pivot_table / text / filter: the refresh transform emits only data keys
   // (rows, granular columns) — structural edits live in keys it never emits, so
   // Object.assign already preserves them. Keep the pass-through.
+  // markRaw the row array in place (markRaw returns the same reference): it's
+  // read-only display data, so keeping it out of Vue's deep-reactive graph avoids
+  // proxy overhead that otherwise scales with retained result-set size. Flagging
+  // in place preserves the pass-through identity Object.assign relies on.
+  if (Array.isArray((refreshed as any)?.rows)) markRaw((refreshed as any).rows)
   return refreshed
 }
 
@@ -83,7 +89,10 @@ function mergeTable(
   refreshed: Record<string, any>,
 ): Record<string, any> {
   const out: Record<string, any> = {}
-  if (Array.isArray(refreshed?.rows)) out.rows = refreshed.rows
+  // markRaw the rows: read-only display data (sort/filter operate on copies —
+  // see DashboardWidgetTable), so keeping it non-reactive avoids proxy overhead
+  // proportional to result-set size. Columns stay reactive (editor mutates them).
+  if (Array.isArray(refreshed?.rows)) out.rows = markRaw(refreshed.rows)
 
   const existingColumns = existing?.columns
   if (Array.isArray(refreshed?.columns)) {

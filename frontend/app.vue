@@ -1,5 +1,8 @@
 <template>
   <div class="relative min-h-screen overflow-hidden">
+    <!-- Instant top progress bar on every navigation so a slow page load never
+         looks like the app is frozen on the previous page. -->
+    <NuxtLoadingIndicator :height="3" color="#6366f1" />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>

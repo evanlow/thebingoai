@@ -151,6 +151,12 @@ export const useChatConversations = () => {
       chatStore.messagesLoading = true  // show a spinner, not the empty state, during the load
     }
     try {
+      // Fire the steps request concurrently with getMessages instead of after it
+      // — the two were sequential (the task-open bottleneck). Messages still paint
+      // first; steps merge in when they land. Errors swallowed (older threads may
+      // have none), matching the previous try/catch around the steps fetch.
+      const stepsPromise = (api.chat.getConversationSteps(threadId) as Promise<{ message_steps?: Record<string, any[]> }>)
+        .catch(() => null)
       const conversation = await api.chat.getMessages(threadId) as any
       const messages: Message[] = (conversation.messages || []).map((msg: any, index: number) => ({
         id: msg.id ? String(msg.id) : `${threadId}-${index}`,
@@ -201,10 +207,10 @@ export const useChatConversations = () => {
         )
       }
 
-      // Load agent steps for ALL assistant messages in ONE request (was a serial
-      // per-message loop — the main task-load bottleneck). Same mapping per message.
+      // Merge agent steps for ALL assistant messages (one request, fired above in
+      // parallel with getMessages). Same mapping per message.
       try {
-        const stepsResp = await api.chat.getConversationSteps(threadId) as { message_steps?: Record<string, any[]> }
+        const stepsResp = await stepsPromise
         const stepsMap = stepsResp?.message_steps ?? {}
         for (const msg of messages) {
           if (msg.role !== 'assistant' || msg.source !== 'chat' || !msg.id || msg.id.includes('-')) continue

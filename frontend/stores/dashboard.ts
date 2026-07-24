@@ -1,9 +1,17 @@
 import { defineStore } from 'pinia'
+import { markRaw } from 'vue'
 import type { Dashboard, DashboardWidget, FilterControl, GridPosition, WidgetDataSource, WidgetType } from '~/types/dashboard'
 import { WIDGET_DEFAULTS } from '~/types/dashboard'
 import { useApi } from '~/composables/useApi'
 import { mergeRefreshedConfig } from '~/utils/widgetMerge'
 import { trackEvent } from '~/utils/analytics'
+import { trackAbort, releaseAbort, abortAllInflight, isAbortError } from '~/utils/inflight'
+
+// Bounded cache size for widgetSourceData (raw SQL result seeding the editor).
+// Only the recently-viewed widgets need it; cap keeps memory flat over a session.
+const WIDGET_SOURCE_CACHE_CAP = 50
+// Skip re-fetching the dashboard list if it was loaded this recently (ms).
+const LIST_FRESH_MS = 30_000
 
 export interface ActiveFilter {
   column: string
@@ -29,7 +37,14 @@ interface DashboardState {
   bulkKeyInFlight: string | null           // dedup concurrent identical bulk requests
   // Non-persisted cache of each widget's last raw SQL result, captured on canvas
   // refresh so the Edit Widget panel can populate instantly without re-running SQL.
+  // Bounded (LRU) and markRaw'd — see setWidgetSourceData.
   widgetSourceData: Record<string, { columns: string[]; rows: any[][] }>
+  // Epoch ms of the last successful fetchDashboards, to skip redundant refetches.
+  lastFetchedAt: number
+  // Id of the dashboard whose FULL (non-lite) widgets are in the store. The list
+  // response is lite (widget result data stripped), so the drill-down must not
+  // render a dashboard until fetchDashboard has loaded its full config.
+  fullyLoadedId: number | null
 }
 
 export const useDashboardStore = defineStore('dashboard', {
@@ -48,6 +63,8 @@ export const useDashboardStore = defineStore('dashboard', {
     bulkSeq: 0,
     bulkKeyInFlight: null,
     widgetSourceData: {},
+    lastFetchedAt: 0,
+    fullyLoadedId: null,
   }),
 
   getters: {
@@ -106,7 +123,18 @@ export const useDashboardStore = defineStore('dashboard', {
   },
 
   actions: {
-    async fetchDashboards() {
+    async fetchDashboards(force = false) {
+      // Skip the round-trip when the list is already loaded and fresh. All list
+      // mutations (create/delete/rename/schedule) update the store in place, so
+      // a recent cache is never stale. Leaving the dashboard route ($resetAll)
+      // empties dashboards, so returning to it always refetches.
+      if (
+        !force &&
+        this.dashboards.length > 0 &&
+        Date.now() - this.lastFetchedAt < LIST_FRESH_MS
+      ) {
+        return
+      }
       const api = useApi()
       this.loading = true
       try {
@@ -115,15 +143,28 @@ export const useDashboardStore = defineStore('dashboard', {
           api.connections.list() as Promise<any[]>,
         ])
         this.connectionTypes = Object.fromEntries(connections.map((c: any) => [c.id, c.db_type]))
-        this.dashboards = data.map(d => ({
-          ...d,
-          widgets: (d.widgets ?? []).map(normalizeWidget),
-          createdAt: (d as any).created_at,
-          updatedAt: (d as any).updated_at,
-          orgName: (d as any).org_name ?? null,
-          ownerEmail: (d as any).owner_email ?? null,
-          isShared: (d as any).is_shared ?? false,
-        }))
+        // The list payload is lite (widget result data stripped). Preserve the
+        // full widgets of the currently-open dashboard so a background list
+        // refresh doesn't clobber it into a lite stub while it's on screen
+        // (also covers the mount race: openDashboard's fetchDashboard vs this).
+        const prev = this.dashboards
+        this.dashboards = data.map(d => {
+          const base = {
+            ...d,
+            widgets: (d.widgets ?? []).map(normalizeWidget),
+            createdAt: (d as any).created_at,
+            updatedAt: (d as any).updated_at,
+            orgName: (d as any).org_name ?? null,
+            ownerEmail: (d as any).owner_email ?? null,
+            isShared: (d as any).is_shared ?? false,
+          }
+          if (d.id === this.fullyLoadedId) {
+            const full = prev.find(p => p.id === d.id)
+            if (full) return { ...base, widgets: full.widgets }
+          }
+          return base
+        })
+        this.lastFetchedAt = Date.now()
       } finally {
         this.loading = false
       }
@@ -136,7 +177,10 @@ export const useDashboardStore = defineStore('dashboard', {
         // Reuse cached connectionTypes if available; only fetch connections if cache is empty
         const hasConnections = Object.keys(this.connectionTypes).length > 0
         const [data, connections] = await Promise.all([
-          api.dashboards.get(id) as Promise<any>,
+          // skeleton: structure + columns only, no baked rows/data — paints the
+          // layout instantly; the refresh fired right after openDashboard fills
+          // widget values. Avoids a fat full-baked payload blocking first render.
+          api.dashboards.get(id, { skeleton: true }) as Promise<any>,
           hasConnections ? Promise.resolve(null) : api.connections.list() as Promise<any[]>,
         ])
         if (connections) {
@@ -162,6 +206,8 @@ export const useDashboardStore = defineStore('dashboard', {
           this.dashboards.push(dashboard)
         }
         this.dirty = false
+        // Full config now in store — the drill-down may render this dashboard.
+        this.fullyLoadedId = id
       } finally {
         this.loading = false
       }
@@ -206,13 +252,15 @@ export const useDashboardStore = defineStore('dashboard', {
     },
 
     async duplicateDashboard(id: number) {
-      const source = this.dashboards.find(d => d.id === id)
-      if (!source) return
       const api = useApi()
+      // Fetch the full source: the list-cached copy has widget result data
+      // stripped (list-lite response), so duplicate from the complete payload.
+      const source = await api.dashboards.get(id) as any
+      if (!source) return
       const data = await api.dashboards.create({
         title: `${source.title} (Copy)`,
         description: source.description,
-        widgets: JSON.parse(JSON.stringify(source.widgets)),
+        widgets: source.widgets ?? [],
       }) as any
       const dashboard: Dashboard = {
         ...data,
@@ -237,6 +285,9 @@ export const useDashboardStore = defineStore('dashboard', {
 
     async openDashboard(id: number) {
       trackEvent('dashboard_view', { dashboard_id: id })
+      // Cancel any widget loads still in flight from the previously-open
+      // dashboard so they don't resolve into this one.
+      abortAllInflight()
       this.currentDashboardId = id
       this.editMode = false
       this.dirty = false
@@ -247,8 +298,15 @@ export const useDashboardStore = defineStore('dashboard', {
       } catch {
         this.filterValues = {}
       }
-      // Ensure full dashboard data is loaded (saved config already has data)
-      await this.fetchDashboard(id)
+      // Ensure full dashboard data is loaded (saved config already has data).
+      // On failure (404/500/auth) drop back to the list rather than hanging on
+      // the loading gate (fullyLoadedId stays unset otherwise → infinite spinner).
+      try {
+        await this.fetchDashboard(id)
+      } catch (e) {
+        if (this.currentDashboardId === id) this.currentDashboardId = null
+        throw e
+      }
       // Bulk widget loading (per-Org flag): one batched refresh for the whole
       // dashboard. With the flag off, each widget's useWidgetData watcher
       // fires its own per-widget refresh instead (legacy path).
@@ -280,6 +338,12 @@ export const useDashboardStore = defineStore('dashboard', {
       this.currentDashboardId = null
       this.editMode = false
       this.dirty = false
+      // Drop the raw-result cache for the closed dashboard's widgets — it's only
+      // needed while a dashboard is open in the editor.
+      this.widgetSourceData = {}
+      // Next open re-gates on a fresh fetchDashboard (the store copy may have been
+      // reduced to a lite stub by a background list refresh in the meantime).
+      this.fullyLoadedId = null
     },
 
     async toggleEditMode() {
@@ -372,9 +436,16 @@ export const useDashboardStore = defineStore('dashboard', {
       this.dirty = true
     },
 
-    /** Cache a widget's raw SQL columns/rows from the latest refresh (not persisted). */
+    /** Cache a widget's raw SQL columns/rows from the latest refresh (not persisted).
+     *  markRaw keeps the (potentially large) row array out of the reactive graph;
+     *  bounded LRU (delete-then-reinsert = move to newest) caps memory per session. */
     setWidgetSourceData(widgetId: string, columns: string[], rows: any[][]) {
-      this.widgetSourceData[widgetId] = { columns, rows }
+      delete this.widgetSourceData[widgetId]
+      this.widgetSourceData[widgetId] = markRaw({ columns, rows })
+      const keys = Object.keys(this.widgetSourceData)
+      if (keys.length > WIDGET_SOURCE_CACHE_CAP) {
+        delete this.widgetSourceData[keys[0]]  // oldest-inserted
+      }
     },
 
     updateWidgetSql(widgetId: string, sql: string) {
@@ -408,11 +479,12 @@ export const useDashboardStore = defineStore('dashboard', {
       for (const id of sqlWidgetIds) this.refreshingWidgets[id] = true
       this.refreshing = true
 
+      const ctrl = trackAbort()
       try {
         // One bulk request for the whole dashboard: the backend reuses a single
         // DuckDB reader + connector across all widgets (vs one connection per
         // widget when refreshing them individually).
-        const res = await api.dashboards.refreshAll(dashboardId, filters) as {
+        const res = await api.dashboards.refreshAll(dashboardId, filters, ctrl.signal) as {
           widgets: Record<string, { config?: Record<string, any>; refreshed_at?: string; served_from?: 'data_plane' | 'cache' | 'source'; error?: string }>
         }
         if (bulkSeq !== this.bulkSeq) return // a newer bulk superseded this one
@@ -432,8 +504,10 @@ export const useDashboardStore = defineStore('dashboard', {
           widget.dataSource.servedFrom = r.served_from
         }
       } catch (e) {
-        console.error('Refresh all failed:', e)
+        // Aborted on navigation/reset — expected, not an error to surface.
+        if (!isAbortError(e)) console.error('Refresh all failed:', e)
       } finally {
+        releaseAbort(ctrl)
         if (bulkSeq === this.bulkSeq) {
           for (const id of sqlWidgetIds) delete this.refreshingWidgets[id]
           this.refreshing = false
@@ -472,12 +546,21 @@ export const useDashboardStore = defineStore('dashboard', {
     },
 
     $resetAll() {
+      abortAllInflight()
       this.dashboards = []
       this.currentDashboardId = null
       this.editMode = false
       this.dirty = false
       this.filterValues = {}
       this.connectionTypes = {}
+      // Release retained result data so leaving the dashboard route frees the
+      // reactive graph instead of growing it for the whole session.
+      this.widgetSourceData = {}
+      this.widgetSeq = {}
+      this.refreshingWidgets = {}
+      this.bulkKeyInFlight = null
+      this.lastFetchedAt = 0
+      this.fullyLoadedId = null
     },
 
     async removeSchedule(dashboardId: number) {
