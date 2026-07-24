@@ -7,8 +7,11 @@ reads. Filtered reads get a short TTL instead (they scan live source Parquet,
 which moves on pipeline runs). Old-generation entries expire via TTL; no SCAN
 cleanup needed.
 
-Only `data_plane` / `cache` outcomes are stored — never `source` fallback
-results, which indicate degraded state and must not be pinned.
+`data_plane` / `cache` outcomes are stored until the generation bumps.
+`source` (live source-DB fallback) results are also stored, but with a short
+`widget_cache_ttl_source` window (clamped in `put`) — enough that reopening a
+cold, non-migrated dashboard within the window is instant, without pinning stale
+source data for long.
 
 Every helper swallows Redis failures and degrades to a miss: the cache must
 never break serving.
@@ -23,8 +26,9 @@ logger = logging.getLogger(__name__)
 _KEY_PREFIX = "widget_cache"
 _GEN_PREFIX = "widget_cache_gen"
 
-# served_from values eligible for write-through.
-CACHEABLE_SERVED_FROM = ("data_plane", "cache")
+# served_from values eligible for write-through. `source` is cached too but its
+# TTL is clamped short in `put` (see widget_cache_ttl_source).
+CACHEABLE_SERVED_FROM = ("data_plane", "cache", "source")
 
 
 def _client():
@@ -47,15 +51,19 @@ def build_key(
     scope_id: Any,
     dashboard_id: int,
     widget_id: str,
+    connection_id: Any,
     sql: str,
     filters: Optional[list],
     generation: int,
 ) -> str:
+    # connection_id is part of the identity: source results are cached now, and a
+    # widget repointed to another connection with identical SQL must NOT hit the
+    # old connection's rows (widget edits don't bump the generation).
     sql_hash = hashlib.sha256((sql or "").encode()).hexdigest()[:16]
     filters_hash = hashlib.sha256(_canonical_filters(filters).encode()).hexdigest()[:16]
     return (
         f"{_KEY_PREFIX}:{scope_kind}:{scope_id}:{dashboard_id}:{widget_id}"
-        f":g{generation}:{sql_hash}:{filters_hash}"
+        f":c{connection_id}:g{generation}:{sql_hash}:{filters_hash}"
     )
 
 
@@ -104,8 +112,13 @@ def put(key: str, payload: Dict[str, Any], ttl: int) -> None:
     """Write-through. Oversized payloads are skipped, not truncated."""
     from backend.config import settings
 
-    if payload.get("served_from") not in CACHEABLE_SERVED_FROM:
+    served_from = payload.get("served_from")
+    if served_from not in CACHEABLE_SERVED_FROM:
         return
+    # Live source-DB results get a short staleness window regardless of the
+    # caller's (filtered/unfiltered) TTL — they aren't generation-exact.
+    if served_from == "source":
+        ttl = min(ttl, settings.widget_cache_ttl_source)
     try:
         raw = json.dumps(payload, default=str)
         if len(raw) > settings.widget_cache_max_bytes:

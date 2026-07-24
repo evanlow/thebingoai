@@ -131,14 +131,7 @@
         <a class="provenance-link">{{ widget.sources[0] }}</a>
       </span>
       <span v-else class="provenance-empty" />
-      <span
-        v-if="servedFrom === 'data_plane'"
-        class="parquet-badge"
-        :title="`Served from Parquet snapshot${lastRefreshedAt ? ' · refreshed ' + formatRelativeTime(lastRefreshedAt) : ''}`"
-      >
-        Parquet<template v-if="lastRefreshedAt"> · synced {{ formatRelativeTime(lastRefreshedAt) }}</template>
-      </span>
-      <span v-else-if="lastRefreshedAt" class="age" :title="lastRefreshedAt">{{ formatRelativeTime(lastRefreshedAt) }}</span>
+      <span v-if="lastRefreshedAt" class="age" :title="lastRefreshedAt">{{ formatRelativeTime(lastRefreshedAt) }}</span>
     </div>
 
     <!-- Loading skeleton — only when there's no stored data to paint;
@@ -194,7 +187,7 @@ const emit = defineEmits<{
 }>()
 
 const widgetRef = toRef(props, 'widget')
-const { loading, error, lastRefreshedAt, servedFrom, hasDataSource, refresh } = useWidgetData(widgetRef, props.autoRefresh)
+const { loading, error, lastRefreshedAt, hasDataSource, refresh } = useWidgetData(widgetRef, props.autoRefresh)
 
 const WIDGET_TYPE_LABELS: Record<string, string> = {
   kpi: 'KPI',
@@ -316,19 +309,4 @@ function formatRelativeTime(isoString: string): string {
   white-space: nowrap;
 }
 
-.parquet-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 14px;
-  letter-spacing: 0.02em;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent, #7c3aed) 12%, transparent);
-  color: var(--accent, #7c3aed);
-  border: 1px solid color-mix(in srgb, var(--accent, #7c3aed) 25%, transparent);
-}
 </style>

@@ -5,8 +5,11 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
     async list() {
       return fetchWithRefresh('/api/dashboards', {})
     },
-    async get(id: number) {
-      return fetchWithRefresh(`/api/dashboards/${id}`, {})
+    async get(id: number, opts: { skeleton?: boolean } = {}) {
+      // skeleton=1 → structure + columns only (no baked rows/data), so the
+      // dashboard paints instantly on open; the live refresh fills widget data.
+      const qs = opts.skeleton ? '?skeleton=1' : ''
+      return fetchWithRefresh(`/api/dashboards/${id}${qs}`, {})
     },
     async create(data: any) {
       return fetchWithRefresh('/api/dashboards', {
@@ -25,18 +28,20 @@ export function createDashboardsApi(fetchWithRefresh: Function) {
         method: 'DELETE',
       })
     },
-    async refreshWidget(data: { connection_id: number; sql: string; mapping: any; limit?: number; filters?: Array<{ column: string; op: string; value: any }>; dashboard_id?: number; widget_id?: string; widget_sources?: string[] }) {
+    async refreshWidget(data: { connection_id: number; sql: string; mapping: any; limit?: number; filters?: Array<{ column: string; op: string; value: any }>; dashboard_id?: number; widget_id?: string; widget_sources?: string[] }, signal?: AbortSignal) {
       return fetchWithRefresh('/api/dashboards/widgets/refresh', {
         method: 'POST',
         body: data,
         timeout: 120_000,  // match backend query budget; 60s default aborts slow source-DB queries
+        signal,  // cancelled on navigation away / dashboard switch
       })
     },
-    async refreshAll(dashboardId: number, filters?: Array<{ column: string; op: string; value: any }>) {
+    async refreshAll(dashboardId: number, filters?: Array<{ column: string; op: string; value: any }>, signal?: AbortSignal) {
       return fetchWithRefresh(`/api/dashboards/${dashboardId}/refresh`, {
         method: 'POST',
         body: { filters: filters ?? null },
         timeout: 120_000,  // match backend query budget; 60s default aborts slow source-DB queries
+        signal,  // cancelled on navigation away / dashboard switch
       })
     },
     async suggestFix(data: { connection_id: number; sql: string; error_message: string; mapping: any; widget_title?: string; widget_description?: string }) {

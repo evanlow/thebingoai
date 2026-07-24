@@ -394,7 +394,7 @@ def _widget_cache_enabled(org_id: str | None) -> bool:
         return False
 
 
-def _widget_cache_key(dashboard_id, widget_id, sql, filters, org_id, user_id):
+def _widget_cache_key(dashboard_id, widget_id, connection_id, sql, filters, org_id, user_id):
     """(key, ttl) for this widget read, or (None, None) when caching doesn't
     apply (no dashboard/widget identity, or the per-Org flag is off).
 
@@ -411,7 +411,7 @@ def _widget_cache_key(dashboard_id, widget_id, sql, filters, org_id, user_id):
         for f in (filters or [])
     ]
     generation = wrc.get_generation(dashboard_id)
-    key = wrc.build_key(scope_kind, scope_id, dashboard_id, widget_id, sql, filters_dump, generation)
+    key = wrc.build_key(scope_kind, scope_id, dashboard_id, widget_id, connection_id, sql, filters_dump, generation)
     ttl = settings.widget_cache_ttl_filtered if filters else settings.widget_cache_ttl_unfiltered
     return key, ttl
 
@@ -452,8 +452,10 @@ def _widget_cache_lookup(key, mapping) -> "WidgetRefreshResponse | None":
 
 
 def _widget_cache_store(key, ttl, resp: "WidgetRefreshResponse | None") -> None:
-    """Write-through from a refresh response. `put` only stores data_plane /
-    cache outcomes — source-fallback results are degraded state, never pinned."""
+    """Write-through from a refresh response. `put` stores data_plane / cache
+    outcomes for the caller TTL, and source-fallback results too but with a short
+    clamped TTL (`widget_cache_ttl_source`) so repeat opens are fast without
+    pinning stale source data."""
     if not key or resp is None:
         return
     from backend.services import widget_result_cache as wrc
@@ -778,8 +780,8 @@ def _refresh_widget_sync(
     cache_key, cache_ttl = (None, None)
     if dashboard:
         cache_key, cache_ttl = _widget_cache_key(
-            request.dashboard_id, request.widget_id, request.sql,
-            request.filters, org_id, current_user.id,
+            request.dashboard_id, request.widget_id, request.connection_id,
+            request.sql, request.filters, org_id, current_user.id,
         )
         cached_resp = _widget_cache_lookup(cache_key, request.mapping)
         if cached_resp is not None:
@@ -921,7 +923,7 @@ def _refresh_widget_sync(
 
         config = transform_widget_data(result, request.mapping)
 
-        return WidgetRefreshResponse(
+        resp = WidgetRefreshResponse(
             config=config,
             execution_time_ms=result.execution_time_ms,
             row_count=result.row_count,
@@ -934,6 +936,10 @@ def _refresh_widget_sync(
             ],
             served_from=served_from,
         )
+        # Cache so reopening within the TTL is instant. `put` clamps the source
+        # TTL short; no-op when the cache flag/key is off.
+        _widget_cache_store(cache_key, cache_ttl, resp)
+        return resp
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1108,7 +1114,7 @@ async def refresh_dashboard_widgets(
                 from backend.services import widget_result_cache as wrc
                 widget_cache_key = wrc.build_key(
                     bulk_cache_scope[0], bulk_cache_scope[1], dashboard_id,
-                    widget_id, sql, bulk_filters_dump, bulk_cache_gen,
+                    widget_id, connection_id, sql, bulk_filters_dump, bulk_cache_gen,
                 )
                 cached_resp = _widget_cache_lookup(widget_cache_key, mapping)
                 if cached_resp is not None:
@@ -1258,6 +1264,20 @@ async def refresh_dashboard_widgets(
                             first_err = first_err or e
                     else:
                         raise first_err
+                # Cache the result so reopening this dashboard within the TTL is
+                # instant instead of re-running live SQL. `put` clamps the source
+                # TTL short (widget_cache_ttl_source); plane results keep the
+                # caller TTL. No-op when the cache flag/key is off.
+                if widget_cache_key:
+                    from backend.services import widget_result_cache as wrc
+                    wrc.put(widget_cache_key, {
+                        "columns": result.columns,
+                        "rows": [[_to_json_safe(v) for v in row] for row in result.rows],
+                        "row_count": getattr(result, "row_count", len(result.rows)),
+                        "truncated": getattr(result, "truncated", False),
+                        "served_from": served_from,
+                        "cached_at": refreshed_at,
+                    }, ttl=bulk_cache_ttl)
                 results[widget_id] = {
                     "config": transform_widget_data(result, mapping),
                     "refreshed_at": refreshed_at,

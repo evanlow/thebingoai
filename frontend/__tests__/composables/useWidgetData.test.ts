@@ -70,4 +70,16 @@ describe('useWidgetData null-safety', () => {
     await Promise.resolve()
     expect(mockRefreshWidget).not.toHaveBeenCalled()
   })
+
+  it('sends widget_id so the backend can build the result-cache key', async () => {
+    // Without widget_id the backend cache key is (None, None) and caching no-ops.
+    mockRefreshWidget.mockClear()
+    const widget = ref<any>({ id: 'w1', dataSource: { connectionId: 1, sql: 'select 1', mapping: {} }, widget: { config: {} } })
+    useWidgetData(widget)
+    await Promise.resolve()
+    expect(mockRefreshWidget).toHaveBeenCalledWith(
+      expect.objectContaining({ widget_id: 'w1' }),
+      expect.anything(),
+    )
+  })
 })

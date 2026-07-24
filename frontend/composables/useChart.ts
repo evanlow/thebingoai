@@ -817,6 +817,13 @@ export function useChart(canvasRef: Ref<HTMLCanvasElement | null>, configRef: Re
 
   onBeforeUnmount(() => {
     darkModeObserver?.disconnect()
-    destroyChart()
+    // Defer the (synchronous, non-trivial) Chart.js teardown off the unmount
+    // tick so leaving a dashboard with many charts doesn't block the route
+    // transition. The canvas is discarded regardless — only the timing moves.
+    const idle = (globalThis as any).requestIdleCallback as
+      | ((cb: () => void) => number)
+      | undefined
+    if (idle) idle(() => destroyChart())
+    else setTimeout(() => destroyChart(), 0)
   })
 }

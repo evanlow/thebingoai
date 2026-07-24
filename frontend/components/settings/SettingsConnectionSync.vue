@@ -4,8 +4,8 @@
   postgres/mysql. Manages a single Pipeline per connection (MVP); list/create/
   edit/run/delete via /api/pipelines.
 
-  The "Parquet • synced X ago" badge on widgets reads from the same pipeline
-  rows this component manages.
+  Widgets served from a Parquet snapshot read from the same pipeline rows this
+  component manages (served_from: "data_plane").
 -->
 <template>
   <div class="space-y-3">
