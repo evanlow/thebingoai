@@ -95,7 +95,6 @@ def discover_and_load_plugins() -> None:
                     )
 
                 plugin.on_startup()
-                _backfill_templates_for_plugin(plugin)
                 _loaded_plugins[plugin.name] = plugin
                 logger.info("Loaded plugin: %s v%s", plugin.name, plugin.version)
             except Exception:
@@ -130,6 +129,21 @@ def _backfill_templates_for_plugin(plugin: BingoPlugin) -> None:
                     "Backfilled templates for %d %s connection(s) (plugin '%s')",
                     count, type_id, plugin.name,
                 )
+
+
+def backfill_all_plugin_templates() -> None:
+    """Run template backfill for every loaded plugin.
+
+    Split out of `discover_and_load_plugins` so the slow, live source-DB
+    introspection runs OFF the startup critical path (see the deferred task in
+    `backend.main.lifespan`). Idempotent; each plugin self-gates on
+    settings.template_backfill_on_startup inside `_backfill_templates_for_plugin`.
+    """
+    for plugin in list(_loaded_plugins.values()):
+        try:
+            _backfill_templates_for_plugin(plugin)
+        except Exception:
+            logger.exception("Template backfill failed for plugin '%s'", plugin.name)
 
 
 def import_plugin_celery_tasks() -> list[str]:

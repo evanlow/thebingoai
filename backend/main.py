@@ -10,6 +10,7 @@ from backend.logging_config import setup_logging
 from backend.api import health as health_module
 from backend.config import settings
 import logging
+import asyncio
 
 # Setup logging
 setup_logging(level=settings.log_level)
@@ -62,17 +63,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Shared sample provisioning failed", exc_info=True)
 
-    # Backfill dynamic SQL pipeline templates for core connectors (postgres /
-    # mysql / sqlite) which are registered at module import in
-    # `backend.connectors.factory`, not via a BingoPlugin.
-    try:
-        from backend.database.session import SessionLocal
-        from backend.services.template_materializer import backfill_templates_for_core_connectors
-        with SessionLocal() as db:
-            backfill_templates_for_core_connectors(db)
-    except Exception:
-        logger.warning("Core-connector template backfill failed", exc_info=True)
-
     # Backfill profiling for existing connections (runs once after deploy)
     try:
         from backend.tasks.profiling_tasks import backfill_profile_all_connections
@@ -87,9 +77,39 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Failed to start lineage cache subscriber", exc_info=True)
 
+    # Template backfill (core connectors + every plugin) does live source-DB
+    # introspection per connection — slow, and dead/misconfigured connections
+    # block the event loop. Run it AFTER the app binds, in a worker thread, so
+    # uvicorn serves /health immediately and readiness never waits on external
+    # DBs. Idempotent + self-gated by settings.template_backfill_on_startup.
+    async def _deferred_template_backfill():
+        def _run():
+            from backend.plugins.loader import backfill_all_plugin_templates
+            from backend.database.session import SessionLocal
+            from backend.services.template_materializer import backfill_templates_for_core_connectors
+            try:
+                backfill_all_plugin_templates()
+            except Exception:
+                logger.warning("Plugin template backfill failed", exc_info=True)
+            try:
+                with SessionLocal() as db:
+                    backfill_templates_for_core_connectors(db)
+            except Exception:
+                logger.warning("Core-connector template backfill failed", exc_info=True)
+        await asyncio.to_thread(_run)
+
+    app.state._backfill_task = asyncio.create_task(_deferred_template_backfill())
+
     yield
     # Shutdown
     logger.info("Shutting down...")
+    _backfill_task = getattr(app.state, "_backfill_task", None)
+    if _backfill_task is not None and not _backfill_task.done():
+        _backfill_task.cancel()
+        try:
+            await _backfill_task
+        except (asyncio.CancelledError, Exception):
+            pass
     try:
         from backend.lineage.cache import stop_subscriber as _stop_lineage_subscriber
         _stop_lineage_subscriber()
