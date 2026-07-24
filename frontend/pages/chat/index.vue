@@ -10,6 +10,15 @@
       :style="{ '--composer-h': composerHeightPx }"
     >
 
+      <!-- Loading shell — paints immediately while the conversation list is still
+           loading (cold entry), instead of a blank div that looks frozen. -->
+      <div
+        v-if="!chatStore.conversationsLoaded && !activeBriefingId"
+        class="absolute inset-0 flex items-center justify-center z-10"
+      >
+        <div class="h-7 w-7 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading" />
+      </div>
+
       <!-- Chat layer — mounts when thread exists or transitioning -->
       <div
         v-if="chatStore.currentThreadId || isTransitioning"

@@ -48,26 +48,34 @@ def fake_redis(monkeypatch):
 def test_same_filters_different_order_same_key():
     f1 = [{"column": "a", "op": "eq", "value": 1}, {"column": "b", "op": "eq", "value": 2}]
     f2 = [{"column": "b", "op": "eq", "value": 2}, {"column": "a", "op": "eq", "value": 1}]
-    k1 = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", f1, 0)
-    k2 = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", f2, 0)
+    k1 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", f1, 0)
+    k2 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", f2, 0)
     assert k1 == k2
 
 
 def test_sql_change_changes_key():
-    k1 = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
-    k2 = wrc.build_key("org", "o1", 1, "w1", "SELECT 2", None, 0)
+    k1 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
+    k2 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 2", None, 0)
     assert k1 != k2
 
 
 def test_generation_bump_changes_key():
-    k1 = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
-    k2 = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 1)
+    k1 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
+    k2 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 1)
     assert k1 != k2
 
 
 def test_scope_isolation_in_key():
-    k1 = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
-    k2 = wrc.build_key("org", "o2", 1, "w1", "SELECT 1", None, 0)
+    k1 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
+    k2 = wrc.build_key("org", "o2", 1, "w1", "conn1", "SELECT 1", None, 0)
+    assert k1 != k2
+
+
+def test_connection_id_changes_key():
+    # Same SQL on a different connection must not collide — source results are
+    # cached and widget edits don't bump the generation.
+    k1 = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
+    k2 = wrc.build_key("org", "o1", 1, "w1", "conn2", "SELECT 1", None, 0)
     assert k1 != k2
 
 
@@ -102,7 +110,7 @@ def _payload(served_from="data_plane", rows=None):
 
 
 def test_put_get_roundtrip(fake_redis):
-    key = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
+    key = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
     wrc.put(key, _payload(), ttl=3600)
     hit = wrc.get(key)
     assert hit is not None
@@ -112,7 +120,7 @@ def test_put_get_roundtrip(fake_redis):
 
 
 def test_source_results_never_cached(fake_redis):
-    key = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
+    key = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
     wrc.put(key, _payload(served_from="source"), ttl=3600)
     assert wrc.get(key) is None
 
@@ -120,7 +128,7 @@ def test_source_results_never_cached(fake_redis):
 def test_oversized_payload_skipped(fake_redis, monkeypatch):
     from backend.config import settings
     monkeypatch.setattr(settings, "widget_cache_max_bytes", 64)
-    key = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
+    key = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
     wrc.put(key, _payload(rows=[["x" * 500]]), ttl=3600)
     assert wrc.get(key) is None
 
@@ -129,7 +137,7 @@ def test_redis_failure_degrades_to_miss(monkeypatch):
     def boom():
         raise ConnectionError("redis down")
     monkeypatch.setattr(wrc, "_client", boom)
-    key = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
+    key = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
     wrc.put(key, _payload(), ttl=60)   # must not raise
     assert wrc.get(key) is None
 
@@ -161,7 +169,7 @@ def test_cache_key_ttl_filtered_vs_unfiltered(monkeypatch, fake_redis):
 
 def test_lookup_replays_served_from_and_transforms_with_current_mapping(fake_redis, monkeypatch):
     monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"rows": result.rows, "m": mapping})
-    key = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
+    key = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
     wrc.put(key, _payload(), ttl=60)
 
     resp = wd._widget_cache_lookup(key, {"type": "table"})
@@ -173,7 +181,7 @@ def test_lookup_replays_served_from_and_transforms_with_current_mapping(fake_red
 
 
 def test_store_writes_through_from_response(fake_redis):
-    key = wrc.build_key("org", "o1", 1, "w1", "SELECT 1", None, 0)
+    key = wrc.build_key("org", "o1", 1, "w1", "conn1", "SELECT 1", None, 0)
     resp = SimpleNamespace(
         source_columns=["a"], source_rows=[[2]], row_count=1, truncated=False,
         served_from="cache", refreshed_at="t",

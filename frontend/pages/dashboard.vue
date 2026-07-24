@@ -3,15 +3,18 @@
     <!-- Main content area -->
     <div class="flex flex-1 flex-col overflow-hidden min-w-0 min-h-0 relative">
 
-      <!-- Loading a specific dashboard (selected id, data not yet loaded) -->
-      <template v-if="store.currentDashboardId != null && !store.currentDashboard && store.loading">
+      <!-- Loading a specific dashboard: an id is selected but its FULL config
+           isn't loaded yet. Gate on fullyLoadedId (not currentDashboard) — the
+           list holds lite stubs, and rendering a stub as a full dashboard crashes
+           the widgets (undefined columns/rows). -->
+      <template v-if="store.currentDashboardId != null && store.fullyLoadedId !== store.currentDashboardId">
         <div class="flex flex-1 items-center justify-center">
           <div class="h-7 w-7 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading dashboard" />
         </div>
       </template>
 
       <!-- List view -->
-      <template v-else-if="!store.currentDashboard">
+      <template v-else-if="store.currentDashboardId == null">
 
         <div class="flex flex-1 flex-col overflow-y-auto px-3 md:px-6 pt-4 pb-6">
           <div v-if="store.loading" class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-neutral-500">
@@ -315,6 +318,12 @@ onMounted(() => {
   }
   store.fetchDashboards()
 })
+
+// Leaving the dashboard route entirely (to /chat, settings, etc.) frees the
+// retained result data + reactive graph instead of letting it live for the whole
+// session. Re-entry refetches — cheap now the graph isn't bloated. (Back-to-list
+// stays on this route and does not unmount, so it keeps the list cached.)
+onUnmounted(() => store.$resetAll())
 
 // In-app navigation (e.g. another task's "View Dashboard") only changes ?id —
 // the page component is not remounted, so onMounted won't fire. React to the

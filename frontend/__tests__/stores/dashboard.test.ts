@@ -232,6 +232,118 @@ describe('dashboard store', () => {
     expect(store.connectionTypes).toEqual({})
   })
 
+  it('$resetAll clears the widget source cache', () => {
+    const store = useDashboardStore()
+    store.setWidgetSourceData('w-1', ['a'], [[1]])
+    store.$resetAll()
+    expect(store.widgetSourceData).toEqual({})
+  })
+
+  // ── widgetSourceData cache ─────────────────────────────────────────
+  it('closeDashboard clears the widget source cache', () => {
+    const store = useDashboardStore()
+    store.setWidgetSourceData('w-1', ['a'], [[1]])
+    store.closeDashboard()
+    expect(store.widgetSourceData).toEqual({})
+  })
+
+  it('setWidgetSourceData evicts the oldest entry past the cap', () => {
+    const store = useDashboardStore()
+    for (let i = 0; i < 55; i++) store.setWidgetSourceData(`w-${i}`, ['a'], [[i]])
+    const keys = Object.keys(store.widgetSourceData)
+    expect(keys.length).toBe(50)
+    expect(store.widgetSourceData['w-0']).toBeUndefined()  // oldest evicted
+    expect(store.widgetSourceData['w-54']).toBeDefined()   // newest kept
+  })
+
+  // ── fetchDashboards staleness guard ────────────────────────────────
+  it('fetchDashboards skips the refetch when the list is fresh', async () => {
+    apiDashboards.list = vi.fn().mockResolvedValue([{ id: 1, title: 't', widgets: [], created_at: '', updated_at: '' }])
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboards()
+    await store.fetchDashboards()  // within LIST_FRESH_MS → no second call
+    expect(apiDashboards.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('fetchDashboards refetches when forced', async () => {
+    apiDashboards.list = vi.fn().mockResolvedValue([{ id: 1, title: 't', widgets: [], created_at: '', updated_at: '' }])
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboards()
+    await store.fetchDashboards(true)
+    expect(apiDashboards.list).toHaveBeenCalledTimes(2)
+  })
+
+  // ── fullyLoadedId gate (lite-stub crash guard) ─────────────────────
+  it('fetchDashboard marks the dashboard fully loaded', async () => {
+    apiDashboards.get = vi.fn().mockResolvedValue({ id: 7, title: 't', widgets: [], created_at: '', updated_at: '' })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    expect(store.fullyLoadedId).toBeNull()
+    await store.fetchDashboard(7)
+    expect(store.fullyLoadedId).toBe(7)
+  })
+
+  it('closeDashboard and $resetAll clear fullyLoadedId', async () => {
+    apiDashboards.get = vi.fn().mockResolvedValue({ id: 7, title: 't', widgets: [], created_at: '', updated_at: '' })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboard(7)
+    store.closeDashboard()
+    expect(store.fullyLoadedId).toBeNull()
+    await store.fetchDashboard(7)
+    store.$resetAll()
+    expect(store.fullyLoadedId).toBeNull()
+  })
+
+  it('fetchDashboards preserves the open dashboard full widgets (lite refresh)', async () => {
+    // Full widgets already loaded for id 7 (has columns — the lite list omits them).
+    const fullWidget = { id: 'w', position: { x: 0, y: 0, w: 6, h: 5 }, widget: { type: 'table', config: { columns: [{ key: 'a' }], rows: [[1]] } } }
+    apiDashboards.get = vi.fn().mockResolvedValue({ id: 7, title: 't', widgets: [fullWidget], created_at: '', updated_at: '' })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    const store = useDashboardStore()
+    await store.fetchDashboard(7)
+    // Lite list refresh returns the same dashboard WITHOUT columns/rows.
+    apiDashboards.list = vi.fn().mockResolvedValue([{ id: 7, title: 't', widgets: [{ id: 'w', position: { x: 0, y: 0, w: 6, h: 5 }, widget: { type: 'table', config: {} } }], created_at: '', updated_at: '' }])
+    await store.fetchDashboards(true)
+    // Open dashboard's full widgets survive → no undefined columns to crash on.
+    const d = store.dashboards.find(x => x.id === 7)!
+    expect((d.widgets[0].widget.config as any).columns).toEqual([{ key: 'a' }])
+  })
+
+  it('a stale fetchDashboard does not overwrite the newer one (no stranded gate)', async () => {
+    // A starts, then B; B resolves first, A resolves last. The late A must NOT
+    // flip fullyLoadedId back to A (that would strand the render gate on B).
+    let resolveA!: (v: any) => void
+    let resolveB!: (v: any) => void
+    const pA = new Promise(r => { resolveA = r })
+    const pB = new Promise(r => { resolveB = r })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    apiDashboards.get = vi.fn()
+      .mockImplementationOnce(() => pA)   // fetchDashboard(1)
+      .mockImplementationOnce(() => pB)   // fetchDashboard(2)
+    const store = useDashboardStore()
+    const fA = store.fetchDashboard(1)
+    const fB = store.fetchDashboard(2)
+    resolveB({ id: 2, title: 'b', widgets: [], created_at: '', updated_at: '' })
+    await fB
+    resolveA({ id: 1, title: 'a', widgets: [], created_at: '', updated_at: '' })
+    await fA
+    expect(store.fullyLoadedId).toBe(2)  // latest wins; stale A dropped
+  })
+
+  it('closeDashboard cancels in-flight work and clears the bulk dedup state', () => {
+    const store = useDashboardStore()
+    store.bulkKeyInFlight = '1:[]'
+    store.refreshing = true
+    const seqBefore = store.bulkSeq
+    store.closeDashboard()
+    expect(store.bulkKeyInFlight).toBeNull()  // reopen won't dedup against aborted request
+    expect(store.bulkSeq).toBe(seqBefore + 1) // late bulk resolve is ignored
+    expect(store.refreshing).toBe(false)
+  })
+
   // ── GA4 events ────────────────────────────────────────────────────
   describe('GA4 events', () => {
     beforeEach(() => {

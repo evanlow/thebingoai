@@ -4,6 +4,7 @@ import type { DashboardWidget } from '~/types/dashboard'
 import { useApi } from '~/composables/useApi'
 import { useDashboardStore } from '~/stores/dashboard'
 import { mergeRefreshedConfig } from '~/utils/widgetMerge'
+import { trackAbort, releaseAbort, isAbortError } from '~/utils/inflight'
 
 export function useWidgetData(widget: Ref<DashboardWidget>, autoRefresh = true) {
   const localLoading = ref(false)
@@ -31,6 +32,7 @@ export function useWidgetData(widget: Ref<DashboardWidget>, autoRefresh = true) 
     localLoading.value = true
     error.value = null
 
+    const ctrl = trackAbort()
     try {
       const api = useApi()
       const filters = store.activeFilters.length > 0 ? store.activeFilters : undefined
@@ -44,8 +46,9 @@ export function useWidgetData(widget: Ref<DashboardWidget>, autoRefresh = true) 
         mapping: mapping as any,
         filters,
         dashboard_id: store.currentDashboardId ?? undefined,
+        widget_id: widget.value.id,  // required for the result cache key (else backend no-ops the cache)
         widget_sources: widget.value.sources ?? undefined,
-      }) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source'; source_columns?: string[]; source_rows?: any[][] }
+      }, ctrl.signal) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source'; source_columns?: string[]; source_rows?: any[][] }
 
       if (seq !== refreshSeq) return
       Object.assign(widget.value.widget.config, mergeRefreshedConfig(widget.value, response.config))
@@ -56,9 +59,10 @@ export function useWidgetData(widget: Ref<DashboardWidget>, autoRefresh = true) 
         store.setWidgetSourceData(widget.value.id, response.source_columns, response.source_rows ?? [])
       }
     } catch (err: any) {
-      if (seq !== refreshSeq) return
+      if (seq !== refreshSeq || isAbortError(err)) return  // stale or navigated-away: silent
       error.value = err?.data?.detail ?? err?.message ?? 'Refresh failed'
     } finally {
+      releaseAbort(ctrl)
       if (seq === refreshSeq) localLoading.value = false
     }
   }
