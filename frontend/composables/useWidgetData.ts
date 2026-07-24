@@ -46,6 +46,7 @@ export function useWidgetData(widget: Ref<DashboardWidget>, autoRefresh = true) 
         mapping: mapping as any,
         filters,
         dashboard_id: store.currentDashboardId ?? undefined,
+        widget_id: widget.value.id,  // required for the result cache key (else backend no-ops the cache)
         widget_sources: widget.value.sources ?? undefined,
       }, ctrl.signal) as { config: Record<string, any>; refreshed_at: string; served_from?: 'data_plane' | 'cache' | 'source'; source_columns?: string[]; source_rows?: any[][] }
 

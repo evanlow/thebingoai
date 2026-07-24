@@ -312,6 +312,38 @@ describe('dashboard store', () => {
     expect((d.widgets[0].widget.config as any).columns).toEqual([{ key: 'a' }])
   })
 
+  it('a stale fetchDashboard does not overwrite the newer one (no stranded gate)', async () => {
+    // A starts, then B; B resolves first, A resolves last. The late A must NOT
+    // flip fullyLoadedId back to A (that would strand the render gate on B).
+    let resolveA!: (v: any) => void
+    let resolveB!: (v: any) => void
+    const pA = new Promise(r => { resolveA = r })
+    const pB = new Promise(r => { resolveB = r })
+    apiConnections.list = vi.fn().mockResolvedValue([])
+    apiDashboards.get = vi.fn()
+      .mockImplementationOnce(() => pA)   // fetchDashboard(1)
+      .mockImplementationOnce(() => pB)   // fetchDashboard(2)
+    const store = useDashboardStore()
+    const fA = store.fetchDashboard(1)
+    const fB = store.fetchDashboard(2)
+    resolveB({ id: 2, title: 'b', widgets: [], created_at: '', updated_at: '' })
+    await fB
+    resolveA({ id: 1, title: 'a', widgets: [], created_at: '', updated_at: '' })
+    await fA
+    expect(store.fullyLoadedId).toBe(2)  // latest wins; stale A dropped
+  })
+
+  it('closeDashboard cancels in-flight work and clears the bulk dedup state', () => {
+    const store = useDashboardStore()
+    store.bulkKeyInFlight = '1:[]'
+    store.refreshing = true
+    const seqBefore = store.bulkSeq
+    store.closeDashboard()
+    expect(store.bulkKeyInFlight).toBeNull()  // reopen won't dedup against aborted request
+    expect(store.bulkSeq).toBe(seqBefore + 1) // late bulk resolve is ignored
+    expect(store.refreshing).toBe(false)
+  })
+
   // ── GA4 events ────────────────────────────────────────────────────
   describe('GA4 events', () => {
     beforeEach(() => {

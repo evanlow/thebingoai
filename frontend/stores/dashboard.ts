@@ -45,6 +45,9 @@ interface DashboardState {
   // response is lite (widget result data stripped), so the drill-down must not
   // render a dashboard until fetchDashboard has loaded its full config.
   fullyLoadedId: number | null
+  // Monotonic guard for fetchDashboard: a slow earlier GET must not commit after
+  // a newer one (switching A→B, A resolving last would strand the render gate).
+  fetchSeq: number
 }
 
 export const useDashboardStore = defineStore('dashboard', {
@@ -65,6 +68,7 @@ export const useDashboardStore = defineStore('dashboard', {
     widgetSourceData: {},
     lastFetchedAt: 0,
     fullyLoadedId: null,
+    fetchSeq: 0,
   }),
 
   getters: {
@@ -172,6 +176,7 @@ export const useDashboardStore = defineStore('dashboard', {
 
     async fetchDashboard(id: number) {
       const api = useApi()
+      const seq = ++this.fetchSeq
       this.loading = true
       try {
         // Reuse cached connectionTypes if available; only fetch connections if cache is empty
@@ -183,6 +188,9 @@ export const useDashboardStore = defineStore('dashboard', {
           api.dashboards.get(id, { skeleton: true }) as Promise<any>,
           hasConnections ? Promise.resolve(null) : api.connections.list() as Promise<any[]>,
         ])
+        // A newer fetchDashboard superseded this one (dashboard switched mid-load).
+        // Dropping here prevents stranding the render gate on the wrong id.
+        if (seq !== this.fetchSeq) return
         if (connections) {
           this.connectionTypes = Object.fromEntries(connections.map((c: any) => [c.id, c.db_type]))
         }
@@ -335,6 +343,16 @@ export const useDashboardStore = defineStore('dashboard', {
     },
 
     closeDashboard() {
+      // Back-to-list stays on the dashboard route (no unmount → $resetAll won't
+      // run), so cancel in-flight widget/bulk loads here or they keep running
+      // ≤120s and mutate the dashboard the user just left. Reset the bulk dedup
+      // key + bump the seq so an immediate reopen isn't deduped/overwritten by
+      // the aborted request.
+      abortAllInflight()
+      this.bulkKeyInFlight = null
+      this.bulkSeq++
+      this.refreshingWidgets = {}
+      this.refreshing = false
       this.currentDashboardId = null
       this.editMode = false
       this.dirty = false
@@ -561,6 +579,7 @@ export const useDashboardStore = defineStore('dashboard', {
       this.bulkKeyInFlight = null
       this.lastFetchedAt = 0
       this.fullyLoadedId = null
+      this.fetchSeq = 0
     },
 
     async removeSchedule(dashboardId: number) {

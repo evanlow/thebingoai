@@ -394,7 +394,7 @@ def _widget_cache_enabled(org_id: str | None) -> bool:
         return False
 
 
-def _widget_cache_key(dashboard_id, widget_id, sql, filters, org_id, user_id):
+def _widget_cache_key(dashboard_id, widget_id, connection_id, sql, filters, org_id, user_id):
     """(key, ttl) for this widget read, or (None, None) when caching doesn't
     apply (no dashboard/widget identity, or the per-Org flag is off).
 
@@ -411,7 +411,7 @@ def _widget_cache_key(dashboard_id, widget_id, sql, filters, org_id, user_id):
         for f in (filters or [])
     ]
     generation = wrc.get_generation(dashboard_id)
-    key = wrc.build_key(scope_kind, scope_id, dashboard_id, widget_id, sql, filters_dump, generation)
+    key = wrc.build_key(scope_kind, scope_id, dashboard_id, widget_id, connection_id, sql, filters_dump, generation)
     ttl = settings.widget_cache_ttl_filtered if filters else settings.widget_cache_ttl_unfiltered
     return key, ttl
 
@@ -780,8 +780,8 @@ def _refresh_widget_sync(
     cache_key, cache_ttl = (None, None)
     if dashboard:
         cache_key, cache_ttl = _widget_cache_key(
-            request.dashboard_id, request.widget_id, request.sql,
-            request.filters, org_id, current_user.id,
+            request.dashboard_id, request.widget_id, request.connection_id,
+            request.sql, request.filters, org_id, current_user.id,
         )
         cached_resp = _widget_cache_lookup(cache_key, request.mapping)
         if cached_resp is not None:
@@ -1114,7 +1114,7 @@ async def refresh_dashboard_widgets(
                 from backend.services import widget_result_cache as wrc
                 widget_cache_key = wrc.build_key(
                     bulk_cache_scope[0], bulk_cache_scope[1], dashboard_id,
-                    widget_id, sql, bulk_filters_dump, bulk_cache_gen,
+                    widget_id, connection_id, sql, bulk_filters_dump, bulk_cache_gen,
                 )
                 cached_resp = _widget_cache_lookup(widget_cache_key, mapping)
                 if cached_resp is not None:

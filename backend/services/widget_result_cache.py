@@ -51,15 +51,19 @@ def build_key(
     scope_id: Any,
     dashboard_id: int,
     widget_id: str,
+    connection_id: Any,
     sql: str,
     filters: Optional[list],
     generation: int,
 ) -> str:
+    # connection_id is part of the identity: source results are cached now, and a
+    # widget repointed to another connection with identical SQL must NOT hit the
+    # old connection's rows (widget edits don't bump the generation).
     sql_hash = hashlib.sha256((sql or "").encode()).hexdigest()[:16]
     filters_hash = hashlib.sha256(_canonical_filters(filters).encode()).hexdigest()[:16]
     return (
         f"{_KEY_PREFIX}:{scope_kind}:{scope_id}:{dashboard_id}:{widget_id}"
-        f":g{generation}:{sql_hash}:{filters_hash}"
+        f":c{connection_id}:g{generation}:{sql_hash}:{filters_hash}"
     )
 
 
