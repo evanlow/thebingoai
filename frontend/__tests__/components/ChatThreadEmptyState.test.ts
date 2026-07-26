@@ -48,7 +48,7 @@ function dataset(step: string) {
   return { name: 'HR_dataset.csv', size: 1, fileId: 'f1', connectionId: 1, step, error: null }
 }
 
-function makeChatStore(type = 'task', messages: any[] = []) {
+function makeChatStore(type = 'task', messages: any[] = [], docsPendingThreads: string[] = []) {
   return {
     currentConversation: { type, title: 'Bingo AI' },
     currentThreadId: 'thread-123',
@@ -56,13 +56,14 @@ function makeChatStore(type = 'task', messages: any[] = []) {
     messages,
     messagesLoading: false,
     isStreaming: false,
+    docsPendingThreads,
     toggleInfoPanel: vi.fn(),
     permanentConversation: type === 'permanent' ? { title: 'Bingo AI' } : null,
   }
 }
 
-async function mountThread(type = 'task', messages: any[] = []) {
-  vi.stubGlobal('useChatStore', () => makeChatStore(type, messages))
+async function mountThread(type = 'task', messages: any[] = [], docsPendingThreads: string[] = []) {
+  vi.stubGlobal('useChatStore', () => makeChatStore(type, messages, docsPendingThreads))
   const wrapper = mount(ChatThread, { global: { stubs } })
   await flushPromises()
   return wrapper
@@ -95,6 +96,24 @@ describe('ChatThread — empty state while a dataset is processing', () => {
   it('shows the normal prompt when a dataset failed — failed is terminal, not pending', async () => {
     mockDatasets.value = [dataset('failed')]
     const text = (await mountThread()).text()
+
+    expect(text).toContain(IDLE)
+    expect(text).not.toContain(PENDING)
+  })
+
+  it('keeps the processing copy after profiling finishes while docs are still generating', async () => {
+    // The exact regression: profiling completes seconds before the LLM does, and
+    // the copy used to flicker back to the idle prompt in between.
+    mockDatasets.value = [dataset('ready')]
+    const text = (await mountThread('task', [], ['thread-123'])).text()
+
+    expect(text).toContain(PENDING)
+    expect(text).not.toContain(IDLE)
+  })
+
+  it('ignores a docs-pending flag belonging to another thread', async () => {
+    mockDatasets.value = [dataset('ready')]
+    const text = (await mountThread('task', [], ['some-other-thread'])).text()
 
     expect(text).toContain(IDLE)
     expect(text).not.toContain(PENDING)

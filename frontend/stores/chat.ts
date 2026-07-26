@@ -83,6 +83,10 @@ export const useChatStore = defineStore('chat', {
     })() as string | null,
     messages: [] as Message[],
     messagesLoading: false,
+    // Threads whose dataset documentation is still being generated. Profiling
+    // finishes well before the LLM does, so the dataset's own step can't be used
+    // to keep the "Reading your data…" state up until the docs message lands.
+    docsPendingThreads: [] as string[],
     // Per-thread cache of fully-loaded messages (incl. agent_steps). Lets a task
     // viewed once this session reopen instantly without refetching. Invalidated
     // for a thread when a new message is sent to it (its history changed).
@@ -298,6 +302,16 @@ export const useChatStore = defineStore('chat', {
       if (conversation) {
         conversation.updated_at = updatedAt
       }
+    },
+
+    markDocsPending(threadId: string) {
+      if (!this.docsPendingThreads.includes(threadId)) {
+        this.docsPendingThreads.push(threadId)
+      }
+    },
+
+    clearDocsPending(threadId: string) {
+      this.docsPendingThreads = this.docsPendingThreads.filter(id => id !== threadId)
     },
 
     incrementUnread(threadId: string) {

@@ -59,7 +59,7 @@
     </div>
 
     <!-- Skill suggestion message -->
-    <div v-else-if="message.source === 'skill_suggestion'" class="pr-4 md:pr-32">
+    <div v-else-if="message.source === 'skill_suggestion'" class="pr-4 md:pr-10">
       <div class="flex gap-2.5 items-start">
         <div class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
           <span class="text-white text-sm">&starf;</span>
@@ -83,7 +83,7 @@
     </div>
 
     <!-- Assistant message: left-aligned plain text -->
-    <div v-else class="pr-4 md:pr-32">
+    <div v-else class="pr-4 md:pr-10">
       <div class="flex gap-2.5 items-start">
         <div class="w-7 h-7 rounded-[var(--r-md)] bg-transparent flex items-center justify-center flex-shrink-0 overflow-hidden mt-0.5" :class="{ 'avatar-spin': isLoading }">
           <img v-if="agentAvatarUrl" :src="agentAvatarUrl" class="w-full h-full object-cover" alt="Agent" />

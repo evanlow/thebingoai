@@ -14,7 +14,7 @@
         </NuxtLink>
       </div>
 
-      <div class="max-w-[760px] mx-auto relative">
+      <div class="max-w-[900px] mx-auto relative">
         <!-- Floating mention panel -->
         <Transition
           enter-active-class="transition-all duration-100 ease-out"

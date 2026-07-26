@@ -100,18 +100,62 @@ export const useChatWsHandlers = () => {
     })
   }
 
+  // Reveal a message's content progressively so the documentation reads as if
+  // Bingo is writing it out. Table rows are emitted whole — revealing a `|` row
+  // character by character would render as broken markdown until it completes.
+  const revealMessage = (messageId: string, full: string) => {
+    const chunks: string[] = []
+    for (const line of full.split('\n')) {
+      if (line.startsWith('|')) {
+        chunks.push(line + '\n')
+      } else {
+        for (let i = 0; i < line.length; i += 3) chunks.push(line.slice(i, i + 3))
+        chunks.push('\n')
+      }
+    }
+
+    let i = 0
+    let shown = ''
+    const tick = () => {
+      const target = chatStore.messages.find(m => m.id === messageId)
+      // Gone — thread switched or history reloaded. Stop; the stored row is complete.
+      if (!target) return
+      if (i >= chunks.length) {
+        target.content = full
+        return
+      }
+      const chunk = chunks[i++]
+      shown += chunk
+      target.content = shown
+      setTimeout(tick, chunk.startsWith('|') ? 45 : 18)
+    }
+    tick()
+  }
+
   // Handle dataset documentation pushed by the CSV upload worker
   const registerDatasetDocsHandler = () => {
-    return ws.on('dataset.docs', (data: any) => {
+    // Fired when the upload enqueues the documentation task. Profiling completes
+    // seconds earlier, so without this the empty state flickers back to
+    // "Ask me anything about your data" before the docs arrive.
+    const unsubStart = ws.on('dataset.docs.start', (data: any) => {
+      const threadId: string = data.thread_id
+      if (!threadId) return
+      chatStore.markDocsPending(threadId)
+      // Self-heal: if generation dies the completion event never comes.
+      setTimeout(() => chatStore.clearDocsPending(threadId), 120_000)
+    })
+
+    const unsubDocs = ws.on('dataset.docs', (data: any) => {
       const threadId: string = data.thread_id
       const msg = data.message
 
+      chatStore.clearDocsPending(threadId)
       if (!msg) return
 
       const frontendMsg: Message = {
         id: String(msg.id),
         role: 'assistant',
-        content: msg.content,
+        content: '',
         source: 'dataset_docs',
         created_at: msg.timestamp,
         agent_steps: [],
@@ -121,8 +165,11 @@ export const useChatWsHandlers = () => {
       // No incrementUnread — this fires for the thread the user is already looking at
       if (chatStore.currentThreadId === threadId) {
         chatStore.addMessage(frontendMsg)
+        revealMessage(frontendMsg.id, msg.content)
       }
     })
+
+    return () => { unsubStart(); unsubDocs() }
   }
 
   // Handle incoming skill suggestion notifications from WebSocket

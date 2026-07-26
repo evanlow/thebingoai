@@ -53,8 +53,8 @@
     </div>
 
     <!-- Scrollable message content -->
-    <div ref="threadRef" class="flex-1 overflow-y-auto px-14 pt-7 pb-6">
-      <div class="max-w-[760px] mx-auto">
+    <div ref="threadRef" class="flex-1 overflow-y-auto px-5 pt-7 pb-6">
+      <div class="max-w-[900px] mx-auto">
         <div v-if="chatStore.messagesLoading && chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
           <div class="h-6 w-6 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading conversation" />
         </div>
@@ -136,8 +136,13 @@ const { datasets } = useDatasetStatus()
 const { briefings, ensure: ensureBriefings } = useBriefingsList()
 
 const datasetCount = computed(() => datasets.value.length)
-// 'failed' is terminal, so a failed upload reverts the empty state instead of hanging on it
-const datasetsPending = computed(() => datasets.value.some(d => d.step !== 'ready' && d.step !== 'failed'))
+// 'failed' is terminal, so a failed upload reverts the empty state instead of hanging on it.
+// Documentation outlives profiling by several seconds, so the thread's docs flag has to
+// carry the state the rest of the way — otherwise the copy flickers back in between.
+const datasetsPending = computed(() =>
+  datasets.value.some(d => d.step !== 'ready' && d.step !== 'failed') ||
+  (!!chatStore.currentThreadId && chatStore.docsPendingThreads.includes(chatStore.currentThreadId))
+)
 const isPermanentThread = computed(() =>
   chatStore.currentThreadId === chatStore.permanentConversation?.id
 )
