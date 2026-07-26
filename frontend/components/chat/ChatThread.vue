@@ -58,24 +58,16 @@
         <div v-if="chatStore.messagesLoading && chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
           <div class="h-6 w-6 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading conversation" />
         </div>
-        <div v-else-if="chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
+        <div
+          v-else-if="chatStore.messages.length === 0 && (chatStore.currentConversation?.type === 'permanent' || !datasetsPending)"
+          class="flex h-full items-center justify-center py-24"
+        >
           <div v-if="chatStore.currentConversation?.type === 'permanent'" class="text-center max-w-sm">
             <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">
               Welcome to {{ chatStore.permanentConversation?.title || 'Bingo' }}
             </h2>
             <p class="text-[14px] text-[var(--ink-2)] mb-4 leading-relaxed">I'm your personal assistant — you can give me a name, set my personality, and teach me how you like to work.</p>
             <p class="text-sm text-[var(--ink-3)]">For one-off data queries, use <span class="font-medium text-[var(--ink-2)]">New Task</span>.</p>
-          </div>
-          <div v-else-if="datasetsPending" class="w-full max-w-[420px]">
-            <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-4 text-center">Reading your data…</h2>
-            <div class="flex flex-col gap-1.5">
-              <DatasetProgressCard
-                v-for="ds in datasets"
-                :key="ds.fileId ?? ds.name"
-                :dataset="ds"
-                :docs-status="docsStepStatus(ds)"
-              />
-            </div>
           </div>
           <div v-else class="text-center">
             <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">Ask me anything about your data</h2>
@@ -114,6 +106,32 @@
               @send-action="(text: string, source?: string) => emit('send-action', text, source as any)"
             />
           </template>
+
+          <!-- Upload flow. Sits below the messages so a second file keeps reporting
+               progress under the first file's documentation, and each card drops out
+               as its own docs land. -->
+          <div
+            v-if="datasetsPending"
+            class="flex justify-center"
+            :class="chatStore.messages.length === 0 ? 'py-24' : ''"
+          >
+            <div class="w-full max-w-[420px]">
+              <h2
+                v-if="chatStore.messages.length === 0"
+                class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-4 text-center"
+              >
+                Reading your data…
+              </h2>
+              <div class="flex flex-col gap-1.5">
+                <DatasetProgressCard
+                  v-for="ds in pendingDatasets"
+                  :key="ds.fileId ?? ds.name"
+                  :dataset="ds"
+                  :docs-status="docsStepStatus(ds)"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -143,22 +161,24 @@ const { datasets } = useDatasetStatus()
 const { briefings, ensure: ensureBriefings } = useBriefingsList()
 
 const datasetCount = computed(() => datasets.value.length)
-// 'failed' is terminal, so a failed upload reverts the empty state instead of hanging on it.
-// Documentation outlives profiling by several seconds, so the thread's docs flag has to
-// carry the state the rest of the way — otherwise the copy flickers back in between.
-const docsPending = computed(() =>
-  !!chatStore.currentThreadId && chatStore.docsPendingThreads.includes(chatStore.currentThreadId)
-)
-const datasetsPending = computed(() =>
-  datasets.value.some(d => d.step !== 'ready' && d.step !== 'failed') || docsPending.value
-)
 
-// The documentation step only starts once its dataset has been profiled, and only
-// the thread knows whether it is still running.
-const docsStepStatus = (ds: { step: string }) => {
+// Documentation outlives profiling by several seconds, so the dataset's own step
+// can't carry the state the rest of the way — the docs flag has to.
+const docsPendingFor = (ds: { connectionId?: number | null }) =>
+  ds.connectionId != null && chatStore.docsPendingConnections.includes(ds.connectionId)
+
+// A card is worth showing until its own documentation lands: with two uploads the
+// first file's docs message must not take the second file's progress down with it.
+// 'failed' is terminal — it drops out rather than hanging the flow open forever.
+const pendingDatasets = computed(() =>
+  datasets.value.filter(d => (d.step === 'ready' ? docsPendingFor(d) : d.step !== 'failed'))
+)
+const datasetsPending = computed(() => pendingDatasets.value.length > 0)
+
+const docsStepStatus = (ds: { step: string; connectionId?: number | null }) => {
   if (ds.step === 'failed') return null
   if (ds.step !== 'ready') return 'pending' as const
-  return docsPending.value ? ('active' as const) : ('completed' as const)
+  return docsPendingFor(ds) ? ('active' as const) : ('completed' as const)
 }
 const isPermanentThread = computed(() =>
   chatStore.currentThreadId === chatStore.permanentConversation?.id

@@ -138,18 +138,18 @@ export const useChatWsHandlers = () => {
     // seconds earlier, so without this the empty state flickers back to
     // "Ask me anything about your data" before the docs arrive.
     const unsubStart = ws.on('dataset.docs.start', (data: any) => {
-      const threadId: string = data.thread_id
-      if (!threadId) return
-      chatStore.markDocsPending(threadId)
+      const connectionId: number | undefined = data.connection_id
+      if (!data.thread_id || connectionId == null) return
+      chatStore.markDocsPending(connectionId)
       // Self-heal: if generation dies the completion event never comes.
-      setTimeout(() => chatStore.clearDocsPending(threadId), 120_000)
+      setTimeout(() => chatStore.clearDocsPending(connectionId), 120_000)
     })
 
     const unsubDocs = ws.on('dataset.docs', (data: any) => {
       const threadId: string = data.thread_id
       const msg = data.message
 
-      chatStore.clearDocsPending(threadId)
+      if (data.connection_id != null) chatStore.clearDocsPending(data.connection_id)
       if (!msg) return
 
       const frontendMsg: Message = {

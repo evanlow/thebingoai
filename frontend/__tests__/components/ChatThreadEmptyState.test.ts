@@ -51,11 +51,11 @@ const stubs = {
 const PENDING = 'Reading your data…'
 const IDLE = 'Ask me anything about your data'
 
-function dataset(step: string) {
-  return { name: 'HR_dataset.csv', size: 1, fileId: 'f1', connectionId: 1, step, error: null }
+function dataset(step: string, connectionId: number | null = 1, name = 'HR_dataset.csv') {
+  return { name, size: 1, fileId: `f${connectionId}`, connectionId, step, error: null }
 }
 
-function makeChatStore(type = 'task', messages: any[] = [], docsPendingThreads: string[] = []) {
+function makeChatStore(type = 'task', messages: any[] = [], docsPendingConnections: number[] = []) {
   return {
     currentConversation: { type, title: 'Bingo AI' },
     currentThreadId: 'thread-123',
@@ -63,14 +63,14 @@ function makeChatStore(type = 'task', messages: any[] = [], docsPendingThreads: 
     messages,
     messagesLoading: false,
     isStreaming: false,
-    docsPendingThreads,
+    docsPendingConnections,
     toggleInfoPanel: vi.fn(),
     permanentConversation: type === 'permanent' ? { title: 'Bingo AI' } : null,
   }
 }
 
-async function mountThread(type = 'task', messages: any[] = [], docsPendingThreads: string[] = []) {
-  vi.stubGlobal('useChatStore', () => makeChatStore(type, messages, docsPendingThreads))
+async function mountThread(type = 'task', messages: any[] = [], docsPendingConnections: number[] = []) {
+  vi.stubGlobal('useChatStore', () => makeChatStore(type, messages, docsPendingConnections))
   const wrapper = mount(ChatThread, { global: { stubs } })
   await flushPromises()
   return wrapper
@@ -119,45 +119,69 @@ describe('ChatThread — empty state while a dataset is processing', () => {
 
   it('holds the documentation step pending until the dataset is profiled', async () => {
     mockDatasets.value = [dataset('profiling')]
-    const wrapper = await mountThread('task', [], ['thread-123'])
+    const wrapper = await mountThread('task', [], [1])
 
     expect(wrapper.find('.progress-card').attributes('data-docs')).toBe('pending')
   })
 
   it('marks the documentation step active once profiling is done and docs are still running', async () => {
     mockDatasets.value = [dataset('ready')]
-    const wrapper = await mountThread('task', [], ['thread-123'])
+    const wrapper = await mountThread('task', [], [1])
 
     expect(wrapper.find('.progress-card').attributes('data-docs')).toBe('active')
   })
 
-  it('drops the documentation step for a failed dataset', async () => {
-    mockDatasets.value = [dataset('failed'), dataset('uploading')]
-    const wrapper = await mountThread('task', [], ['thread-123'])
+  it('drops a failed dataset from the flow — terminal, nothing left to report', async () => {
+    mockDatasets.value = [dataset('failed'), dataset('uploading', 2, 'other.csv')]
+    const wrapper = await mountThread('task', [], [1])
 
     const cards = wrapper.findAll('.progress-card')
-    expect(cards[0].attributes('data-docs')).toBe('null')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].attributes('data-name')).toBe('other.csv')
   })
 
   it('keeps the processing copy after profiling finishes while docs are still generating', async () => {
     // The exact regression: profiling completes seconds before the LLM does, and
     // the copy used to flicker back to the idle prompt in between.
     mockDatasets.value = [dataset('ready')]
-    const text = (await mountThread('task', [], ['thread-123'])).text()
+    const text = (await mountThread('task', [], [1])).text()
 
     expect(text).toContain(PENDING)
     expect(text).not.toContain(IDLE)
   })
 
-  it('ignores a docs-pending flag belonging to another thread', async () => {
+  it('ignores a docs-pending flag belonging to another connection', async () => {
     mockDatasets.value = [dataset('ready')]
-    const text = (await mountThread('task', [], ['some-other-thread'])).text()
+    const text = (await mountThread('task', [], [99])).text()
 
     expect(text).toContain(IDLE)
     expect(text).not.toContain(PENDING)
   })
 
-  it('renders neither empty state once messages exist', async () => {
+  it('keeps a second upload reporting after the first one is documented', async () => {
+    // Two files: #1 is done and its docs message is in the thread, #2 is still
+    // profiling. The flow used to vanish wholesale on the first docs message.
+    mockDatasets.value = [dataset('ready'), dataset('profiling', 2, 'other.csv')]
+    const wrapper = await mountThread('task', [
+      { id: 'm1', role: 'assistant', content: 'hi', source: 'dataset_docs', created_at: '2026-07-26T10:00:00Z' },
+    ], [2])
+
+    const cards = wrapper.findAll('.progress-card')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].attributes('data-name')).toBe('other.csv')
+    expect(wrapper.find('.bubble').exists()).toBe(true)
+  })
+
+  it('drops the flow once every dataset is documented', async () => {
+    mockDatasets.value = [dataset('ready'), dataset('ready', 2, 'other.csv')]
+    const wrapper = await mountThread('task', [
+      { id: 'm1', role: 'assistant', content: 'hi', source: 'dataset_docs', created_at: '2026-07-26T10:00:00Z' },
+    ], [])
+
+    expect(wrapper.findAll('.progress-card')).toHaveLength(0)
+  })
+
+  it('renders no empty-state heading once messages exist', async () => {
     mockDatasets.value = [dataset('profiling')]
     const wrapper = await mountThread('task', [
       { id: 'm1', role: 'assistant', content: 'hi', source: 'dataset_docs', created_at: '2026-07-26T10:00:00Z' },
@@ -166,6 +190,8 @@ describe('ChatThread — empty state while a dataset is processing', () => {
     expect(wrapper.text()).not.toContain(PENDING)
     expect(wrapper.text()).not.toContain(IDLE)
     expect(wrapper.find('.bubble').exists()).toBe(true)
+    // The flow itself still renders — below the message, without the heading.
+    expect(wrapper.find('.progress-card').exists()).toBe(true)
   })
 
   it('keeps the permanent-conversation welcome regardless of pending datasets', async () => {

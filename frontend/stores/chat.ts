@@ -83,10 +83,12 @@ export const useChatStore = defineStore('chat', {
     })() as string | null,
     messages: [] as Message[],
     messagesLoading: false,
-    // Threads whose dataset documentation is still being generated. Profiling
+    // Connections whose dataset documentation is still being generated. Profiling
     // finishes well before the LLM does, so the dataset's own step can't be used
     // to keep the "Reading your data…" state up until the docs message lands.
-    docsPendingThreads: [] as string[],
+    // Keyed by connection, not thread: upload two files and the first one's docs
+    // must not clear the second one's progress.
+    docsPendingConnections: [] as number[],
     // Per-thread cache of fully-loaded messages (incl. agent_steps). Lets a task
     // viewed once this session reopen instantly without refetching. Invalidated
     // for a thread when a new message is sent to it (its history changed).
@@ -306,14 +308,14 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    markDocsPending(threadId: string) {
-      if (!this.docsPendingThreads.includes(threadId)) {
-        this.docsPendingThreads.push(threadId)
+    markDocsPending(connectionId: number) {
+      if (!this.docsPendingConnections.includes(connectionId)) {
+        this.docsPendingConnections.push(connectionId)
       }
     },
 
-    clearDocsPending(threadId: string) {
-      this.docsPendingThreads = this.docsPendingThreads.filter(id => id !== threadId)
+    clearDocsPending(connectionId: number) {
+      this.docsPendingConnections = this.docsPendingConnections.filter(id => id !== connectionId)
     },
 
     incrementUnread(threadId: string) {

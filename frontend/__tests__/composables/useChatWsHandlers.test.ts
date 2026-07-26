@@ -34,6 +34,7 @@ const DOCS = '**orders.csv** — Customer orders\n\n| Column | I read this as |\
 function docsPayload(overrides: Record<string, any> = {}) {
   return {
     thread_id: 'thread-1',
+    connection_id: 1,
     message: {
       id: 77,
       content: DOCS,
@@ -52,7 +53,7 @@ describe('registerDatasetDocsHandler', () => {
     store = useChatStore()
     store.currentThreadId = 'thread-1'
     store.messages = []
-    store.docsPendingThreads = []
+    store.docsPendingConnections = []
   })
 
   afterEach(() => {
@@ -109,35 +110,56 @@ describe('registerDatasetDocsHandler', () => {
     expect(store.messages[0].content).toBe(DOCS)
   })
 
-  it('marks the thread docs-pending on dataset.docs.start and clears it on arrival', async () => {
+  it('marks the connection docs-pending on dataset.docs.start and clears it on arrival', async () => {
     useChatWsHandlers().registerDatasetDocsHandler()
 
-    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1' })
-    expect(store.docsPendingThreads).toContain('thread-1')
+    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1', connection_id: 1 })
+    expect(store.docsPendingConnections).toContain(1)
 
     wsHandlers.get('dataset.docs')!(docsPayload())
-    expect(store.docsPendingThreads).not.toContain('thread-1')
+    expect(store.docsPendingConnections).not.toContain(1)
   })
 
-  it('clears a stuck docs-pending flag so the empty state cannot hang forever', async () => {
+  it('leaves a second upload pending when the first upload finishes', () => {
+    // Two files in one thread: the first file's docs must not take the second
+    // file's progress down with it.
+    useChatWsHandlers().registerDatasetDocsHandler()
+
+    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1', connection_id: 1 })
+    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1', connection_id: 2 })
+
+    wsHandlers.get('dataset.docs')!(docsPayload({ connection_id: 1 }))
+
+    expect(store.docsPendingConnections).not.toContain(1)
+    expect(store.docsPendingConnections).toContain(2)
+  })
+
+  it('ignores a start event with no connection id — it could not be cleared later', () => {
+    useChatWsHandlers().registerDatasetDocsHandler()
+    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1' })
+
+    expect(store.docsPendingConnections).toHaveLength(0)
+  })
+
+  it('clears a stuck docs-pending flag so the flow cannot hang forever', async () => {
     vi.useFakeTimers()
     useChatWsHandlers().registerDatasetDocsHandler()
 
-    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1' })
-    expect(store.docsPendingThreads).toContain('thread-1')
+    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1', connection_id: 1 })
+    expect(store.docsPendingConnections).toContain(1)
 
     // Generation died — no completion event ever arrives.
     await vi.advanceTimersByTimeAsync(120_000)
-    expect(store.docsPendingThreads).not.toContain('thread-1')
+    expect(store.docsPendingConnections).not.toContain(1)
   })
 
   it('clears docs-pending even when the payload carries no message', () => {
     useChatWsHandlers().registerDatasetDocsHandler()
 
-    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1' })
-    wsHandlers.get('dataset.docs')!({ thread_id: 'thread-1' })
+    wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1', connection_id: 1 })
+    wsHandlers.get('dataset.docs')!({ thread_id: 'thread-1', connection_id: 1 })
 
-    expect(store.docsPendingThreads).not.toContain('thread-1')
+    expect(store.docsPendingConnections).not.toContain(1)
     expect(store.messages).toHaveLength(0)
   })
 
