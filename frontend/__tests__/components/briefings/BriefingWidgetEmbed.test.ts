@@ -29,8 +29,12 @@ const DashboardWidgetStub = {
 
 // onMounted awaits a dynamic import('~/utils/widgetMerge'); a couple flushes
 // aren't enough to settle it. Tick microtasks until emitted('loaded') fires.
+// Bounded by a deadline rather than a tick count — how many ticks that import
+// needs depends on how loaded the run is, and a fixed count loses under a full
+// parallel suite.
 async function settle(wrapper: any) {
-  for (let i = 0; i < 10 && !wrapper.emitted('loaded'); i++) {
+  const deadline = Date.now() + 2000
+  while (!wrapper.emitted('loaded') && Date.now() < deadline) {
     await flushPromises()
     await new Promise((r) => setTimeout(r))
   }

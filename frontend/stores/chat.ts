@@ -99,7 +99,9 @@ export const useChatStore = defineStore('chat', {
     showUploadPanel: false,
     isStreaming: false,
     expandedThinking: new Set<string>(),
-    infoPanelOpen: true,
+    // Closed by default — the upload flow now plays out in the thread itself,
+    // so the panel opening on its own just steals width from the content.
+    infoPanelOpen: false,
     selectedMessageId: null as string | null,
     conversationSummary: null as ConversationSummary | null,
     skillSuggestions: [] as SkillSuggestion[],

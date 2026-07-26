@@ -39,7 +39,14 @@ vi.mock('~/composables/useAgentProfile', () => {
 
 import ChatThread from '~/components/chat/ChatThread.vue'
 
-const stubs = { ChatMessageBubble: { template: '<div class="bubble" />' } }
+const stubs = {
+  ChatMessageBubble: { template: '<div class="bubble" />' },
+  // Surfaces the props ChatThread hands the progress card so the docs step is assertable.
+  DatasetProgressCard: {
+    props: ['dataset', 'docsStatus'],
+    template: '<div class="progress-card" :data-name="dataset.name" :data-docs="String(docsStatus)" />',
+  },
+}
 
 const PENDING = 'Reading your data…'
 const IDLE = 'Ask me anything about your data'
@@ -99,6 +106,37 @@ describe('ChatThread — empty state while a dataset is processing', () => {
 
     expect(text).toContain(IDLE)
     expect(text).not.toContain(PENDING)
+  })
+
+  it('renders the upload progress flow inline in the thread', async () => {
+    mockDatasets.value = [dataset('profiling')]
+    const wrapper = await mountThread()
+
+    const card = wrapper.find('.progress-card')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('data-name')).toBe('HR_dataset.csv')
+  })
+
+  it('holds the documentation step pending until the dataset is profiled', async () => {
+    mockDatasets.value = [dataset('profiling')]
+    const wrapper = await mountThread('task', [], ['thread-123'])
+
+    expect(wrapper.find('.progress-card').attributes('data-docs')).toBe('pending')
+  })
+
+  it('marks the documentation step active once profiling is done and docs are still running', async () => {
+    mockDatasets.value = [dataset('ready')]
+    const wrapper = await mountThread('task', [], ['thread-123'])
+
+    expect(wrapper.find('.progress-card').attributes('data-docs')).toBe('active')
+  })
+
+  it('drops the documentation step for a failed dataset', async () => {
+    mockDatasets.value = [dataset('failed'), dataset('uploading')]
+    const wrapper = await mountThread('task', [], ['thread-123'])
+
+    const cards = wrapper.findAll('.progress-card')
+    expect(cards[0].attributes('data-docs')).toBe('null')
   })
 
   it('keeps the processing copy after profiling finishes while docs are still generating', async () => {

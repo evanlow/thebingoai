@@ -66,9 +66,16 @@
             <p class="text-[14px] text-[var(--ink-2)] mb-4 leading-relaxed">I'm your personal assistant — you can give me a name, set my personality, and teach me how you like to work.</p>
             <p class="text-sm text-[var(--ink-3)]">For one-off data queries, use <span class="font-medium text-[var(--ink-2)]">New Task</span>.</p>
           </div>
-          <div v-else-if="datasetsPending" class="text-center">
-            <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">Reading your data…</h2>
-            <p class="text-[14px] text-[var(--ink-2)]">I'm working out what each column means — one moment</p>
+          <div v-else-if="datasetsPending" class="w-full max-w-[420px]">
+            <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-4 text-center">Reading your data…</h2>
+            <div class="flex flex-col gap-1.5">
+              <DatasetProgressCard
+                v-for="ds in datasets"
+                :key="ds.fileId ?? ds.name"
+                :dataset="ds"
+                :docs-status="docsStepStatus(ds)"
+              />
+            </div>
           </div>
           <div v-else class="text-center">
             <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">Ask me anything about your data</h2>
@@ -139,10 +146,20 @@ const datasetCount = computed(() => datasets.value.length)
 // 'failed' is terminal, so a failed upload reverts the empty state instead of hanging on it.
 // Documentation outlives profiling by several seconds, so the thread's docs flag has to
 // carry the state the rest of the way — otherwise the copy flickers back in between.
-const datasetsPending = computed(() =>
-  datasets.value.some(d => d.step !== 'ready' && d.step !== 'failed') ||
-  (!!chatStore.currentThreadId && chatStore.docsPendingThreads.includes(chatStore.currentThreadId))
+const docsPending = computed(() =>
+  !!chatStore.currentThreadId && chatStore.docsPendingThreads.includes(chatStore.currentThreadId)
 )
+const datasetsPending = computed(() =>
+  datasets.value.some(d => d.step !== 'ready' && d.step !== 'failed') || docsPending.value
+)
+
+// The documentation step only starts once its dataset has been profiled, and only
+// the thread knows whether it is still running.
+const docsStepStatus = (ds: { step: string }) => {
+  if (ds.step === 'failed') return null
+  if (ds.step !== 'ready') return 'pending' as const
+  return docsPending.value ? ('active' as const) : ('completed' as const)
+}
 const isPermanentThread = computed(() =>
   chatStore.currentThreadId === chatStore.permanentConversation?.id
 )

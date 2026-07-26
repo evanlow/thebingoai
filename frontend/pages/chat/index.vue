@@ -166,11 +166,9 @@ const stopRightResize = () => {
 
 // ── Lifecycle ─────────────────────────────────────────────
 onMounted(() => {
-  if (isMobile.value) {
-    chatStore.infoPanelOpen = false
-  } else {
-    chatStore.infoPanelOpen = hasPaneContent.value
-  }
+  // The panel stays closed until the user opens it — the upload flow now plays
+  // out in the thread, so nothing needs the side pane to be visible.
+  chatStore.infoPanelOpen = false
   if (chatStore.inputText.trim()) {
     handleSend()
   } else if (!chatStore.currentThreadId) {
@@ -182,12 +180,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onWindowResize)
-})
-
-watch(hasPaneContent, (now, prev) => {
-  if (!prev && now && !isMobile.value) {
-    chatStore.infoPanelOpen = true
-  }
 })
 
 // ── View transition ───────────────────────────────────────
