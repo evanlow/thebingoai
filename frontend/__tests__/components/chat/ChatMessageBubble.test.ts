@@ -404,3 +404,44 @@ describe('ChatMessageBubble — query result download', () => {
     expect(buttonByText(wrapper, 'Excel')).toBeTruthy()
   })
 })
+
+describe('ChatMessageBubble — dataset_docs source', () => {
+  const docsMsg = {
+    id: 'm-docs',
+    role: 'assistant',
+    content: '**orders.csv** — Customer orders',
+    source: 'dataset_docs',
+    briefing_id: null,
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('useChatStore', () => ({ isStreaming: false, messages: [], skillSuggestions: [] }))
+  })
+
+  function mountDocs() {
+    return mount(ChatMessageBubble, {
+      props: {
+        message: docsMsg,
+        showActions: false,
+        actionType: null,
+        isLast: false,
+        agentName: 'Bingo',
+      },
+      // UiMarkdownRenderer is a Nuxt auto-import, so it is never resolved via a
+      // module mock — stub it here so its content prop is observable.
+      global: {
+        stubs: {
+          UiMarkdownRenderer: { props: ['content'], template: '<div class="md">{{ content }}</div>' },
+        },
+      },
+    })
+  }
+
+  it('renders the markdown body through UiMarkdownRenderer', () => {
+    expect(mountDocs().find('.md').text()).toBe(docsMsg.content)
+  })
+
+  it('shows no "Scheduled" pill — that badge belongs to heartbeat messages only', () => {
+    expect(mountDocs().text()).not.toContain('Scheduled')
+  })
+})

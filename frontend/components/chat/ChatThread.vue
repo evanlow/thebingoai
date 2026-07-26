@@ -66,6 +66,10 @@
             <p class="text-[14px] text-[var(--ink-2)] mb-4 leading-relaxed">I'm your personal assistant — you can give me a name, set my personality, and teach me how you like to work.</p>
             <p class="text-sm text-[var(--ink-3)]">For one-off data queries, use <span class="font-medium text-[var(--ink-2)]">New Task</span>.</p>
           </div>
+          <div v-else-if="datasetsPending" class="text-center">
+            <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">Reading your data…</h2>
+            <p class="text-[14px] text-[var(--ink-2)]">I'm working out what each column means — one moment</p>
+          </div>
           <div v-else class="text-center">
             <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">Ask me anything about your data</h2>
             <p class="text-[14px] text-[var(--ink-2)]">I can write SQL queries and analyze your database</p>
@@ -132,6 +136,8 @@ const { datasets } = useDatasetStatus()
 const { briefings, ensure: ensureBriefings } = useBriefingsList()
 
 const datasetCount = computed(() => datasets.value.length)
+// 'failed' is terminal, so a failed upload reverts the empty state instead of hanging on it
+const datasetsPending = computed(() => datasets.value.some(d => d.step !== 'ready' && d.step !== 'failed'))
 const isPermanentThread = computed(() =>
   chatStore.currentThreadId === chatStore.permanentConversation?.id
 )

@@ -25,7 +25,7 @@ export interface Message {
   steps_log_expanded?: boolean  // user-toggled; defaults to collapsed
   created_at: string
   attachments?: FileAttachment[]
-  source?: 'chat' | 'heartbeat' | 'system' | 'context_reset' | 'qa_answer' | 'skill_suggestion'
+  source?: 'chat' | 'heartbeat' | 'system' | 'context_reset' | 'qa_answer' | 'skill_suggestion' | 'dataset_docs'
   skillSuggestions?: SkillSuggestion[]
   loop_detected?: boolean
   briefing_id?: number | null

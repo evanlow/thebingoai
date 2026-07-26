@@ -100,6 +100,31 @@ export const useChatWsHandlers = () => {
     })
   }
 
+  // Handle dataset documentation pushed by the CSV upload worker
+  const registerDatasetDocsHandler = () => {
+    return ws.on('dataset.docs', (data: any) => {
+      const threadId: string = data.thread_id
+      const msg = data.message
+
+      if (!msg) return
+
+      const frontendMsg: Message = {
+        id: String(msg.id),
+        role: 'assistant',
+        content: msg.content,
+        source: 'dataset_docs',
+        created_at: msg.timestamp,
+        agent_steps: [],
+        thinking_steps: []
+      }
+
+      // No incrementUnread — this fires for the thread the user is already looking at
+      if (chatStore.currentThreadId === threadId) {
+        chatStore.addMessage(frontendMsg)
+      }
+    })
+  }
+
   // Handle incoming skill suggestion notifications from WebSocket
   const registerSkillSuggestionsHandler = () => {
     return ws.on('skill_suggestions.new', (data: any) => {
@@ -167,5 +192,5 @@ export const useChatWsHandlers = () => {
     return () => { unsubMsg(); unsubReset() }
   }
 
-  return { registerTitleHandler, registerSummaryHandler, registerHeartbeatHandler, registerSkillSuggestionsHandler, registerTelegramHandler, resetContext }
+  return { registerTitleHandler, registerSummaryHandler, registerHeartbeatHandler, registerDatasetDocsHandler, registerSkillSuggestionsHandler, registerTelegramHandler, resetContext }
 }

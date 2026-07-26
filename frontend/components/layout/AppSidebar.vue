@@ -540,6 +540,7 @@ onMounted(() => {
   chat.registerTitleHandler()
   chat.registerSummaryHandler()
   chat.registerHeartbeatHandler()
+  chat.registerDatasetDocsHandler()
   chat.registerSkillSuggestionsHandler()
   chat.registerTelegramHandler()
 
