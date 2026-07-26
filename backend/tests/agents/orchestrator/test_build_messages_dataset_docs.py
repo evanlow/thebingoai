@@ -1,8 +1,9 @@
 """The dataset docs table is a UI artifact, not model context.
 
-Its content reaches the agents through the schema block instead (the semantic
-layer is overlaid by load_enriched_context), so re-sending the whole markdown
-table on every turn would be pure cost.
+Its content reaches the SQL-writing agents through their own schema blocks (the
+semantic layer is overlaid by load_enriched_context), so re-sending the whole
+markdown table on every turn would be pure cost. The orchestrator deliberately
+does not get it — see _render_dataset_summary.
 """
 from types import SimpleNamespace
 

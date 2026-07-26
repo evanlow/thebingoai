@@ -450,6 +450,7 @@ async def _run_judge_retry(
     orchestrator,
     base_messages: list,
     callbacks: Optional[list] = None,
+    ungrounded_dataset_turn: bool = False,
 ) -> Tuple[str, bool, Dict[str, Any], List[Dict[str, Any]]]:
     """Execute Layer-4 one-shot retry after the judge rejected the initial answer.
 
@@ -494,7 +495,13 @@ async def _run_judge_retry(
         retry_answer = _extract_final_answer(retry_messages_out)
         if retry_answer:
             retry_answer = _sanitize_technical_errors(_redact_connection_ids(retry_answer))
-            retry_verdict = await judge_response(user_question, retry_answer)
+            # Stay armed if the retry ALSO called no tool — otherwise the gate is
+            # one-shot: the second verdict would fall open and the ungrounded
+            # answer ships anyway.
+            retry_verdict = await judge_response(
+                user_question, retry_answer,
+                ungrounded_dataset_turn=ungrounded_dataset_turn and not retry_steps,
+            )
             if not retry_verdict.resolved:
                 logger.warning("Layer-4 retry still unresolved: %s", retry_verdict.reason)
                 if _is_build_dump_reply(retry_answer) or _is_build_dump_reply(initial_answer):
@@ -1448,6 +1455,17 @@ async def stream_orchestrator(
         # for pure-prose failures where no tool actually succeeded.
         any_tool_ran = any(_tool_result_succeeded(s) for s in tool_results)
 
+        # Grounding gate: a dataset connection was attached to this turn and no
+        # tool succeeded, so nothing the answer says about the data can have come
+        # from the data — the injected block carries only a routing summary
+        # (connection id, table, row/column counts). Armed in code because the
+        # judge has no view of the tool trail or of what was in context; it then
+        # decides, so a greeting or a clarifying question doesn't trigger a retry.
+        ungrounded_dataset_turn = not any_tool_ran and any(
+            str(f.get("file_id", "")).startswith("connection:")
+            for f in (file_contents or [])
+        )
+
         retry_succeeded: Optional[bool] = None
         judge_metadata: Optional[Dict[str, Any]] = None
         highlighted_text: Optional[str] = None
@@ -1456,7 +1474,11 @@ async def stream_orchestrator(
             yield {"type": "judge_status", "content": {"state": "approved"}}
         if settings.judge_enabled and final_answer_text and not dashboard_created:
             yield {"type": "judge_status", "content": {"state": "refining"}}
-            verdict = await judge_response(user_question, final_answer_text, tool_result_count=tool_result_count)
+            verdict = await judge_response(
+                user_question, final_answer_text,
+                tool_result_count=tool_result_count,
+                ungrounded_dataset_turn=ungrounded_dataset_turn,
+            )
             if not verdict.resolved and any_tool_ran:
                 logger.info(
                     "Layer-4 judge unresolved but %d tool(s) ran — skipping retry: %s",
@@ -1469,6 +1491,7 @@ async def stream_orchestrator(
                 final_answer_text, retry_succeeded, judge_metadata, retry_steps = await _run_judge_retry(
                     user_question, final_answer_text, verdict, orchestrator, messages,
                     callbacks=callbacks,
+                    ungrounded_dataset_turn=ungrounded_dataset_turn,
                 )
                 # Re-number retry steps against current step_number and emit
                 # tool_call/tool_result events so the UI updates live, then

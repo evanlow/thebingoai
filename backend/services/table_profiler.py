@@ -99,14 +99,25 @@ def profile_table(
 
     all_columns = columns[:MAX_COLUMNS]
 
+    # Dataset SQL runs through the resolved DataPlane (DuckDB locally, BigQuery
+    # under lockdown). Bare identifiers are not safe: the CSV connector sanitizes
+    # headers to [a-z0-9_], which keeps the characters legal but not the word. A
+    # column named `left` (or `order`, `range`, `end`) makes BigQuery read it as
+    # the start of its LEFT() function and fail with `Expected "(" but got ")"` —
+    # and since all numeric columns share one scan, one such column wiped out the
+    # stats for every numeric column in the table.
+    #
+    # No quote character is native to both engines: backticks are a parse error on
+    # DuckDB, and double quotes are string literals on BigQuery (they survive today
+    # only because BigQueryGCSPlane._rewrite_sql converts simple double-quoted
+    # identifiers to backticks — a coupling to another layer's regex that this
+    # module shouldn't depend on). Qualifying each column with a table alias is
+    # native on both: `MIN(t.left)` is a path expression, not a function call.
+    dataset_alias = "bingo_t"
+
     def q(name: str) -> str:
         if is_dataset:
-            # Dataset SQL runs through the resolved DataPlane (DuckDB locally,
-            # BigQuery under lockdown). Double quotes are string literals on
-            # BigQuery, and the plane's table-path rewrite breaks on quoted
-            # table names — bare identifiers parse on both engines (the CSV
-            # connector sanitizes names to [a-z0-9_]).
-            return name
+            return f"{dataset_alias}.{name}"
         return f"`{name}`" if db_type in ("mysql", "bigquery") else f'"{name}"'
 
     if db_type == "bigquery":
@@ -116,7 +127,7 @@ def profile_table(
         else:
             qualified_table = f"`{table_name}`"
     elif is_dataset:
-        qualified_table = table_name
+        qualified_table = f"{table_name} AS {dataset_alias}"
     elif schema_name:
         qualified_table = f"{q(schema_name)}.{q(table_name)}"
     else:
