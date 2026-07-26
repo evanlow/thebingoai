@@ -225,12 +225,17 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
 
     if conn.profiling_status == "ready" and conn.data_context is not None:
         try:
-            context = conn.data_context
+            # Enriched: overlays the semantic layer so the column meanings written
+            # by the dataset docs task travel with the schema.
+            from backend.services.semantic_layer import load_enriched_context
+            context = load_enriched_context(db, connection_id) or conn.data_context
             profile_lines = [f"=== Dataset Profile: {conn.source_filename or conn.name} ==="]
             profile_lines.append(f"Connection ID: {connection_id} (queryable via SQL)")
             tables = context.get("tables", {})
             for table_name, table_info in tables.items():
                 profile_lines.append(f"\nTable: {table_name}")
+                if table_info.get("description"):
+                    profile_lines.append(table_info["description"])
                 row_count = table_info.get("row_count")
                 if row_count is not None:
                     profile_lines.append(f"Row count: {row_count:,}")
@@ -240,7 +245,13 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
                     for col_name, col_info in list(columns.items())[:50]:
                         col_type = col_info.get("type", "")
                         role = col_info.get("role", "")
-                        profile_lines.append(f"  - {col_name} ({col_type}, {role})")
+                        line = f"  - {col_name} ({col_type}, {role})"
+                        meaning = " — ".join(
+                            p for p in (col_info.get("displayName"), col_info.get("description")) if p
+                        )
+                        if meaning:
+                            line += f" — {meaning}"
+                        profile_lines.append(line)
             profile_text = "\n".join(profile_lines)
             file_data["profile_text"] = profile_text
             file_data["truncated_text"] = profile_text

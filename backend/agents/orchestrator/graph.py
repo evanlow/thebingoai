@@ -304,6 +304,12 @@ def _build_messages(
                     content = "\n".join(attachment_lines) + "\n" + content
                 messages.append(HumanMessage(content=content))
             elif msg.role == "assistant":
+                # The dataset docs table is a UI artifact. Its content reaches the
+                # agents through the schema block instead (load_enriched_context
+                # overlays the same glossary), so re-sending the whole markdown
+                # table on every turn is pure cost.
+                if getattr(msg, "source", None) == "dataset_docs":
+                    continue
                 messages.append(AIMessage(content=msg.content))
     messages.append(build_user_message(user_question, file_contents))
     return messages

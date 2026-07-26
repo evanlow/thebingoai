@@ -110,14 +110,17 @@ def build_dataset_context_block(connection_metadata: list) -> str:
         return ""
 
     from backend.database.session import SessionLocal
-    from backend.services.connection_context import load_connection_context
     from backend.services.llm_privacy import metadata_only_for_connection
+    from backend.services.semantic_layer import load_enriched_context
 
     blocks: list[str] = []
     db = SessionLocal()
     try:
         for conn in dataset_conns:
-            ctx = load_connection_context(db, conn.id)
+            # Enriched: overlays the semantic layer so generated/curated column
+            # meanings travel with the column instead of only living in the chat
+            # message the docs task posts.
+            ctx = load_enriched_context(db, conn.id)
             if not ctx:
                 continue
             # Privacy: under metadata_only_llm, omit real values (range min/max,
@@ -128,6 +131,8 @@ def build_dataset_context_block(connection_metadata: list) -> str:
                     f'\nConnection {conn.id} ("{conn.name}") — table {tname} '
                     f"({tdata.get('rowCount', 0)} rows):"
                 ]
+                if tdata.get("description"):
+                    lines.append(f"  {tdata['description']}")
                 for cname, cdata in tdata.get("columns", {}).items():
                     parts = [
                         str(cdata.get("type", "text")),
@@ -140,7 +145,12 @@ def build_dataset_context_block(connection_metadata: list) -> str:
                     if not meta_only and cdata.get("topValues"):
                         sample = ", ".join(str(v) for v in cdata["topValues"][:3])
                         parts.append(f"e.g. {sample}")
-                    lines.append(f"  - {cname}: {' | '.join(parts)}")
+                    if cdata.get("description"):
+                        parts.append(cdata["description"])
+                    label = cname
+                    if cdata.get("displayName"):
+                        label = f"{cname} ({cdata['displayName']})"
+                    lines.append(f"  - {label}: {' | '.join(parts)}")
                 blocks.append("\n".join(lines))
     finally:
         db.close()
