@@ -3,10 +3,13 @@ export interface UploadingFile {
   file_id: string | null
   connection_id?: number | null  // for dataset files uploaded via connections API
   preview_url: string | null  // object URL for images
+  resolved_type: string  // corrected MIME from resolveFileType — file.type lies on drag-drop
   status: 'uploading' | 'processing' | 'ready' | 'error'
   error?: string
   progress?: number  // 0-100, only meaningful when status === 'uploading'
   sent?: boolean  // true after first send — skip in subsequent message embeddings
+  transferCompletedAt?: string  // ISO, stamped when progress hits 100
+  processingStartedAt?: string  // ISO, stamped when the server takes over
 }
 
 interface FileRejection {
@@ -140,6 +143,7 @@ export const useChatFileUpload = () => {
       file_id: null,
       connection_id: null,
       preview_url: IMAGE_TYPES.has(resolvedTypes.get(file)!) ? URL.createObjectURL(file) : null,
+      resolved_type: resolvedTypes.get(file)!,
       status: 'uploading' as const,
       progress: 0,
     }))

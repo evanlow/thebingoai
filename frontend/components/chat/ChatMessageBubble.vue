@@ -40,7 +40,13 @@
             v-else
             class="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-100 dark:bg-neutral-800 px-3 py-2 max-w-48"
           >
-            <svg class="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <!-- eslint-disable-next-line vue/no-v-html -- static bundled SVG asset -->
+            <div
+              v-if="fileIconHtml(attachment.type, attachment.name)"
+              class="h-4 w-4 flex-shrink-0"
+              v-html="fileIconHtml(attachment.type, attachment.name)"
+            />
+            <svg v-else class="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <div class="min-w-0 flex-1">
@@ -248,6 +254,7 @@ import UiDropdown from '~/components/ui/UiDropdown.vue'
 import { useDashboardStore } from '~/stores/dashboard'
 import { parseUtcDate, formatDate } from '~/utils/format'
 import { IMAGE_MIME_TYPES } from '~/composables/_chatConstants'
+import { fileIconHtml } from '~/composables/useFileIcons'
 
 const props = defineProps<{
   message: Message
