@@ -729,6 +729,17 @@ html.font-lg .mention-pc           { font-size: 14px; }
     width: max-content;
   }
 
+  /* Narrow tables (< 3 columns) stay inside the message column and wrap their
+     cells. max-content is only worth the sideways scroll when there are enough
+     columns that wrapping would squash them. */
+  .prose-chat table:not(:has(tr > *:nth-child(3))) {
+    width: 100%;
+  }
+  .prose-chat table:not(:has(tr > *:nth-child(3))) th,
+  .prose-chat table:not(:has(tr > *:nth-child(3))) td {
+    overflow-wrap: break-word;
+  }
+
   /* Wide result previews scroll horizontally; when wider than the column they
      break out leftward into the empty margin (right edge fixed, bubbles stay). */
   .prose-chat .table-scroll {
