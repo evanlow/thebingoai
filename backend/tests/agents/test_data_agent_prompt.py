@@ -39,6 +39,31 @@ def test_worked_example_still_answers():
 
 
 # ---------------------------------------------------------------------------
+# No prompt text may promise an average
+# ---------------------------------------------------------------------------
+# `avg` is stripped from profile_table results under the metadata-only floor
+# (llm_privacy._VALUE_KEYS). Prompt text that still tells the agent to report one
+# is an invitation to fabricate a plausible-looking number.
+
+def test_prompt_does_not_promise_averages_from_profile_table():
+    assert "avg $50K" not in P
+    assert "numeric avg/min/max" not in P
+    assert "avg: 512.3" not in P
+    assert "avg ~512" not in P
+
+
+def test_prompt_forbids_inventing_a_missing_average():
+    assert "never invent a plausible-looking average" in P.lower() or \
+           "never fabricate values or invent a plausible-looking average" in P
+
+
+def test_worked_example_reports_shape_not_a_mean():
+    example = P[P.index("Example workflow"):]
+    assert "distinct" in example  # structural stats still demonstrated
+    assert "avg" not in example
+
+
+# ---------------------------------------------------------------------------
 # Pre-loaded dataset schema block carries semantic-layer meaning
 # ---------------------------------------------------------------------------
 

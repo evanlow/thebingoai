@@ -9,7 +9,7 @@ from backend.profiler.dataset_profiler import profile_dataframe
 
 # --- pure redaction functions ------------------------------------------------
 
-def test_strip_profile_values_drops_real_values_keeps_derived():
+def test_strip_profile_values_drops_record_derived_keeps_structural():
     profile = {
         "table_name": "orders",
         "row_count": 100,
@@ -21,16 +21,28 @@ def test_strip_profile_values_drops_real_values_keeps_derived():
     }
     out = llm_privacy.strip_profile_values(profile)
 
-    # real values gone
+    # computed from the real records — gone
     assert "min" not in out["columns"]["amt"]
     assert "max" not in out["columns"]["amt"]
     assert "top_values" not in out["columns"]["status"]
-    # derived kept
-    assert out["columns"]["amt"]["avg"] == 50.0
+    # structural counts — kept
+    assert out["columns"]["amt"]["type"] == "numeric"
     assert out["columns"]["amt"]["null_count"] == 2
     assert out["columns"]["status"]["distinct_count"] == 3
     # non-destructive
     assert "min" in profile["columns"]["amt"]
+
+
+def test_strip_profile_values_drops_the_average():
+    """An average is computed from the same real records as the minimum — a mean
+    salary comes from actual salaries — so it is withheld with them, not kept as a
+    'derived' stat. This was the last number the data agent had under strict mode;
+    dropping it is deliberate, not an oversight."""
+    out = llm_privacy.strip_profile_values(
+        {"columns": {"salary": {"type": "numeric", "avg": 6700.0, "null_count": 0}}}
+    )
+    assert "avg" not in out["columns"]["salary"]
+    assert out["columns"]["salary"]["null_count"] == 0
 
 
 def test_strip_preview_empties_rows_and_flags():
@@ -117,12 +129,16 @@ def test_to_prompt_text_include_values_false_omits_real_values():
 
     # full render exposes samples + value counts + min/max
     assert "## Sample Data" in full
+    assert "Mean:" in full
     # safe render withholds them
     assert "## Sample Data" not in safe
     assert "Value counts" not in safe
     assert "Min:" not in safe
     assert "Mode:" not in safe
-    # derived stats survive
-    assert "Mean:" in safe
+    # the mean is computed from the same records as the minimum — withheld with it
+    assert "Mean:" not in safe
+    assert "Std:" not in safe
+    assert "Skewness:" not in safe
     # structural info survives
     assert "Columns Overview" in safe
+    assert "Unique:" in safe

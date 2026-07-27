@@ -149,15 +149,22 @@ def build_dashboard_runtime_suffix(
                 cols = tdata.get("columns", {})
                 dims = [_column_label(c, d) for c, d in cols.items() if d.get("role") == "dimension"]
                 measures = [_column_label(c, d) for c, d in cols.items() if d.get("role") == "measure"]
-                if dims or measures:
+                # Keys carry documented meaning too ("employee_id — one row per
+                # employee"); rendering only dimensions and measures dropped it.
+                keys = [_column_label(c, d) for c, d in cols.items() if d.get("role") == "key"]
+                if dims or measures or keys:
                     header = tname
                     if tdata.get("description"):
                         header = f"{tname} — {tdata['description']}"
                     # "; " not ", ": a description may itself contain a comma, which
                     # would read as an extra column name inside the brackets.
-                    lines.append(
-                        f"  {header}: dimensions=[{'; '.join(dims)}] measures=[{'; '.join(measures)}]"
-                    )
+                    parts = [
+                        f"dimensions=[{'; '.join(dims)}]",
+                        f"measures=[{'; '.join(measures)}]",
+                    ]
+                    if keys:
+                        parts.append(f"keys=[{'; '.join(keys)}]")
+                    lines.append(f"  {header}: {' '.join(parts)}")
             rels = ctx.get("relationships", [])
             if rels:
                 lines.append(f"Relationships: {', '.join(r['from'] + ' → ' + r['to'] for r in rels[:10])}")

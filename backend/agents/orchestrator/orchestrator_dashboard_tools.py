@@ -137,11 +137,24 @@ async def _do_create_dashboard(
     db_session_factory: Callable,
     request: str,
     target_connection_id: int | None = None,
+    eda_findings: str = "",
 ) -> str:
     """Business logic for create_dashboard tool."""
     from backend.models.database_connection import DatabaseConnection
     from backend.config import settings as _settings
     from backend.services.seed import readable_connection_clause
+
+    # The sub-agent gets a request string and nothing else — AgentContext carries no
+    # messages — so anything the conversation already established has to travel here
+    # or it is lost. Enrich before the mesh branch below, which sends `request` as-is.
+    if eda_findings:
+        request = (
+            f"{request}\n\n"
+            "## Findings already established with the user\n"
+            "Build the dashboard's story on these — do not re-derive a generic one, "
+            "and do not contradict them.\n"
+            f"{eda_findings}"
+        )
 
     db = db_session_factory()
     try:
@@ -179,6 +192,7 @@ async def _do_create_dashboard(
                     response = await _verify_and_retry(
                         response, context, db_session_factory, target_connection_id, retries_left=0,
                     )
+                    _attach_widget_summary(response, context, db_session_factory)
                     return json.dumps(response)
                 return json.dumps({"success": False, "message": "Dashboard agent did not respond in time"})
             finally:
@@ -204,6 +218,7 @@ async def _do_create_dashboard(
 
     result = await invoke_dashboard_agent(request, context, db_session_factory, target_connection_id=target_connection_id)
     result = await _verify_and_retry(result, context, db_session_factory, target_connection_id)
+    _attach_widget_summary(result, context, db_session_factory)
     return json.dumps(result)
 
 
@@ -455,6 +470,122 @@ def _materialize_sql_params(sql: str, params: dict) -> str:
     return sql
 
 
+def _summarize_widgets(widgets: list) -> list:
+    """Summarize executed widgets into per-widget figures for the LLM to narrate.
+
+    Sends what the user is already looking at — a KPI's computed value, a chart
+    series' min/max/avg/total — and nothing else. Deliberately excluded: table row
+    contents and chart axis labels, which are raw cell values (`label_count`, not
+    the labels). Callers must pass widgets whose SQL has already run, otherwise
+    `config.value` / `config.data` are empty and every entry comes back blank.
+    """
+    out = []
+    for w in widgets:
+        wtype = w.get("widget", {}).get("type", "unknown")
+        config = w.get("widget", {}).get("config", {})
+        entry = {"id": w.get("id"), "type": wtype}
+
+        if wtype == "kpi":
+            entry.update({
+                "label": config.get("label"),
+                "value": config.get("value"),
+                "prefix": config.get("prefix"),
+                "suffix": config.get("suffix"),
+                "trend": config.get("trend"),
+            })
+        elif wtype == "chart":
+            chart_data = config.get("data") or {}
+            datasets = chart_data.get("datasets", [])
+            labels = chart_data.get("labels", [])
+            entry.update({
+                "chart_type": config.get("type"),
+                "title": config.get("title"),
+                "label_count": len(labels),
+                "dataset_stats": [],
+            })
+            for ds in datasets:
+                values = [v for v in (ds.get("data") or []) if isinstance(v, (int, float))]
+                if values:
+                    first, last = values[0], values[-1]
+                    change_pct = round((last - first) / first * 100, 1) if first else None
+                    entry["dataset_stats"].append({
+                        "label": ds.get("label"),
+                        "min": min(values),
+                        "max": max(values),
+                        "avg": round(sum(values) / len(values), 2),
+                        "total": round(sum(values), 2),
+                        "trend": "increasing" if last > first else "decreasing" if last < first else "flat",
+                        "change_pct": change_pct,
+                    })
+        elif wtype == "table":
+            entry.update({
+                "title": config.get("title"),
+                "column_count": len(config.get("columns") or []),
+                "row_count": len(config.get("rows") or []),
+            })
+        elif wtype == "text":
+            entry["content_length"] = len(config.get("content") or "")
+        elif wtype == "filter":
+            entry["controls"] = [
+                {
+                    "key": c.get("key"),
+                    "label": c.get("label"),
+                    "type": c.get("type"),
+                    "column": c.get("column"),
+                }
+                for c in (config.get("controls") or [])
+            ]
+
+        out.append(entry)
+    return out
+
+
+def _attach_widget_summary(
+    result: dict, context: AgentContext, db_session_factory: Callable
+) -> None:
+    """Add the created dashboard's executed figures to *result*, in place.
+
+    The sub-agent never sees a number — widget SQL runs after it emits — so without
+    this the orchestrator can only report a widget count. `_execute_widget_sql`
+    populated the widgets before persistence, so this is a read, not a re-execution.
+    It must run AFTER `_verify_and_retry`, which may have replaced the widgets.
+    """
+    if not result.get("success"):
+        return
+    dashboard_id = result.get("dashboard_id")
+    if not dashboard_id:
+        return
+
+    from backend.models.dashboard import Dashboard
+
+    db = db_session_factory()
+    try:
+        widgets = (
+            db.query(Dashboard.widgets)
+            .filter(Dashboard.id == dashboard_id, Dashboard.user_id == context.user_id)
+            .scalar()
+        )
+    except Exception:
+        # Narrating is a bonus; never fail a created dashboard over it.
+        logger.warning(
+            "Could not load widgets for dashboard %s summary", dashboard_id, exc_info=True
+        )
+        return
+    finally:
+        db.close()
+
+    summary = _summarize_widgets(widgets or [])
+    if not summary:
+        return
+    result["widget_summary"] = summary
+    result["message"] = (
+        f"{result.get('message', '')}\n\n"
+        "Report this dashboard to the user in 2-4 sentences using the figures in "
+        "widget_summary — the headline numbers and the most notable movement. "
+        "Do not list the widgets."
+    )
+
+
 async def _do_analyze_dashboard(
     context: AgentContext,
     db_session_factory: Callable,
@@ -513,64 +644,7 @@ async def _do_analyze_dashboard(
             await _execute_widget_sql(w, db_session_factory, data_context, context.user_id)
 
     # Build per-widget analysis entries
-    widget_analyses = []
-    for w in widgets:
-        wtype = w.get("widget", {}).get("type", "unknown")
-        config = w.get("widget", {}).get("config", {})
-        entry = {"id": w.get("id"), "type": wtype}
-
-        if wtype == "kpi":
-            entry.update({
-                "label": config.get("label"),
-                "value": config.get("value"),
-                "prefix": config.get("prefix"),
-                "suffix": config.get("suffix"),
-                "trend": config.get("trend"),
-            })
-        elif wtype == "chart":
-            chart_data = config.get("data") or {}
-            datasets = chart_data.get("datasets", [])
-            labels = chart_data.get("labels", [])
-            entry.update({
-                "chart_type": config.get("type"),
-                "title": config.get("title"),
-                "label_count": len(labels),
-                "dataset_stats": [],
-            })
-            for ds in datasets:
-                values = [v for v in (ds.get("data") or []) if isinstance(v, (int, float))]
-                if values:
-                    first, last = values[0], values[-1]
-                    change_pct = round((last - first) / first * 100, 1) if first else None
-                    entry["dataset_stats"].append({
-                        "label": ds.get("label"),
-                        "min": min(values),
-                        "max": max(values),
-                        "avg": round(sum(values) / len(values), 2),
-                        "total": round(sum(values), 2),
-                        "trend": "increasing" if last > first else "decreasing" if last < first else "flat",
-                        "change_pct": change_pct,
-                    })
-        elif wtype == "table":
-            entry.update({
-                "title": config.get("title"),
-                "column_count": len(config.get("columns") or []),
-                "row_count": len(config.get("rows") or []),
-            })
-        elif wtype == "text":
-            entry["content_length"] = len(config.get("content") or "")
-        elif wtype == "filter":
-            entry["controls"] = [
-                {
-                    "key": c.get("key"),
-                    "label": c.get("label"),
-                    "type": c.get("type"),
-                    "column": c.get("column"),
-                }
-                for c in (config.get("controls") or [])
-            ]
-
-        widget_analyses.append(entry)
+    widget_analyses = _summarize_widgets(widgets)
 
     return json.dumps({
         "success": True,
@@ -590,7 +664,11 @@ def build_dashboard_tools(context: AgentContext, db_session_factory: Optional[Ca
         return []
 
     @tool
-    async def create_dashboard(request: str, target_connection_id: int | None = None) -> str:
+    async def create_dashboard(
+        request: str,
+        target_connection_id: int | None = None,
+        eda_findings: str = "",
+    ) -> str:
         """
         Create a persistent, fully-featured dashboard from a natural language request.
 
@@ -628,15 +706,23 @@ def build_dashboard_tools(context: AgentContext, db_session_factory: Optional[Ca
             request: Natural language description of the dashboard to create. Can be as
                      high-level as "create a sales dashboard" or as specific as "build a
                      dashboard showing monthly revenue by region and top 10 customers".
+            eda_findings: What this conversation has already established about the data —
+                     the concrete findings, the segments that mattered, the user's own
+                     framing. The sub-agent starts from a blank slate and cannot see this
+                     conversation, so anything you leave out is re-derived generically or
+                     lost. Pass this whenever the data has already been analysed here.
 
         Returns:
             JSON string with the following fields:
                 - success (bool): Whether the dashboard was created successfully
                 - dashboard_id (str): Unique identifier of the created dashboard
                 - message (str): Human-readable summary of what was created
+                - widget_summary (list): Per-widget figures from the executed widgets
                 - steps (list): Ordered list of actions taken by the sub-agent
         """
-        return await _do_create_dashboard(context, db_session_factory, request, target_connection_id)
+        return await _do_create_dashboard(
+            context, db_session_factory, request, target_connection_id, eda_findings
+        )
 
     @tool
     async def update_dashboard(request: str, dashboard_id: int) -> str:

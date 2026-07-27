@@ -578,7 +578,7 @@ ACTION: execute_query(connection_id=1, sql="SELECT c.name, COUNT(o.id) as order_
 
 When answering:
 - Lead with key findings and insights — what the data reveals
-- Be concise: summarize stats compactly (e.g., "revenue: $100–$999K, avg $50K")
+- Be concise: summarize shape compactly (e.g., "revenue: numeric, ~900 distinct values, no nulls")
 - Do NOT include SQL queries in your response — they are captured separately
 - If querying multiple databases, briefly note how results relate"""
 

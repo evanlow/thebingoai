@@ -87,15 +87,19 @@ Phase 4 — Create:
 DASHBOARD_EDA_FRAMEWORK = """## EDA Framework (think like a data scientist)
 
 Reason over what the profiling step and `build_dashboard_context` actually give you:
-column **roles** (dimension/measure/key), **cardinality** (distinct counts), **null
-counts**, and numeric **averages**. Real extreme values (numeric/date `min`/`max`) and
-`top_values` are only present when the org's privacy policy permits — under the default
-metadata-only policy they are withheld, so never assume a raw endpoint or sample value is
-in front of you. Work through these four steps before configuring any widget.
+column and table **descriptions** (the documented business meaning), **business
+definitions**, column **roles** (dimension/measure/key), **cardinality** (distinct
+counts) and **null counts**. Anything computed from real records — numeric/date
+`min`/`max`, `top_values`, averages — is present only when the org's privacy policy
+permits; under the default metadata-only policy it is withheld, so never assume a raw
+endpoint, a sample value or an average is in front of you, and never invent one.
+
+The documentation is your richest signal. It states what the business tracks and why,
+which no count can. Work through these four steps before configuring any widget.
 
 **Step 1 — Data Understanding:**
-- State the grain of each table: what ONE row represents (an order? a daily snapshot? an event?). Aggregations must respect the grain — never SUM a column that is already a running total.
-- Classify every relevant column: date/time, categorical dimension (note its cardinality tier), or numeric measure. Distinguish additive measures (revenue, count, quantity → SUM) from non-additive ones (rate, percentage, price, score → AVG, never SUM) — infer this from the column's role, name, and type, not from a stat.
+- State the grain of each table: what ONE row represents (an order? a daily snapshot? an event?). The table description usually states the grain outright — read it before guessing. Aggregations must respect the grain — never SUM a column that is already a running total.
+- Classify every relevant column: date/time, categorical dimension (note its cardinality tier), or numeric measure. Distinguish additive measures (revenue, count, quantity → SUM) from non-additive ones (rate, percentage, price, score → AVG, never SUM). **Read the column's description first** — it states the unit and the scale, and those decide the aggregation and the formatting (a 0-1 score is not a percentage; a rate is not a total). Fall back to role, name and type. Never infer this from a statistic.
 - Set time granularity from the date span **when the date min/max are available**: ≤ ~60 days → daily, months to ~18 months → weekly/monthly, multi-year → monthly/quarterly. When the endpoints are withheld, do NOT guess a span — emit a `dateRangeSource` SQL (see the storyboard) so the range is computed at query time, and pick a sensible default granularity for the requested window.
 - Note data-quality signals from the stats (high null counts on a key column, ID-like cardinality on a "category" column) and design around them (`WHERE col IS NOT NULL`, top-N limits).
 
@@ -106,6 +110,10 @@ Derive 3-5 concrete business questions the user's request + this data can answer
 - **Ranking / concentration**: which entities dominate? Is the metric concentrated in a few (top-N, share-of-total)?
 - **Comparison / correlation**: how do two measures relate across entities? Do segments behave differently?
 - **Conversion / flow**: are there ordered stages with drop-off, or phases with start/end dates?
+Two rules on where the questions come from:
+- **Documented meaning first**: a column carrying a description, a display name or a business definition is one the business deliberately tracks — that is where the questions worth asking live. Prefer a question grounded in a documented measure over one derived from an undocumented column, and phrase it in the words the documentation uses.
+- **Findings already established**: if the request carries a `## Findings already established with the user` block, those findings ARE your question skeleton. Verify each against the profile, keep the user's framing and vocabulary, and do not discard them for a generic derivation.
+
 Keep only questions the schema can actually answer; discard the rest. Each surviving question becomes a widget (or small widget group) and names its analysis section.
 
 **Step 3 — Metric & Widget Mapping:**
@@ -122,7 +130,9 @@ Map each question to ONE primary widget plus the feature that sharpens it:
 One widget per question. No filler widgets — if two widgets would show the same insight, keep the better one.
 
 **Step 4 — Narrative Assembly:**
-Group the answered questions into the storyboard below. Each analysis section's title names the insight theme, not the widget type ("Revenue Trends & Seasonality", not "Line Charts")."""
+Group the answered questions into the storyboard below. Each analysis section's title names the insight theme, not the widget type ("Revenue Trends & Seasonality", not "Line Charts").
+
+Draw the wording from the documentation — the domain vocabulary in the table/column descriptions, display names and business definitions. A title built from the documented meaning tells the reader what they are looking at; a generic one ("Analysis & Trends") tells them nothing, and is a fallback for when the data genuinely supports no theme, not a default."""
 
 
 # ---------------------------------------------------------------------------

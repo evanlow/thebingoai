@@ -44,6 +44,23 @@ def test_suffix_carries_display_name_and_description():
     assert "measures=[rev_amt — order revenue in MYR, excludes tax]" in out
 
 
+def test_key_role_columns_and_their_descriptions_are_rendered():
+    """Rendering only dimensions and measures silently dropped key columns — and a
+    key's description often states the table's grain ("one row per employee"), which
+    is step 1 of the EDA framework."""
+    ctx = copy.deepcopy(_CTX)
+    ctx["tables"]["sales_q4"]["columns"]["order_id"] = {
+        "type": "text", "role": "key", "description": "one row per order line",
+    }
+
+    out = _suffix(ctx)
+    assert "keys=[order_id — one row per order line]" in out
+
+
+def test_keys_bucket_is_omitted_when_there_are_none():
+    assert "keys=[" not in _suffix(copy.deepcopy(_CTX))
+
+
 def test_columns_are_separated_by_semicolons_so_commas_in_descriptions_are_unambiguous():
     """A description containing a comma must not read as an extra column."""
     ctx = copy.deepcopy(_CTX)
