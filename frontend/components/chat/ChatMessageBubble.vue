@@ -117,7 +117,7 @@
           <svg class="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
           </svg>
-          <span class="font-medium text-gray-600 dark:text-neutral-300">{{ f.label }}</span>
+          <span class="font-medium text-gray-600 dark:text-neutral-300">{{ displayLabel(f.label) }}</span>
           <span>· {{ f.row_count }}×{{ f.col_count }}</span>
           <UiDropdown :items="exportItems(f)" align="left">
             <template #trigger>
@@ -468,6 +468,14 @@ const isImageType = (mimeType: string) => IMAGE_MIME_TYPES.has(mimeType)
 const pillAttachments = computed(() =>
   (props.message.attachments ?? []).filter(a => !a.file_id?.startsWith('connection:'))
 )
+
+// `label` is the SQL table the agent queried (`csv_<id>`), not a name the user
+// chose. Swap in the upload's filename when the docs payload knows it.
+const displayLabel = (label: string) => {
+  const m = /^csv_(\d+)$/.exec(label)
+  const docs = m ? chatStore.datasetDocs?.[Number(m[1])] : null
+  return docs?.filename || label
+}
 
 const formatAttachmentSize = (bytes: number) => {
   if (!bytes) return ''

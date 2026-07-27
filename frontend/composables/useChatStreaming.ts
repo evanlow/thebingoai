@@ -559,6 +559,20 @@ export const useChatStreaming = () => {
         f => uploadingNames.includes(f.file.name) && f.connection_id != null
       )
 
+      // The optimistic attachments were built before the upload, so they carry
+      // `__pending__:<name>`. Every card/pill consumer keys on `connection:<id>`,
+      // so without this rewrite the live turn shows pills and no cards — and the
+      // documentation, which lives inside the card, has nowhere to render.
+      if (uploadedThisTurn.length > 0 && userMessage.attachments) {
+        const byName = new Map(uploadedThisTurn.map(f => [f.file.name, f]))
+        chatStore.updateMessageById(userMessage.id, {
+          attachments: userMessage.attachments.map(att => {
+            const f = byName.get(att.name)
+            return f?.file_id ? { ...att, file_id: f.file_id } : att
+          }),
+        })
+      }
+
       const pendingNow = attachedFiles.value.filter(f => CSV_MIME_SET2.has(f.resolved_type) && !f.file_id && !f.sent)
 
       if (pendingNow.length > 0) {

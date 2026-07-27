@@ -497,3 +497,40 @@ describe('ChatMessageBubble — dataset attachments are not pilled', () => {
     expect(wrapper.text()).toContain('doc.pdf')
   })
 })
+
+describe('ChatMessageBubble — query results are named after the file', () => {
+  const withDocs = (datasetDocs: Record<number, any>) =>
+    vi.stubGlobal('useChatStore', () => ({ isStreaming: false, messages: [], datasetDocs }))
+
+  function mountFiles(query_files: any[]) {
+    return mount(ChatMessageBubble, {
+      props: {
+        message: { ...assistantMsg, query_files },
+        showActions: false, actionType: null, isLast: false, agentName: 'Bingo',
+      },
+    })
+  }
+
+  const file = (label: string) => ({ result_ref: `r-${label}`, label, row_count: 10, col_count: 13 })
+
+  it('renders the upload filename in place of the internal table name', () => {
+    withDocs({ 101: { connection_id: 101, filename: 'HR_dataset.csv' } })
+    const wrapper = mountFiles([file('csv_101')])
+
+    expect(wrapper.text()).toContain('HR_dataset.csv')
+    expect(wrapper.text()).not.toContain('csv_101')
+  })
+
+  it('keeps the table name when no documentation is known for it', () => {
+    withDocs({})
+    expect(mountFiles([file('csv_101')]).text()).toContain('csv_101')
+  })
+
+  it('never rewrites a label that is not a dataset table', () => {
+    withDocs({ 101: { connection_id: 101, filename: 'HR_dataset.csv' } })
+    const wrapper = mountFiles([file('columns'), file('public.orders')])
+
+    expect(wrapper.text()).toContain('columns')
+    expect(wrapper.text()).toContain('public.orders')
+  })
+})

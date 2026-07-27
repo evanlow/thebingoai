@@ -315,6 +315,21 @@ describe('useChatStreaming — deferred dataset upload', () => {
   })
 })
 
+/** Simulate an upload landing: the file gains a connection id. */
+function uploadsAs(...connectionIds: number[]) {
+  mockAttachedFiles.value = connectionIds.map((id, i) =>
+    attachment({ file: { name: `f${i}.csv`, type: CSV_MIME, size: 5 } }))
+  mockUploadPendingDatasets.mockImplementation(async () => {
+    mockAttachedFiles.value = connectionIds.map((id, i) => attachment({
+      file: { name: `f${i}.csv`, type: CSV_MIME, size: 5 },
+      status: 'processing', file_id: `connection:${id}`, connection_id: id,
+      row_count: 100 + i, sent: true,
+    }))
+  })
+}
+
+const tick = () => new Promise(r => setTimeout(r, 0))
+
 describe('useChatStreaming — the answer waits for documentation', () => {
   let store: ReturnType<typeof useChatStore>
 
@@ -329,21 +344,6 @@ describe('useChatStreaming — the answer waits for documentation', () => {
     store.currentThreadId = 't1'
     store.pendingConnectionIds = []
   })
-
-  /** Simulate an upload landing: the file gains a connection id. */
-  function uploadsAs(...connectionIds: number[]) {
-    mockAttachedFiles.value = connectionIds.map((id, i) =>
-      attachment({ file: { name: `f${i}.csv`, type: CSV_MIME, size: 5 } }))
-    mockUploadPendingDatasets.mockImplementation(async () => {
-      mockAttachedFiles.value = connectionIds.map((id, i) => attachment({
-        file: { name: `f${i}.csv`, type: CSV_MIME, size: 5 },
-        status: 'processing', file_id: `connection:${id}`, connection_id: id,
-        row_count: 100 + i, sent: true,
-      }))
-    })
-  }
-
-  const tick = () => new Promise(r => setTimeout(r, 0))
 
   it('holds chat.send while the connection is awaiting documentation', async () => {
     uploadsAs(42)
@@ -437,6 +437,60 @@ describe('useChatStreaming — the answer waits for documentation', () => {
     await tick()
 
     expect(chatSends()).toHaveLength(1)
+  })
+})
+
+describe('useChatStreaming — the optimistic message learns its connection ids', () => {
+  let store: ReturnType<typeof useChatStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    wsHandlers.clear()
+    wsUnsubs.clear()
+    wsSend.mockClear()
+    mockUploadPendingDatasets.mockReset()
+    mockAttachedFiles.value = []
+    store = useChatStore()
+    store.currentThreadId = 't1'
+    store.pendingConnectionIds = []
+  })
+
+  const userMsg = () => store.messages.find(m => m.role === 'user')!
+  const fileIds = () => userMsg().attachments!.map(a => a.file_id)
+
+  it('rewrites the placeholders once the deferred upload returns', async () => {
+    uploadsAs(101, 102)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('analyse both of the docs')
+
+    // Built before the upload, so all it can carry is the file's name.
+    expect(fileIds()).toEqual(['__pending__:f0.csv', '__pending__:f1.csv'])
+
+    await tick()
+
+    // Cards, pills and the dataset-status source all key on this prefix.
+    expect(fileIds()).toEqual(['connection:101', 'connection:102'])
+  })
+
+  it('leaves a file whose upload failed on its placeholder', async () => {
+    const named = (name: string, over: Record<string, any> = {}) =>
+      attachment({ file: { name, type: CSV_MIME, size: 5 }, ...over })
+
+    mockAttachedFiles.value = [named('ok.csv'), named('bad.csv')]
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      mockAttachedFiles.value = [
+        named('ok.csv', {
+          status: 'processing', file_id: 'connection:5', connection_id: 5, sent: true,
+        }),
+        named('bad.csv', { status: 'failed', error: 'Upload failed' }),
+      ]
+    })
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('two files')
+    await tick()
+
+    expect(fileIds()).toEqual(['connection:5', '__pending__:bad.csv'])
   })
 })
 
