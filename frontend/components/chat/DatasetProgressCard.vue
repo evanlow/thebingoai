@@ -12,15 +12,14 @@
       <span class="text-sm text-gray-300 shrink-0">{{ formatSize(dataset.size) }}</span>
     </div>
 
-    <!-- Vertical timeline -->
-    <div class="pl-1">
+    <!-- Horizontal timeline -->
+    <div class="flex items-start">
       <DatasetTimelineStep
         :status="stepStatus('uploading')"
         label="Uploaded"
         active-label="Uploading..."
         :timestamp="stepTimestampFor('uploading')"
         :is-last="false"
-        :next-status="stepStatus('schema')"
       />
       <DatasetTimelineStep
         :status="stepStatus('schema')"
@@ -28,7 +27,7 @@
         active-label="Building schema..."
         :timestamp="stepTimestampFor('schema')"
         :is-last="false"
-        :next-status="stepStatus('profiling')"
+        :prev-status="stepStatus('uploading')"
       />
       <DatasetTimelineStep
         :status="stepStatus('profiling')"
@@ -36,8 +35,7 @@
         active-label="Profiling data..."
         :timestamp="stepTimestampFor('profiling')"
         :is-last="false"
-        :next-status="stepStatus('documenting')"
-        :error="dataset.step === 'failed' && stepStatus('profiling') === 'failed' ? dataset.error : null"
+        :prev-status="stepStatus('schema')"
       />
       <DatasetTimelineStep
         :status="stepStatus('documenting')"
@@ -45,8 +43,14 @@
         active-label="Reading the columns..."
         :timestamp="stepTimestampFor('documenting')"
         :is-last="true"
+        :prev-status="stepStatus('profiling')"
       />
     </div>
+
+    <!-- Failure detail sits under the whole row: a step column is too narrow for it -->
+    <p v-if="dataset.step === 'failed' && dataset.error" class="mt-1.5 text-sm text-red-400">
+      {{ dataset.error }}
+    </p>
 
     <!-- What Bingo read the columns as. Collapsed by default — it is a review
          prompt, not something to read every time. -->
@@ -66,12 +70,28 @@
         <p v-if="docs?.table_description" class="text-sm text-[var(--ink-2)] mb-1.5">
           {{ docs.table_description }}
         </p>
-        <dl class="flex flex-col gap-1">
-          <div v-for="col in docsColumns" :key="col.name" class="flex gap-2 text-sm">
-            <dt class="font-mono text-[var(--ink-1)] shrink-0">{{ col.name }}</dt>
-            <dd class="text-[var(--ink-2)] min-w-0">{{ meaningOf(col) }}</dd>
-          </div>
-        </dl>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="text-left text-[var(--ink-3)] border-b border-[var(--line)]">
+                <th class="font-normal pb-1 pr-3">Column</th>
+                <th class="font-normal pb-1 pr-3">Reads as</th>
+                <th class="font-normal pb-1">Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="col in docsColumns"
+                :key="col.name"
+                class="align-top border-b border-[var(--line)] last:border-0"
+              >
+                <td class="py-1 pr-3 font-mono text-[var(--ink-1)] whitespace-nowrap">{{ col.name }}</td>
+                <td class="py-1 pr-3 text-[var(--ink-2)]">{{ col.display_name }}</td>
+                <td class="py-1 text-[var(--ink-2)]">{{ col.description }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p class="mt-2 text-sm text-[var(--ink-3)]">Tell me anything I've read wrong.</p>
       </div>
     </div>
@@ -80,7 +100,7 @@
     <button
       v-if="dataset.step === 'failed' && dataset.connectionId && stepStatus('profiling') === 'failed'"
       @click="retryProfiling(dataset.connectionId!)"
-      class="mt-1.5 ml-6 text-sm text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded px-2 py-0.5 hover:bg-[var(--paper-3)] transition-colors"
+      class="mt-1.5 text-sm text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded px-2 py-0.5 hover:bg-[var(--paper-3)] transition-colors"
     >
       Retry
     </button>
@@ -113,9 +133,6 @@ const docs = computed(() =>
     : undefined
 )
 const docsColumns = computed<DatasetDocsColumn[]>(() => docs.value?.columns ?? [])
-
-const meaningOf = (col: DatasetDocsColumn) =>
-  [col.display_name, col.description].filter(Boolean).join(' — ')
 
 /**
  * A thread loaded from history never saw the `dataset.docs` event, so the card

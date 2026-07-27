@@ -148,8 +148,9 @@ describe('DatasetProgressCard — documentation inside the card', () => {
     const body = wrapper.find('[data-testid="docs-body"]')
     expect(body.exists()).toBe(true)
     expect(body.text()).toContain('emp_id')
-    expect(body.text()).toContain('Employee ID — Unique identifier')
-    // display_name alone is enough — no trailing separator.
+    // Name and meaning are separate table columns.
+    expect(body.text()).toContain('Employee ID')
+    expect(body.text()).toContain('Unique identifier')
     expect(body.text()).toContain('Department')
     expect(body.text()).toContain('Employee records')
     expect(body.text()).toContain("Tell me anything I've read wrong.")
