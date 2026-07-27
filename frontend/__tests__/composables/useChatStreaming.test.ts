@@ -4,10 +4,34 @@ import { setActivePinia, createPinia } from 'pinia'
 
 // ── Mock the file-upload composable (imported by useChatStreaming) ──────
 // require('vue') inside the factory avoids the hoist-order TDZ on `ref`.
-vi.mock('~/composables/useChatFileUpload', () => {
+const { mockAttachedFiles, mockUploadPendingDatasets } = vi.hoisted(() => {
   const { ref } = require('vue')
-  return { useChatFileUpload: () => ({ attachedFiles: ref([]) }) }
+  return {
+    mockAttachedFiles: ref([] as any[]),
+    mockUploadPendingDatasets: vi.fn(async () => {}),
+  }
 })
+vi.mock('~/composables/useChatFileUpload', () => ({
+  useChatFileUpload: () => ({
+    attachedFiles: mockAttachedFiles,
+    uploadPendingDatasets: mockUploadPendingDatasets,
+  }),
+}))
+
+const CSV_MIME = 'text/csv'
+
+/** An attachment as it looks in the composer, defaulting to a resolved CSV. */
+function attachment(over: Record<string, any> = {}) {
+  return {
+    file: { name: 'data.csv', type: CSV_MIME, size: 10 },
+    file_id: null,
+    connection_id: null,
+    preview_url: null,
+    resolved_type: CSV_MIME,
+    status: 'attached',
+    ...over,
+  }
+}
 
 // ── Stub Nuxt auto-imports as globals ──────────────────────────────────
 vi.stubGlobal('localStorage', {
@@ -24,6 +48,8 @@ vi.stubGlobal('onScopeDispose', vi.fn())
 // the unsub returned for each registration so we can assert teardown/persistence.
 const wsHandlers = new Map<string, Function>()
 const wsUnsubs = new Map<string, ReturnType<typeof vi.fn>>()
+// Stable across useWebSocket() calls so tests can assert what was dispatched.
+const wsSend = vi.fn()
 vi.stubGlobal('useWebSocket', () => ({
   on: vi.fn((type: string, handler: Function) => {
     wsHandlers.set(type, handler)
@@ -32,8 +58,13 @@ vi.stubGlobal('useWebSocket', () => ({
     return unsub
   }),
   isConnected: ref(true),   // true → skip the reconnect/auth branch in sendMessage
-  send: vi.fn(),
+  send: wsSend,
 }))
+
+/** Every `chat.send` frame dispatched so far. */
+const chatSends = () => wsSend.mock.calls
+  .map(c => c[0])
+  .filter((f: any) => f?.type === 'chat.send')
 
 vi.stubGlobal('useCreditBalance', () => ({ refresh: vi.fn() }))
 vi.stubGlobal('useDatasetStatus', () => ({ datasets: ref([]) }))
@@ -181,6 +212,231 @@ describe('useChatStreaming — persistent query.result handler', () => {
     fire({ ...frame(), request_id: '__other_turn__' })
     expect(lastMsg().results).toBeUndefined()
     expect(lastMsg().query_files).toBeUndefined()
+  })
+})
+
+describe('useChatStreaming — deferred dataset upload', () => {
+  let store: ReturnType<typeof useChatStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    wsHandlers.clear()
+    wsUnsubs.clear()
+    wsSend.mockClear()
+    mockUploadPendingDatasets.mockReset()
+    mockUploadPendingDatasets.mockResolvedValue(undefined)
+    mockAttachedFiles.value = []
+    store = useChatStore()
+    store.currentThreadId = 't1'
+    store.pendingConnectionIds = []
+  })
+
+  it('uploads pending datasets before dispatching chat.send', async () => {
+    let release!: () => void
+    const uploadDone = new Promise<void>(r => { release = r })
+    mockUploadPendingDatasets.mockImplementation(() => uploadDone)
+    mockAttachedFiles.value = [attachment()]
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('what is in here?')
+    await Promise.resolve()
+
+    // The upload is in flight — the question must not have gone out yet.
+    expect(mockUploadPendingDatasets).toHaveBeenCalled()
+    expect(chatSends()).toHaveLength(0)
+
+    // The upload lands: markProcessing stamps the connection file_id.
+    mockAttachedFiles.value = [attachment({
+      status: 'processing', file_id: 'connection:42', connection_id: 42, sent: true,
+    })]
+    release()
+    await new Promise(r => setTimeout(r, 0))
+
+    // Still held — the send now also waits on documentation (see the phase-3 block).
+    expect(chatSends()).toHaveLength(0)
+    store.clearDocsPending(42)
+    await new Promise(r => setTimeout(r, 0))
+
+    const sends = chatSends()
+    expect(sends).toHaveLength(1)
+    expect(sends[0].file_ids).toEqual(['connection:42'])
+  })
+
+  it('carries the file_ids of every uploaded dataset', async () => {
+    mockAttachedFiles.value = [attachment(), attachment({ file: { name: 'b.csv', type: CSV_MIME, size: 5 } })]
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      mockAttachedFiles.value = [
+        attachment({ status: 'processing', file_id: 'connection:1', connection_id: 1, sent: true }),
+        attachment({ status: 'processing', file_id: 'connection:2', connection_id: 2, sent: true }),
+      ]
+    })
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('compare these')
+    await new Promise(r => setTimeout(r, 0))
+    store.clearDocsPending(1)
+    store.clearDocsPending(2)
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(chatSends()[0].file_ids).toEqual(['connection:1', 'connection:2'])
+  })
+
+  it('treats a text/plain .csv as a dataset when collecting file_ids', async () => {
+    // Regression: the send path used to test the raw file.type, so a
+    // drag-dropped CSV never reached the agent.
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      mockAttachedFiles.value = [attachment({
+        file: { name: 'report.csv', type: 'text/plain', size: 5 },
+        resolved_type: CSV_MIME,
+        status: 'processing', file_id: 'connection:7', connection_id: 7, sent: true,
+      })]
+    })
+    mockAttachedFiles.value = [attachment({
+      file: { name: 'report.csv', type: 'text/plain', size: 5 },
+      resolved_type: CSV_MIME,
+    })]
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('summarise')
+    await new Promise(r => setTimeout(r, 0))
+    store.clearDocsPending(7)
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(chatSends()[0].file_ids).toEqual(['connection:7'])
+  })
+
+  it('sends immediately when nothing is attached', async () => {
+    const { sendMessage } = useChatStreaming()
+    sendMessage('hi')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(chatSends()).toHaveLength(1)
+    expect(chatSends()[0].file_ids).toEqual([])
+  })
+})
+
+describe('useChatStreaming — the answer waits for documentation', () => {
+  let store: ReturnType<typeof useChatStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    wsHandlers.clear()
+    wsUnsubs.clear()
+    wsSend.mockClear()
+    mockUploadPendingDatasets.mockReset()
+    mockAttachedFiles.value = []
+    store = useChatStore()
+    store.currentThreadId = 't1'
+    store.pendingConnectionIds = []
+  })
+
+  /** Simulate an upload landing: the file gains a connection id. */
+  function uploadsAs(...connectionIds: number[]) {
+    mockAttachedFiles.value = connectionIds.map((id, i) =>
+      attachment({ file: { name: `f${i}.csv`, type: CSV_MIME, size: 5 } }))
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      mockAttachedFiles.value = connectionIds.map((id, i) => attachment({
+        file: { name: `f${i}.csv`, type: CSV_MIME, size: 5 },
+        status: 'processing', file_id: `connection:${id}`, connection_id: id,
+        row_count: 100 + i, sent: true,
+      }))
+    })
+  }
+
+  const tick = () => new Promise(r => setTimeout(r, 0))
+
+  it('holds chat.send while the connection is awaiting documentation', async () => {
+    uploadsAs(42)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('what is in here?')
+    await tick()
+
+    // markDocsPending was applied for the uploaded connection…
+    expect(store.docsPendingConnections).toContain(42)
+    expect(chatSends()).toHaveLength(0)
+
+    // …and only clearing it releases the question.
+    store.clearDocsPending(42)
+    await tick()
+    expect(chatSends()).toHaveLength(1)
+    expect(chatSends()[0].message).toBe('what is in here?')
+  })
+
+  it('waits for both connections when two datasets are attached', async () => {
+    uploadsAs(1, 2)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('compare them')
+    await tick()
+
+    expect(store.docsPendingConnections).toEqual(expect.arrayContaining([1, 2]))
+
+    store.clearDocsPending(1)
+    await tick()
+    expect(chatSends()).toHaveLength(0)   // still waiting on the second
+
+    store.clearDocsPending(2)
+    await tick()
+    expect(chatSends()).toHaveLength(1)
+  })
+
+  it('is released by the self-heal that clears docsPendingConnections', async () => {
+    vi.useFakeTimers()
+    try {
+      uploadsAs(42)
+      const { sendMessage } = useChatStreaming()
+      sendMessage('anything')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(chatSends()).toHaveLength(0)
+
+      // The 120 s ceiling fires — no permanent hang even if the backend went silent.
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(store.docsPendingConnections).not.toContain(42)
+      expect(chatSends()).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends without waiting when no dataset was uploaded this turn', async () => {
+    mockUploadPendingDatasets.mockResolvedValue(undefined)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('plain question')
+    await tick()
+
+    expect(store.docsPendingConnections).toEqual([])
+    expect(chatSends()).toHaveLength(1)
+  })
+
+  it('empty text plus a dataset posts a follow-up instead of an agent turn', async () => {
+    uploadsAs(42)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('')
+    await tick()
+
+    // Documentation arrives with a column count.
+    store.setDatasetDocs({
+      connection_id: 42, table_name: 'csv_42', filename: 'f0.csv',
+      table_description: null, columns: [], total_columns: 7,
+    })
+    store.clearDocsPending(42)
+    await tick()
+
+    expect(chatSends()).toHaveLength(0)
+    const reply = store.messages.at(-1)!
+    expect(reply.role).toBe('assistant')
+    expect(reply.content).toContain('f0.csv')
+    expect(reply.content).toContain('100 rows')
+    expect(reply.content).toContain('7 columns')
+    expect(store.isStreaming).toBe(false)
+  })
+
+  it('empty text with no dataset still goes to the agent', async () => {
+    mockUploadPendingDatasets.mockResolvedValue(undefined)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('')
+    await tick()
+
+    expect(chatSends()).toHaveLength(1)
   })
 })
 

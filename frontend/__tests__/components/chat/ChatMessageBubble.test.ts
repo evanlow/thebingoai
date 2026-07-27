@@ -445,3 +445,55 @@ describe('ChatMessageBubble — dataset_docs source', () => {
     expect(mountDocs().text()).not.toContain('Scheduled')
   })
 })
+
+describe('ChatMessageBubble — dataset attachments are not pilled', () => {
+  function mountUser(attachments: any[]) {
+    return mount(ChatMessageBubble, {
+      props: {
+        message: {
+          id: 'u1', role: 'user', content: 'have a look',
+          created_at: '2026-07-26T10:00:00Z', attachments,
+        },
+        showActions: false, actionType: null, isLast: false, agentName: 'Bingo',
+      },
+      global: { stubs: { ChatReasoningTree: true, UiMarkdownRenderer: true } },
+    })
+  }
+
+  const att = (over: Record<string, any>) => ({
+    file_id: 'file-1', name: 'doc.pdf', size: 2048, type: 'application/pdf',
+    preview_url: null, status: 'ready', ...over,
+  })
+
+  it('renders no pill for a dataset — its progress card names the file already', () => {
+    const wrapper = mountUser([
+      att({ file_id: 'connection:42', name: 'sales.csv', type: 'text/csv' }),
+    ])
+
+    expect(wrapper.text()).not.toContain('sales.csv')
+  })
+
+  it('still renders an image thumbnail', () => {
+    const wrapper = mountUser([
+      att({ file_id: 'file-9', name: 'photo.png', type: 'image/png', preview_url: 'blob:x' }),
+    ])
+
+    const img = wrapper.find('img[alt="photo.png"]')
+    expect(img.exists()).toBe(true)
+    expect(img.attributes('src')).toBe('blob:x')
+  })
+
+  it('still renders a PDF pill', () => {
+    expect(mountUser([att({})]).text()).toContain('doc.pdf')
+  })
+
+  it('keeps the non-dataset attachments when both kinds are present', () => {
+    const wrapper = mountUser([
+      att({ file_id: 'connection:42', name: 'sales.csv', type: 'text/csv' }),
+      att({}),
+    ])
+
+    expect(wrapper.text()).not.toContain('sales.csv')
+    expect(wrapper.text()).toContain('doc.pdf')
+  })
+})

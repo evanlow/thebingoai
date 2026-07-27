@@ -59,7 +59,7 @@
           <div class="h-6 w-6 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading conversation" />
         </div>
         <div
-          v-else-if="chatStore.messages.length === 0 && (chatStore.currentConversation?.type === 'permanent' || !datasetsPending)"
+          v-else-if="chatStore.messages.length === 0"
           class="flex h-full items-center justify-center py-24"
         >
           <div v-if="chatStore.currentConversation?.type === 'permanent'" class="text-center max-w-sm">
@@ -93,9 +93,23 @@
               <div class="flex-1 border-t border-[var(--line-2)]" />
             </div>
 
+            <!-- The files this question was asked about, above the question itself.
+                 One card per attachment, full width, and they stay for the life of
+                 the thread — the documentation lives inside them. -->
+            <div
+              v-if="datasetCardsFor(message).length > 0"
+              class="flex flex-col gap-1.5"
+            >
+              <DatasetProgressCard
+                v-for="ds in datasetCardsFor(message)"
+                :key="ds.fileId ?? ds.name"
+                :dataset="ds"
+              />
+            </div>
+
             <!-- Regular message bubble -->
             <ChatMessageBubble
-              v-else-if="!isQaAnswerMessage(message, index)"
+              v-if="message.source !== 'context_reset' && !isQaAnswerMessage(message, index)"
               :message="message"
               :show-actions="shouldShowActions(message, index)"
               :action-type="getActionType(message)"
@@ -106,32 +120,6 @@
               @send-action="(text: string, source?: string) => emit('send-action', text, source as any)"
             />
           </template>
-
-          <!-- Upload flow. Sits below the messages so a second file keeps reporting
-               progress under the first file's documentation, and each card drops out
-               as its own docs land. -->
-          <div
-            v-if="datasetsPending"
-            class="flex justify-center"
-            :class="chatStore.messages.length === 0 ? 'py-24' : ''"
-          >
-            <div class="w-full max-w-[420px]">
-              <h2
-                v-if="chatStore.messages.length === 0"
-                class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-4 text-center"
-              >
-                Reading your data…
-              </h2>
-              <div class="flex flex-col gap-1.5">
-                <DatasetProgressCard
-                  v-for="ds in pendingDatasets"
-                  :key="ds.fileId ?? ds.name"
-                  :dataset="ds"
-                  :docs-status="docsStepStatus(ds)"
-                />
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -162,24 +150,23 @@ const { briefings, ensure: ensureBriefings } = useBriefingsList()
 
 const datasetCount = computed(() => datasets.value.length)
 
-// Documentation outlives profiling by several seconds, so the dataset's own step
-// can't carry the state the rest of the way — the docs flag has to.
-const docsPendingFor = (ds: { connectionId?: number | null }) =>
-  ds.connectionId != null && chatStore.docsPendingConnections.includes(ds.connectionId)
-
-// A card is worth showing until its own documentation lands: with two uploads the
-// first file's docs message must not take the second file's progress down with it.
-// 'failed' is terminal — it drops out rather than hanging the flow open forever.
-const pendingDatasets = computed(() =>
-  datasets.value.filter(d => (d.step === 'ready' ? docsPendingFor(d) : d.step !== 'failed'))
-)
-const datasetsPending = computed(() => pendingDatasets.value.length > 0)
-
-const docsStepStatus = (ds: { step: string; connectionId?: number | null }) => {
-  if (ds.step === 'failed') return null
-  if (ds.step !== 'ready') return 'pending' as const
-  return docsPendingFor(ds) ? ('active' as const) : ('completed' as const)
+// The cards belong to the user message whose attachments they describe, so they
+// keep their place in the transcript instead of floating at the bottom.
+// `_resolve_attachments` persists the dataset's id as `connection:<n>`, which is
+// the same key useDatasetStatus reports as fileId.
+const datasetCardsFor = (message: Message) => {
+  if (message.role !== 'user' || !message.attachments?.length) return []
+  const cards = []
+  for (const att of message.attachments) {
+    const fileId = att.file_id
+    if (!fileId?.startsWith('connection:')) continue
+    const ds = datasets.value.find(d => d.fileId === fileId)
+    // Attachment order, not dataset order — the cards read top-down as attached.
+    if (ds) cards.push(ds)
+  }
+  return cards
 }
+
 const isPermanentThread = computed(() =>
   chatStore.currentThreadId === chatStore.permanentConversation?.id
 )

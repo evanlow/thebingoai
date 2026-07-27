@@ -116,7 +116,7 @@ import { useBriefingsList } from '~/composables/useBriefingsList'
 
 const chatStore = useChatStore()
 const chat = useChat()
-const { getFileIds, clearFiles } = useChatFileUpload()
+const { getFileIds, clearFiles, attachedFiles } = useChatFileUpload()
 const { isMobile } = useIsMobile()
 const router = useRouter()
 const route = useRoute()
@@ -260,7 +260,9 @@ const onWindowResize = () => {
 
 // ── Message handlers ──────────────────────────────────────
 const handleSend = () => {
-  if (!chatStore.inputText.trim()) return
+  // Datasets alone are a valid send: processing them IS the request.
+  const datasetName = attachedFiles.value.find(f => !f.sent && f.status === 'attached')?.file.name
+  if (!chatStore.inputText.trim() && !datasetName) return
   const fileIds = getFileIds()
 
   if (!chatStore.currentThreadId) {
@@ -269,7 +271,7 @@ const handleSend = () => {
     chatStore.pendingNewConversationId = tempId
     chatStore.addConversation({
       id: tempId,
-      title: chatStore.inputText.trim().substring(0, 80),
+      title: (chatStore.inputText.trim() || datasetName || 'File Upload').substring(0, 80),
       type: 'task',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

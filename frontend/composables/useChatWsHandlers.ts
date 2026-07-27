@@ -100,38 +100,6 @@ export const useChatWsHandlers = () => {
     })
   }
 
-  // Reveal a message's content progressively so the documentation reads as if
-  // Bingo is writing it out. Table rows are emitted whole — revealing a `|` row
-  // character by character would render as broken markdown until it completes.
-  const revealMessage = (messageId: string, full: string) => {
-    const chunks: string[] = []
-    for (const line of full.split('\n')) {
-      if (line.startsWith('|')) {
-        chunks.push(line + '\n')
-      } else {
-        for (let i = 0; i < line.length; i += 3) chunks.push(line.slice(i, i + 3))
-        chunks.push('\n')
-      }
-    }
-
-    let i = 0
-    let shown = ''
-    const tick = () => {
-      const target = chatStore.messages.find(m => m.id === messageId)
-      // Gone — thread switched or history reloaded. Stop; the stored row is complete.
-      if (!target) return
-      if (i >= chunks.length) {
-        target.content = full
-        return
-      }
-      const chunk = chunks[i++]
-      shown += chunk
-      target.content = shown
-      setTimeout(tick, chunk.startsWith('|') ? 45 : 18)
-    }
-    tick()
-  }
-
   // Handle dataset documentation pushed by the CSV upload worker
   const registerDatasetDocsHandler = () => {
     // Fired when the upload enqueues the documentation task. Profiling completes
@@ -145,28 +113,20 @@ export const useChatWsHandlers = () => {
       setTimeout(() => chatStore.clearDocsPending(connectionId), 120_000)
     })
 
+    // Documentation is rendered inside the dataset's own card, not as a chat
+    // message — this handler only records the payload and releases the wait.
     const unsubDocs = ws.on('dataset.docs', (data: any) => {
-      const threadId: string = data.thread_id
-      const msg = data.message
+      if (data.connection_id == null) return
 
-      if (data.connection_id != null) chatStore.clearDocsPending(data.connection_id)
-      if (!msg) return
-
-      const frontendMsg: Message = {
-        id: String(msg.id),
-        role: 'assistant',
-        content: '',
-        source: 'dataset_docs',
-        created_at: msg.timestamp,
-        agent_steps: [],
-        thinking_steps: []
-      }
-
-      // No incrementUnread — this fires for the thread the user is already looking at
-      if (chatStore.currentThreadId === threadId) {
-        chatStore.addMessage(frontendMsg)
-        revealMessage(frontendMsg.id, msg.content)
-      }
+      chatStore.setDatasetDocs({
+        connection_id: data.connection_id,
+        table_name: data.table_name ?? '',
+        filename: data.filename ?? null,
+        table_description: data.table_description ?? null,
+        columns: Array.isArray(data.columns) ? data.columns : [],
+        total_columns: data.total_columns ?? 0,
+      })
+      chatStore.clearDocsPending(data.connection_id)
     })
 
     return () => { unsubStart(); unsubDocs() }

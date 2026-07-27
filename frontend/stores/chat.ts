@@ -54,6 +54,23 @@ export interface FileAttachment {
   storage_key?: string
 }
 
+export interface DatasetDocsColumn {
+  name: string
+  display_name: string | null
+  description: string | null
+}
+
+/** The `dataset.docs` WebSocket payload: what Bingo read a dataset's columns as. */
+export interface DatasetDocs {
+  connection_id: number
+  table_name: string
+  filename: string | null
+  table_description: string | null
+  // Column order follows the connection's stored context, which is not schema order.
+  columns: DatasetDocsColumn[]
+  total_columns: number
+}
+
 export interface Conversation {
   id: string
   title: string
@@ -89,6 +106,9 @@ export const useChatStore = defineStore('chat', {
     // Keyed by connection, not thread: upload two files and the first one's docs
     // must not clear the second one's progress.
     docsPendingConnections: [] as number[],
+    // The structured `dataset.docs` payload, keyed by connection id. Written when
+    // documentation completes; the empty terminal event stores a zero-column entry.
+    datasetDocs: {} as Record<number, DatasetDocs>,
     // Per-thread cache of fully-loaded messages (incl. agent_steps). Lets a task
     // viewed once this session reopen instantly without refetching. Invalidated
     // for a thread when a new message is sent to it (its history changed).
@@ -316,6 +336,10 @@ export const useChatStore = defineStore('chat', {
 
     clearDocsPending(connectionId: number) {
       this.docsPendingConnections = this.docsPendingConnections.filter(id => id !== connectionId)
+    },
+
+    setDatasetDocs(docs: DatasetDocs) {
+      this.datasetDocs[docs.connection_id] = docs
     },
 
     incrementUnread(threadId: string) {

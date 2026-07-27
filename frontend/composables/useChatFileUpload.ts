@@ -4,9 +4,12 @@ export interface UploadingFile {
   connection_id?: number | null  // for dataset files uploaded via connections API
   preview_url: string | null  // object URL for images
   resolved_type: string  // corrected MIME from resolveFileType — file.type lies on drag-drop
-  status: 'uploading' | 'processing' | 'ready' | 'error'
+  // 'attached' is the resting state for datasets: picked in the composer but not
+  // yet sent anywhere. Nothing is uploaded until the user presses Enter.
+  status: 'attached' | 'uploading' | 'processing' | 'ready' | 'error'
   error?: string
   progress?: number  // 0-100, only meaningful when status === 'uploading'
+  row_count?: number | null  // reported by the dataset upload response
   sent?: boolean  // true after first send — skip in subsequent message embeddings
   transferCompletedAt?: string  // ISO, stamped when progress hits 100
   processingStartedAt?: string  // ISO, stamped when the server takes over
@@ -67,15 +70,73 @@ function resolveFileType(file: File): string | null {
 // Exported so useDatasetStatus can read it reactively without a circular import.
 export const attachedFiles = ref<UploadingFile[]>([])
 
-const allFilesReady = computed<boolean>(() => {
-  return attachedFiles.value.length > 0 &&
-    attachedFiles.value.every(f => f.status === 'ready' || f.status === 'processing')
-})
+/**
+ * True once nothing is mid-transfer, i.e. pressing Enter now is safe. A dataset
+ * sitting in 'attached' is the normal case — its upload is what Enter starts.
+ */
+const canSubmitFiles = computed<boolean>(() =>
+  attachedFiles.value.every(f => f.status !== 'uploading')
+)
+
+/** Locate a file's current index — it can shift if another attachment is removed. */
+function indexOfFile(file: File): number {
+  return attachedFiles.value.findIndex(f => f.file === file)
+}
+
+function patchFile(fileIndex: number, patch: Partial<UploadingFile>) {
+  const updated = [...attachedFiles.value]
+  if (!updated[fileIndex]) return
+  updated[fileIndex] = { ...updated[fileIndex], ...patch }
+  attachedFiles.value = updated
+}
+
+function updateProgress(fileIndex: number, percent: number) {
+  const existing = attachedFiles.value[fileIndex]
+  if (existing?.status !== 'uploading') return
+  patchFile(fileIndex, {
+    progress: percent,
+    ...(percent >= 100 && !existing.transferCompletedAt
+      ? { transferCompletedAt: new Date().toISOString() }
+      : {}),
+  })
+}
+
+function markReady(fileIndex: number, extra: Partial<UploadingFile>) {
+  patchFile(fileIndex, { ...extra, status: 'ready' })
+}
+
+function markError(fileIndex: number, error: string) {
+  patchFile(fileIndex, { status: 'error', error })
+}
+
+function markProcessing(fileIndex: number, extra: Partial<UploadingFile>) {
+  patchFile(fileIndex, {
+    ...extra,
+    status: 'processing',
+    processingStartedAt: new Date().toISOString(),
+  })
+}
 
 export const useChatFileUpload = () => {
   const api = useApi()
   const chatStore = useChatStore()
   const config = useRuntimeConfig()
+
+  /**
+   * True when every attached file has finished everything the send is waiting on:
+   * transfer, server-side profiling and — for datasets — documentation. Drives the
+   * composer's "reading your data" lock, not the send button.
+   */
+  const allFilesReady = computed<boolean>(() => {
+    if (attachedFiles.value.length === 0) return false
+    return attachedFiles.value.every(f => {
+      if (f.status === 'error') return true   // terminal, just unsuccessfully
+      if (f.status !== 'ready') return false  // attached / uploading / processing
+      if (!DATASET_TYPES.has(f.resolved_type)) return true
+      return f.connection_id == null ||
+        !chatStore.docsPendingConnections.includes(f.connection_id)
+    })
+  })
 
   /** Ensure a conversation exists for file uploads, creating one if needed. */
   const ensureThread = async (): Promise<string> => {
@@ -133,8 +194,10 @@ export const useChatFileUpload = () => {
       return rejections
     }
 
-    // Split files: datasets (CSV/Excel) use connections API, others use chat files API
-    const datasetFiles = validFiles.filter(f => DATASET_TYPES.has(resolvedTypes.get(f)!))
+    // Datasets are uploaded on send (see uploadPendingDatasets) — attaching one
+    // must cost nothing, so a file removed before Enter leaves no connection
+    // behind. Everything else still uploads now: it is free of LLM cost and the
+    // text path needs the resulting file_ids.
     const otherFiles = validFiles.filter(f => !DATASET_TYPES.has(resolvedTypes.get(f)!))
 
     // Build attachment objects with initial status and preview URLs
@@ -144,68 +207,12 @@ export const useChatFileUpload = () => {
       connection_id: null,
       preview_url: IMAGE_TYPES.has(resolvedTypes.get(file)!) ? URL.createObjectURL(file) : null,
       resolved_type: resolvedTypes.get(file)!,
-      status: 'uploading' as const,
+      status: DATASET_TYPES.has(resolvedTypes.get(file)!) ? 'attached' as const : 'uploading' as const,
       progress: 0,
     }))
 
     const startIndex = attachedFiles.value.length
     attachedFiles.value = [...attachedFiles.value, ...newAttachments]
-
-    // Helper to update progress for a specific file
-    const updateProgress = (fileIndex: number, percent: number) => {
-      const updated = [...attachedFiles.value]
-      const existing = updated[fileIndex]
-      if (existing?.status === 'uploading') {
-        updated[fileIndex] = {
-          ...existing,
-          progress: percent,
-          ...(percent >= 100 && !existing.transferCompletedAt ? { transferCompletedAt: new Date().toISOString() } : {}),
-        }
-        attachedFiles.value = updated
-      }
-    }
-
-    const markReady = (fileIndex: number, extra: Partial<UploadingFile>) => {
-      const updated = [...attachedFiles.value]
-      if (updated[fileIndex]) {
-        updated[fileIndex] = { ...updated[fileIndex], ...extra, status: 'ready' }
-        attachedFiles.value = updated
-      }
-    }
-
-    const markError = (fileIndex: number, error: string) => {
-      const updated = [...attachedFiles.value]
-      if (updated[fileIndex]) {
-        updated[fileIndex] = { ...updated[fileIndex], status: 'error', error }
-        attachedFiles.value = updated
-      }
-    }
-
-    const markProcessing = (fileIndex: number, extra: Partial<UploadingFile>) => {
-      const updated = [...attachedFiles.value]
-      if (updated[fileIndex]) {
-        updated[fileIndex] = { ...updated[fileIndex], ...extra, status: 'processing', processingStartedAt: new Date().toISOString() }
-        attachedFiles.value = updated
-      }
-    }
-
-    // Upload dataset files via connections API (reuses existing proven endpoint)
-    for (const file of datasetFiles) {
-      const idx = startIndex + validFiles.indexOf(file)
-      try {
-        const threadId = await ensureThread()
-        const connectionsApi = api.connections as any
-        const result = await connectionsApi.uploadDataset(
-          file,
-          undefined,
-          (percent: number) => updateProgress(idx, percent),
-          threadId,
-        ) as { id: number; name: string; row_count: number }
-        markProcessing(idx, { file_id: `connection:${result.id}`, connection_id: result.id })
-      } catch (err: any) {
-        markError(idx, err?.message || 'Dataset upload failed')
-      }
-    }
 
     // Upload non-dataset files via chat files API
     if (otherFiles.length > 0) {
@@ -250,6 +257,39 @@ export const useChatFileUpload = () => {
     return rejections
   }
 
+  /**
+   * Upload every dataset still sitting in 'attached'. Called from the send path,
+   * so nothing reaches the server until the user actually asks a question.
+   */
+  const uploadPendingDatasets = async (threadId?: string): Promise<void> => {
+    const pending = attachedFiles.value.filter(f => f.status === 'attached')
+    if (pending.length === 0) return
+
+    for (const pendingFile of pending) {
+      const file = pendingFile.file
+      const idx = indexOfFile(file)
+      if (idx === -1) continue  // removed from the composer while an earlier one uploaded
+      patchFile(idx, { status: 'uploading', progress: 0 })
+      try {
+        const tid = threadId || await ensureThread()
+        const connectionsApi = api.connections as any
+        const result = await connectionsApi.uploadDataset(
+          file,
+          undefined,
+          (percent: number) => updateProgress(indexOfFile(file), percent),
+          tid,
+        ) as { id: number; name: string; row_count: number }
+        markProcessing(indexOfFile(file), {
+          file_id: `connection:${result.id}`,
+          connection_id: result.id,
+          row_count: result.row_count ?? null,
+        })
+      } catch (err: any) {
+        markError(indexOfFile(file), err?.message || 'Dataset upload failed')
+      }
+    }
+  }
+
   const removeFile = (index: number) => {
     const file = attachedFiles.value[index]
     if (file?.preview_url) {
@@ -263,8 +303,10 @@ export const useChatFileUpload = () => {
     // across multiple messages in the same conversation. Mark them as sent so
     // subsequent messages don't re-embed them. The conversation-change watch
     // in useDatasetStatus clears them when switching chats.
+    // resolved_type, not file.type: a drag-dropped CSV is often reported as
+    // text/plain, and testing the raw type silently drops it from the send.
     attachedFiles.value = attachedFiles.value.map(f => {
-      if (DATASET_TYPES.has(f.file.type)) return { ...f, sent: true }
+      if (DATASET_TYPES.has(f.resolved_type)) return { ...f, sent: true }
       if (f.preview_url) URL.revokeObjectURL(f.preview_url)
       return null as any
     }).filter(Boolean)
@@ -272,16 +314,24 @@ export const useChatFileUpload = () => {
 
   const getFileIds = (): string[] => {
     return attachedFiles.value
-      .filter(f => !f.sent && f.file_id !== null && DATASET_TYPES.has(f.file.type))
+      .filter(f => !f.sent && f.file_id !== null && DATASET_TYPES.has(f.resolved_type))
       .map(f => f.file_id as string)
   }
+
+  /** Unsent datasets waiting for Enter — they make an empty message worth sending. */
+  const hasPendingDatasets = computed<boolean>(() =>
+    attachedFiles.value.some(f => !f.sent && DATASET_TYPES.has(f.resolved_type))
+  )
 
   return {
     attachedFiles,
     addFiles,
+    uploadPendingDatasets,
     removeFile,
     clearFiles,
     allFilesReady,
+    canSubmitFiles,
+    hasPendingDatasets,
     getFileIds,
   }
 }

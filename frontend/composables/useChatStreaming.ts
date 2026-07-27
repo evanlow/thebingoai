@@ -4,8 +4,32 @@ import { useChatFileUpload } from './useChatFileUpload'
 import { MAX_QUERY_RESULT_ROWS } from './_chatConstants'
 import { trackEvent } from '~/utils/analytics'
 
+/** Pluralise a count with a thousands separator: 1 row / 1,204 rows. */
+function countLabel(n: number, singular: string): string {
+  return `${n.toLocaleString()} ${singular}${n === 1 ? '' : 's'}`
+}
+
 export const useChatStreaming = () => {
   const chatStore = useChatStore()
+
+  /**
+   * What to say when files arrive with no question attached. Reports what was
+   * read back so the user can see it landed, and hands the turn back to them.
+   */
+  const describeProcessedDatasets = (files: Array<{ file: File; connection_id?: number | null; row_count?: number | null }>): string => {
+    const lines = files.map(f => {
+      const docs = f.connection_id != null ? chatStore.datasetDocs[f.connection_id] : undefined
+      const parts: string[] = []
+      if (f.row_count != null) parts.push(countLabel(f.row_count, 'row'))
+      if (docs?.total_columns) parts.push(countLabel(docs.total_columns, 'column'))
+      return parts.length > 0
+        ? `**${f.file.name}** — ${parts.join(', ')}`
+        : `**${f.file.name}**`
+    })
+    const head = files.length === 1 ? "I've read " : "I've read these:\n\n"
+    const body = files.length === 1 ? lines[0] : lines.map(l => `- ${l}`).join('\n')
+    return `${head}${body}\n\nWhat would you like to know about ${files.length === 1 ? 'it' : 'them'}?`
+  }
   const ws = useWebSocket()
   const { refresh: refreshCredits } = useCreditBalance()
 
@@ -29,9 +53,11 @@ export const useChatStreaming = () => {
 
     // Add user message optimistically — include ALL CSV/Excel files,
     // using file name as fallback id for files still uploading without one.
-    const { attachedFiles } = useChatFileUpload()
+    const { attachedFiles, uploadPendingDatasets } = useChatFileUpload()
     const CSV_MIME_SET = new Set(['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
-    const csvFiles = attachedFiles.value.filter(f => CSV_MIME_SET.has(f.file.type) && !f.sent)
+    // resolved_type, not file.type — the browser reports a drag-dropped CSV as
+    // text/plain, which would drop it from the message's attachments.
+    const csvFiles = attachedFiles.value.filter(f => CSV_MIME_SET.has(f.resolved_type) && !f.sent)
     const attachments = csvFiles.length > 0 ? csvFiles.map(f => ({
       file_id: f.file_id || `__pending__:${f.file.name}`,
       name: f.file.name,
@@ -523,7 +549,17 @@ export const useChatStreaming = () => {
 
       let deferredFileIds = fileIds
       const CSV_MIME_SET2 = new Set(['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
-      const pendingNow = attachedFiles.value.filter(f => CSV_MIME_SET2.has(f.file.type) && !f.file_id && !f.sent)
+
+      // Attaching a dataset uploads nothing — this is where it actually happens.
+      const uploadingNames = attachedFiles.value
+        .filter(f => f.status === 'attached')
+        .map(f => f.file.name)
+      await uploadPendingDatasets(chatStore.currentThreadId || undefined)
+      const uploadedThisTurn = attachedFiles.value.filter(
+        f => uploadingNames.includes(f.file.name) && f.connection_id != null
+      )
+
+      const pendingNow = attachedFiles.value.filter(f => CSV_MIME_SET2.has(f.resolved_type) && !f.file_id && !f.sent)
 
       if (pendingNow.length > 0) {
         const names = pendingNow.map(f => f.file.name).join(', ')
@@ -533,18 +569,70 @@ export const useChatStreaming = () => {
         // Wait for markProcessing to set file_id after HTTP 200
         await new Promise<void>(resolve => {
           const stop = watch(attachedFiles, (files) => {
-            const stillPending = files.filter(f => CSV_MIME_SET2.has(f.file.type) && !f.file_id)
+            const stillPending = files.filter(f => CSV_MIME_SET2.has(f.resolved_type) && !f.file_id)
             if (stillPending.length === 0) { stop(); resolve() }
           }, { deep: false })
         })
 
-        // Get file_ids directly — getFileIds() skips sent files (clearFiles already ran)
-        deferredFileIds = attachedFiles.value
-          .filter(f => f.file_id && CSV_MIME_SET2.has(f.file.type))
-          .map(f => f.file_id as string)
         const logIdx = stepsLog.findLastIndex(l => l.includes('Waiting for upload:'))
         if (logIdx !== -1) stepsLog[logIdx] = stepsLog[logIdx] + ' ✓'
         syncStepsLog()
+      }
+
+      // Recompute from the files themselves: the caller's fileIds were collected
+      // before uploadPendingDatasets ran, so every dataset id is new since then.
+      // getFileIds() can't be used here — clearFiles() has already marked them sent.
+      const datasetFileIds = attachedFiles.value
+        .filter(f => f.file_id && CSV_MIME_SET2.has(f.resolved_type))
+        .map(f => f.file_id as string)
+      if (datasetFileIds.length > 0) {
+        deferredFileIds = [...new Set([...deferredFileIds, ...datasetFileIds])]
+      }
+
+      // --- Second stage: hold the question until the docs are confirmed ---
+      //
+      // The confirmed glossary is what load_enriched_context folds into the
+      // agent's first schema block. Asking before it lands means the agent reads
+      // the file with bare column names. Marking pending here rather than trusting
+      // the server's dataset.docs.start removes the race between that event and
+      // the upload's own HTTP response.
+      const awaitedConnectionIds = uploadedThisTurn.map(f => f.connection_id!)
+      if (awaitedConnectionIds.length > 0) {
+        const names = uploadedThisTurn.map(f => f.file.name).join(', ')
+        awaitedConnectionIds.forEach(id => {
+          chatStore.markDocsPending(id)
+          // Same ceiling as the ws handler's: a backend that never reports back
+          // must not lock the composer forever.
+          setTimeout(() => chatStore.clearDocsPending(id), 120_000)
+        })
+
+        stepsLog.push(`${formatTs()}  ⏳ Reading the columns in ${names}…`)
+        syncStepsLog()
+
+        await new Promise<void>(resolve => {
+          const check = () => awaitedConnectionIds.every(
+            id => !chatStore.docsPendingConnections.includes(id)
+          )
+          if (check()) { resolve(); return }
+          const stop = watch(() => chatStore.docsPendingConnections, () => {
+            if (check()) { stop(); resolve() }
+          }, { deep: true })
+        })
+
+        const logIdx = stepsLog.findLastIndex(l => l.includes('Reading the columns in'))
+        if (logIdx !== -1) stepsLog[logIdx] = stepsLog[logIdx] + ' ✓'
+        syncStepsLog()
+      }
+
+      // Files with no question: the processing WAS the request. Answer from what
+      // we already know instead of spending an agent turn on an empty prompt.
+      if (!message.trim() && awaitedConnectionIds.length > 0) {
+        chatStore.updateMessageById(assistantMsgId, {
+          content: describeProcessedDatasets(uploadedThisTurn),
+        })
+        chatStore.pendingConnectionIds = []
+        cleanup()
+        return
       }
 
       // Send via WebSocket

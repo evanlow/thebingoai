@@ -8,7 +8,7 @@ export interface DatasetStatus {
   size: number
   fileId: string | null
   connectionId: number | null
-  step: 'uploading' | 'schema' | 'profiling' | 'ready' | 'failed'
+  step: 'uploading' | 'schema' | 'profiling' | 'documenting' | 'ready' | 'failed'
   uploadedAt: string | null
   schemaBuiltAt: string | null
   profilingStartedAt: string | null
@@ -63,6 +63,39 @@ export const useDatasetStatus = () => {
   // Non-reactive bookkeeping — interval IDs don't need Vue reactivity
   const pollers: Record<number, ReturnType<typeof setInterval>> = {}
 
+  /** True while this connection's documentation is still being generated. */
+  const isDocumenting = (connectionId: number | null | undefined): boolean =>
+    connectionId != null && chatStore.docsPendingConnections.includes(connectionId)
+
+  // Files whose profiling finished while their documentation was still running.
+  // Held here so the docs watcher below knows exactly which chips to release —
+  // either the WS event or the poll may have been the one that got there first.
+  const awaitingDocs = new Set<string>()
+
+  /**
+   * Close the chip's state machine once a dataset is fully done. Profiling
+   * finishing is not enough: documentation is the last step, so a connection
+   * still in docsPendingConnections stays 'processing' for now.
+   */
+  function markChipReady(fileId: string, connectionId?: number | null) {
+    const idx = attachedFiles.value.findIndex(f => f.file_id === fileId && f.status === 'processing')
+    if (idx === -1) return
+    const cid = connectionId ?? attachedFiles.value[idx].connection_id
+    if (isDocumenting(cid)) { awaitingDocs.add(fileId); return }
+    awaitingDocs.delete(fileId)
+    const updated = [...attachedFiles.value]
+    updated[idx] = { ...updated[idx], status: 'ready' }
+    attachedFiles.value = updated
+  }
+
+  watch(() => chatStore.docsPendingConnections, () => {
+    for (const fileId of [...awaitingDocs]) {
+      const f = attachedFiles.value.find(x => x.file_id === fileId)
+      if (!f) { awaitingDocs.delete(fileId); continue }
+      markChipReady(fileId, f.connection_id)
+    }
+  }, { deep: true })
+
   // --- WebSocket handler for dataset.status events ---
   const unsubWs = ws.on('dataset.status', (data: WsDatasetEvent) => {
     if (data.thread_id !== chatStore.currentThreadId) return
@@ -89,12 +122,7 @@ export const useDatasetStatus = () => {
 
     // Transition the attachedFiles chip to 'ready' so the state machine closes
     if (data.step === 'ready') {
-      const idx = attachedFiles.value.findIndex(f => f.file_id === data.file_id && f.status === 'processing')
-      if (idx !== -1) {
-        const updated = [...attachedFiles.value]
-        updated[idx] = { ...updated[idx], status: 'ready' }
-        attachedFiles.value = updated
-      }
+      markChipReady(data.file_id, data.connection_id)
     }
   })
 
@@ -123,13 +151,7 @@ export const useDatasetStatus = () => {
 
       if (result.status === 'ready') {
         // Transition matching attachedFiles chip from processing → ready
-        const fileId = `connection:${connectionId}`
-        const fidx = attachedFiles.value.findIndex(f => f.file_id === fileId && f.status === 'processing')
-        if (fidx !== -1) {
-          const updated = [...attachedFiles.value]
-          updated[fidx] = { ...updated[fidx], status: 'ready' }
-          attachedFiles.value = updated
-        }
+        markChipReady(`connection:${connectionId}`, connectionId)
       }
     } catch (e: any) {
       // Connection gone or not visible to this user — terminal, stop polling.
@@ -497,6 +519,17 @@ export const useDatasetStatus = () => {
         columnCount: null,
         error: step === 'failed' ? (profiling?.error || 'Processing failed') : null,
       })
+    }
+
+    // Documentation is the last step, and every branch above decides 'ready' the
+    // moment profiling completes. Applying the demotion once here — rather than at
+    // each of the eight sites that can produce 'ready' — is what keeps the WS path
+    // and the polling path from disagreeing.
+    for (const ds of results) {
+      if (ds.step === 'ready' && isDocumenting(ds.connectionId)) {
+        ds.step = 'documenting'
+        ds.completedAt = null
+      }
     }
 
     return results

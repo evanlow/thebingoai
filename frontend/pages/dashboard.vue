@@ -434,7 +434,7 @@ function handleAddWidget(type: import('~/types/dashboard').WidgetType) {
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 const chat = useChat()
-const { getFileIds, clearFiles } = useChatFileUpload()
+const { getFileIds, clearFiles, attachedFiles } = useChatFileUpload()
 
 const searchQuery = ref('')
 const filterPill = ref<'all' | 'mine' | 'scheduled' | 'shared'>('all')
@@ -477,7 +477,9 @@ const dashboardListItems = computed(() => {
 
 async function handleEmptyStateSend() {
   const text = chatStore.inputText.trim()
-  if (!text) return
+  // Datasets alone are a valid send: processing them IS the request.
+  const datasetName = attachedFiles.value.find(f => !f.sent && f.status === 'attached')?.file.name
+  if (!text && !datasetName) return
   const fileIds = getFileIds()
 
   // Always start a fresh task — never piggyback on the previously-loaded thread
@@ -488,7 +490,7 @@ async function handleEmptyStateSend() {
   chatStore.pendingNewConversationId = tempId
   chatStore.addConversation({
     id: tempId,
-    title: text.substring(0, 80),
+    title: (text || datasetName || 'File Upload').substring(0, 80),
     type: 'task',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

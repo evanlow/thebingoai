@@ -35,31 +35,44 @@
         label="Data profiled"
         active-label="Profiling data..."
         :timestamp="stepTimestampFor('profiling')"
-        :is-last="!docsStatus"
-        :next-status="docsStatus ?? undefined"
+        :is-last="false"
+        :next-status="stepStatus('documenting')"
         :error="dataset.step === 'failed' && stepStatus('profiling') === 'failed' ? dataset.error : null"
       />
+      <DatasetTimelineStep
+        :status="stepStatus('documenting')"
+        label="Columns documented"
+        active-label="Reading the columns..."
+        :timestamp="stepTimestampFor('documenting')"
+        :is-last="true"
+      />
+    </div>
 
-      <!-- Documentation runs after profiling and is driven by the thread, not the
-           dataset's own step — the panel renders the card without it. -->
-      <div v-if="docsStatus" class="flex gap-2.5">
-        <div class="flex flex-col items-center">
-          <div class="w-3.5 h-3.5 flex items-center justify-center shrink-0 z-[1]">
-            <template v-if="docsStatus === 'active'">
-              <img src="/logo/BINGO Logo Design_FA_Icon.png" class="w-3.5 h-3.5 object-contain docs-spin dark:hidden" alt="" />
-              <img src="/logo/BINGO Logo Design_FA_Icon_W.png" class="w-3.5 h-3.5 object-contain docs-spin hidden dark:block" alt="" />
-            </template>
-            <div v-else class="w-3.5 h-3.5 rounded-full border-2 border-[var(--line-2)]" />
+    <!-- What Bingo read the columns as. Collapsed by default — it is a review
+         prompt, not something to read every time. -->
+    <div v-if="docsColumns.length > 0" class="mt-2 pt-2 border-t border-dashed border-[var(--line)]">
+      <button
+        type="button"
+        data-testid="docs-toggle"
+        class="flex items-center gap-1.5 text-sm text-[var(--ink-2)] hover:text-[var(--ink-1)] transition-colors"
+        :aria-expanded="docsExpanded"
+        @click="docsExpanded = !docsExpanded"
+      >
+        <span class="inline-block transition-transform" :class="docsExpanded ? 'rotate-90' : ''">▸</span>
+        I read {{ docsColumns.length }} column{{ docsColumns.length === 1 ? '' : 's' }} — review
+      </button>
+
+      <div v-if="docsExpanded" data-testid="docs-body" class="mt-2">
+        <p v-if="docs?.table_description" class="text-sm text-[var(--ink-2)] mb-1.5">
+          {{ docs.table_description }}
+        </p>
+        <dl class="flex flex-col gap-1">
+          <div v-for="col in docsColumns" :key="col.name" class="flex gap-2 text-sm">
+            <dt class="font-mono text-[var(--ink-1)] shrink-0">{{ col.name }}</dt>
+            <dd class="text-[var(--ink-2)] min-w-0">{{ meaningOf(col) }}</dd>
           </div>
-        </div>
-        <div class="flex-1 min-w-0 pt-px">
-          <span
-            class="text-sm font-medium"
-            :class="docsStatus === 'active' ? 'text-[var(--ink-1)]' : 'text-[var(--ink-3)]'"
-          >
-            {{ docsStatus === 'active' ? 'Reading the columns...' : 'Columns documented' }}
-          </span>
-        </div>
+        </dl>
+        <p class="mt-2 text-sm text-[var(--ink-3)]">Tell me anything I've read wrong.</p>
       </div>
     </div>
 
@@ -76,19 +89,76 @@
 
 <script setup lang="ts">
 import type { DatasetStatus } from '~/composables/useDatasetStatus'
+import type { DatasetDocsColumn } from '~/stores/chat'
 
-type StepName = 'uploading' | 'schema' | 'profiling'
+type StepName = 'uploading' | 'schema' | 'profiling' | 'documenting'
 type StepState = 'completed' | 'active' | 'pending' | 'failed'
 
 const props = defineProps<{
   dataset: DatasetStatus
-  /** Omit to hide the documentation step entirely (the info panel does). */
-  docsStatus?: StepState | null
 }>()
 
 const { retryProfiling } = useDatasetStatus()
+const chatStore = useChatStore()
+const api = useApi()
 
-const STEP_ORDER: StepName[] = ['uploading', 'schema', 'profiling']
+const STEP_ORDER: StepName[] = ['uploading', 'schema', 'profiling', 'documenting']
+
+// --- Documentation ---------------------------------------------------------
+
+const docsExpanded = ref(false)
+const docs = computed(() =>
+  props.dataset.connectionId != null
+    ? chatStore.datasetDocs[props.dataset.connectionId]
+    : undefined
+)
+const docsColumns = computed<DatasetDocsColumn[]>(() => docs.value?.columns ?? [])
+
+const meaningOf = (col: DatasetDocsColumn) =>
+  [col.display_name, col.description].filter(Boolean).join(' — ')
+
+/**
+ * A thread loaded from history never saw the `dataset.docs` event, so the card
+ * fetches the stored glossary itself. Keys are `table.column`; the order follows
+ * the connection's saved context, which is not the schema's order.
+ */
+async function loadDocsFromHistory() {
+  const connectionId = props.dataset.connectionId
+  if (connectionId == null || chatStore.datasetDocs[connectionId]) return
+  try {
+    const layer = await api.connections.getSemantics(connectionId) as {
+      glossary?: Record<string, { display_name?: string; description?: string }>
+    }
+    const glossary = layer?.glossary ?? {}
+    const tableName = `csv_${connectionId}`
+    const columns: DatasetDocsColumn[] = []
+    let tableDescription: string | null = null
+
+    for (const [key, entry] of Object.entries(glossary)) {
+      if (!entry || typeof entry !== 'object') continue
+      if (key === tableName) { tableDescription = entry.description ?? null; continue }
+      if (!key.startsWith(`${tableName}.`)) continue
+      if (!entry.display_name && !entry.description) continue
+      columns.push({
+        name: key.slice(tableName.length + 1),
+        display_name: entry.display_name ?? null,
+        description: entry.description ?? null,
+      })
+    }
+    if (columns.length === 0 && !tableDescription) return
+
+    chatStore.setDatasetDocs({
+      connection_id: connectionId,
+      table_name: tableName,
+      filename: props.dataset.name,
+      table_description: tableDescription,
+      columns,
+      total_columns: columns.length,
+    })
+  } catch {
+    // No documentation to show — the card is still useful without it.
+  }
+}
 
 function stepStatus(stepName: StepName): StepState {
   const ds = props.dataset
@@ -124,7 +194,10 @@ const formatSize = (bytes: number) => {
 // Live clock for active steps — ticks every second
 const currentTime = ref(new Date().toISOString())
 let clockInterval: ReturnType<typeof setInterval> | null = null
-onMounted(() => { clockInterval = setInterval(() => { currentTime.value = new Date().toISOString() }, 1000) })
+onMounted(() => {
+  clockInterval = setInterval(() => { currentTime.value = new Date().toISOString() }, 1000)
+  loadDocsFromHistory()
+})
 onUnmounted(() => { if (clockInterval) clearInterval(clockInterval) })
 
 function stepTimestampFor(step: StepName): string | null {
@@ -134,19 +207,10 @@ function stepTimestampFor(step: StepName): string | null {
   if (status === 'completed') {
     if (step === 'uploading') return ds.uploadedAt
     if (step === 'schema') return ds.schemaBuiltAt
-    if (step === 'profiling') return ds.completedAt
+    // Profiling and documentation both finish at completedAt: the dataset only
+    // reports one completion time, and documenting is what makes it 'ready'.
+    if (step === 'profiling' || step === 'documenting') return ds.completedAt
   }
   return null
 }
 </script>
-
-<style scoped>
-.docs-spin {
-  animation: docs-spin 2s linear infinite;
-}
-
-@keyframes docs-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-</style>

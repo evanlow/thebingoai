@@ -29,17 +29,15 @@ vi.stubGlobal('useWebSocket', () => ({
 import { useChatStore } from '~/stores/chat'
 import { useChatWsHandlers } from '~/composables/useChatWsHandlers'
 
-const DOCS = '**orders.csv** — Customer orders\n\n| Column | I read this as |\n| --- | --- |\n| amt | Order total |'
-
 function docsPayload(overrides: Record<string, any> = {}) {
   return {
     thread_id: 'thread-1',
     connection_id: 1,
-    message: {
-      id: 77,
-      content: DOCS,
-      timestamp: '2026-07-26T10:00:00Z',
-    },
+    table_name: 'csv_1',
+    filename: 'orders.csv',
+    table_description: 'Customer orders',
+    columns: [{ name: 'amt', display_name: 'Order total', description: 'Value in cents' }],
+    total_columns: 1,
     ...overrides,
   }
 }
@@ -60,54 +58,34 @@ describe('registerDatasetDocsHandler', () => {
     vi.useRealTimers()
   })
 
-  // Real timers on purpose. Switching the whole file to fake timers destabilises
-  // unrelated suites when the full run is parallelised, so only the one test that
-  // cannot wait out its delay fakes them, and only for its own duration.
-  const settled = async (predicate: () => boolean, budgetMs = 3000) => {
-    const deadline = Date.now() + budgetMs
-    while (!predicate() && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 10))
-    }
-    return predicate()
-  }
-
   it('subscribes to the dataset.docs event', () => {
     useChatWsHandlers().registerDatasetDocsHandler()
     expect(wsHandlers.has('dataset.docs')).toBe(true)
   })
 
-  it('appends an assistant message with source dataset_docs for the open thread', async () => {
+  it('stores the payload against its connection and appends no message', () => {
+    // Documentation belongs inside the dataset's card now, not in the transcript.
     useChatWsHandlers().registerDatasetDocsHandler()
     wsHandlers.get('dataset.docs')!(docsPayload())
 
-    expect(store.messages).toHaveLength(1)
-    const msg = store.messages[0]
-    expect(msg.role).toBe('assistant')
-    expect(msg.source).toBe('dataset_docs')
-    expect(msg.id).toBe('77')
-
-    // Content is revealed progressively, so it starts short and settles on the full text.
-    expect(msg.content.length).toBeLessThan(DOCS.length)
-    expect(await settled(() => store.messages[0].content === DOCS)).toBe(true)
+    expect(store.messages).toHaveLength(0)
+    expect(store.datasetDocs[1]).toEqual({
+      connection_id: 1,
+      table_name: 'csv_1',
+      filename: 'orders.csv',
+      table_description: 'Customer orders',
+      columns: [{ name: 'amt', display_name: 'Order total', description: 'Value in cents' }],
+      total_columns: 1,
+    })
   })
 
-  it('reveals table rows whole so the markdown is never half-rendered', async () => {
+  it('keeps each connection separate', () => {
     useChatWsHandlers().registerDatasetDocsHandler()
-    wsHandlers.get('dataset.docs')!(docsPayload())
+    wsHandlers.get('dataset.docs')!(docsPayload({ connection_id: 1, filename: 'a.csv' }))
+    wsHandlers.get('dataset.docs')!(docsPayload({ connection_id: 2, filename: 'b.csv' }))
 
-    // Sample the reveal in flight; a partial state may end mid-prose but never on
-    // an incomplete `|` row, which would render as broken markdown.
-    let sawPartial = false
-    await settled(() => {
-      const partial = store.messages[0].content
-      if (partial !== DOCS) sawPartial = true
-      const lastLine = partial.split('\n').pop()!
-      if (lastLine.startsWith('|')) expect(lastLine.endsWith('|')).toBe(true)
-      return partial === DOCS
-    })
-
-    expect(sawPartial).toBe(true)
-    expect(store.messages[0].content).toBe(DOCS)
+    expect(store.datasetDocs[1].filename).toBe('a.csv')
+    expect(store.datasetDocs[2].filename).toBe('b.csv')
   })
 
   it('marks the connection docs-pending on dataset.docs.start and clears it on arrival', async () => {
@@ -153,21 +131,34 @@ describe('registerDatasetDocsHandler', () => {
     expect(store.docsPendingConnections).not.toContain(1)
   })
 
-  it('clears docs-pending even when the payload carries no message', () => {
+  it('clears docs-pending on an empty terminal payload and stores nothing renderable', () => {
+    // The skip paths publish columns: [] purely to release the waiting composer.
     useChatWsHandlers().registerDatasetDocsHandler()
 
     wsHandlers.get('dataset.docs.start')!({ thread_id: 'thread-1', connection_id: 1 })
-    wsHandlers.get('dataset.docs')!({ thread_id: 'thread-1', connection_id: 1 })
+    wsHandlers.get('dataset.docs')!({
+      thread_id: 'thread-1', connection_id: 1, columns: [], total_columns: 0,
+    })
 
     expect(store.docsPendingConnections).not.toContain(1)
+    expect(store.datasetDocs[1].columns).toEqual([])
     expect(store.messages).toHaveLength(0)
   })
 
-  it('ignores a payload for a different thread', () => {
+  it('ignores a payload with no connection id, and does not throw', () => {
+    // Nothing to key the docs on, and nothing to release.
     useChatWsHandlers().registerDatasetDocsHandler()
-    wsHandlers.get('dataset.docs')!(docsPayload({ thread_id: 'other-thread' }))
+    expect(() => wsHandlers.get('dataset.docs')!({ thread_id: 'thread-1' })).not.toThrow()
 
+    expect(store.datasetDocs).toEqual({})
     expect(store.messages).toHaveLength(0)
+  })
+
+  it('survives a malformed columns field', () => {
+    useChatWsHandlers().registerDatasetDocsHandler()
+    expect(() => wsHandlers.get('dataset.docs')!(docsPayload({ columns: 'nope' }))).not.toThrow()
+
+    expect(store.datasetDocs[1].columns).toEqual([])
   })
 
   it('does not increment unread — the user is already looking at this thread', () => {
@@ -176,12 +167,6 @@ describe('registerDatasetDocsHandler', () => {
     wsHandlers.get('dataset.docs')!(docsPayload())
 
     expect(incrementUnread).not.toHaveBeenCalled()
-  })
-
-  it('ignores a payload with no message without throwing', () => {
-    useChatWsHandlers().registerDatasetDocsHandler()
-    expect(() => wsHandlers.get('dataset.docs')!({ thread_id: 'thread-1' })).not.toThrow()
-    expect(store.messages).toHaveLength(0)
   })
 })
 

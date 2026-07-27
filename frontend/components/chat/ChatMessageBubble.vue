@@ -14,9 +14,10 @@
         v-html="renderMentions(message.content)"
       />
 
-      <!-- Attachments -->
-      <div v-if="message.attachments && message.attachments.length > 0" class="mt-2 flex flex-wrap gap-2 max-w-[80%]">
-        <template v-for="attachment in message.attachments" :key="attachment.file_id ?? attachment.name">
+      <!-- Attachments. Datasets are excluded: they get a full progress card above
+           this bubble, and a pill here would name the same file twice. -->
+      <div v-if="pillAttachments.length > 0" class="mt-2 flex flex-wrap gap-2 max-w-[80%]">
+        <template v-for="attachment in pillAttachments" :key="attachment.file_id ?? attachment.name">
           <!-- Image thumbnail -->
           <div
             v-if="isImageType(attachment.type)"
@@ -461,6 +462,12 @@ const viewDashboard = async () => {
 }
 
 const isImageType = (mimeType: string) => IMAGE_MIME_TYPES.has(mimeType)
+
+// Datasets are rendered as their own progress card above this bubble, so they are
+// dropped from the pill row. Images, PDFs and DOCX are unaffected.
+const pillAttachments = computed(() =>
+  (props.message.attachments ?? []).filter(a => !a.file_id?.startsWith('connection:'))
+)
 
 const formatAttachmentSize = (bytes: number) => {
   if (!bytes) return ''
