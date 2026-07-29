@@ -1022,7 +1022,23 @@ async def refresh_dashboard_widgets(
     on cold cache the widget falls back to its source connector. Widgets
     without a dataSource are skipped; per-widget failures are captured as
     {error} rather than failing the entire request.
+
+    Runs in a worker thread for the same reason `refresh_widget` does: the whole
+    serving ladder is synchronous, and one dashboard's worth of it stalled the
+    event loop for ~10s per filter change (`loop_watchdog` logged it), freezing
+    every other request — the 2026-07-23 liveness-kill shape.
     """
+    return await asyncio.to_thread(
+        _refresh_dashboard_widgets_sync, dashboard_id, payload, current_user, db
+    )
+
+
+def _refresh_dashboard_widgets_sync(
+    dashboard_id: int,
+    payload: Optional[BulkRefreshRequest],
+    current_user: User,
+    db: Session,
+) -> BulkRefreshResponse:
     # Org-wide visibility, matching GET /dashboards/{id}: any org member who
     # can view the dashboard can refresh its widgets.
     from backend.api.dashboards import _dashboard_visible_to

@@ -16,6 +16,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine, JSON, LargeBinary
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.dialects.postgresql import BYTEA, JSONB
 
 from backend.database.base import Base
@@ -32,7 +33,16 @@ def _run(coro):
 
 @pytest.fixture(scope="function")
 def db():
-    engine = create_engine("sqlite:///:memory:")
+    # `refresh_dashboard_widgets` hands its Session to a worker thread
+    # (`asyncio.to_thread`). SQLite rejects a cross-thread handle by default, and
+    # its default memory pool is per-thread — the worker would otherwise open a
+    # second, empty database. Neither applies to the Postgres this runs on in
+    # production; both are artifacts of the in-memory fixture.
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     for table in Base.metadata.tables.values():
         for col in table.columns:
             if isinstance(col.type, JSONB):

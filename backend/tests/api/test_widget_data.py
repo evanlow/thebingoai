@@ -885,6 +885,44 @@ def test_bulk_refresh_serves_every_widget_when_the_probe_succeeds(monkeypatch):
     assert resp.widgets["w1"]["served_from"] == "data_plane"
 
 
+def test_bulk_refresh_does_not_block_the_event_loop(monkeypatch):
+    """The serving ladder is fully synchronous. Run inline it stalls the loop for
+    the whole dashboard (~10s per filter change on dashboard 39, per
+    `loop_watchdog`) and starves every other request — the 2026-07-23
+    liveness-kill shape. `refresh_widget` was moved to a worker thread then; this
+    pins that the bulk endpoint stays there too.
+    """
+    dashboard = _memo_dashboard([_memo_widget("w1", "SELECT role FROM csv_104")])
+    _setup_bulk(monkeypatch, dashboard)
+
+    import time
+
+    def _slow(request, dash, user, db, reader=None):
+        time.sleep(0.3)  # blocking, as every real serving path is
+        return SimpleNamespace(config={"value": 1}, served_from="data_plane")
+
+    monkeypatch.setattr(wd, "_serve_widget_via_dataplane", _slow)
+    monkeypatch.setattr(wd, "_widget_cache_store", lambda *a, **k: None)
+
+    order = []
+
+    async def _bulk():
+        await wd.refresh_dashboard_widgets(1, None, _user(), _memo_db(dashboard))
+        order.append("bulk")
+
+    async def _other():
+        await asyncio.sleep(0.05)
+        order.append("other")
+
+    async def _both():
+        await asyncio.gather(_bulk(), _other())
+
+    asyncio.run(_both())
+
+    # Inline, the 0.3s sleep would pin the loop and "bulk" would land first.
+    assert order == ["other", "bulk"]
+
+
 # ── Serve-path SQL normalization ─────────────────────────────────────────────
 #
 # Widgets persisted with ANSI `"col"` quoting are string literals on BigQuery,

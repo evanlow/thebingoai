@@ -33,6 +33,38 @@ def test_extract_unparseable():
     assert result == []
 
 
+def test_extract_excludes_cte_names():
+    """A CTE has no storage — returning its name made the DuckDB reader mount
+    `gs://.../bands/dt=*/*.parquet`, fail, and drop the widget to the source DB.
+    This is the real dashboard-39 chart_8 shape.
+    """
+    sql = (
+        'WITH bands AS ('
+        '  SELECT CASE WHEN c."exp_in_company" < 2 THEN \'<2 years\' ELSE \'>2 years\' END'
+        '         AS tenure_band'
+        '  FROM csv_104 c'
+        ') '
+        'SELECT tenure_band, COUNT(*) FROM bands GROUP BY 1'
+    )
+    assert extract_table_refs(sql) == ["csv_104"]
+
+
+def test_extract_excludes_multiple_and_nested_ctes():
+    sql = (
+        "WITH a AS (WITH b AS (SELECT * FROM real_t) SELECT * FROM b), "
+        "c AS (SELECT * FROM other_t) "
+        "SELECT * FROM a JOIN c ON a.id = c.id"
+    )
+    assert extract_table_refs(sql) == ["other_t", "real_t"]
+
+
+def test_extract_excludes_cte_shadowing_a_real_table():
+    """`orders` resolves to the CTE inside this query, so mounting the physical
+    `orders` table would serve different data than the SQL asks for."""
+    sql = "WITH orders AS (SELECT * FROM raw_orders) SELECT * FROM orders"
+    assert extract_table_refs(sql) == ["raw_orders"]
+
+
 def test_rewrite_single_table():
     result_sql, success = rewrite_table_refs("SELECT * FROM legacy", {"legacy": "new_table"})
     assert success is True

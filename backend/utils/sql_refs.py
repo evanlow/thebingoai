@@ -130,16 +130,37 @@ def transpile_bq_to_duckdb(sql: str) -> str:
 
 
 def extract_table_refs(sql: str) -> list[str]:
-    """Return list of table names referenced in *sql* (lower-cased, deduplicated, sorted).
-    Returns [] on parse failure."""
+    """Return list of *physical* table names referenced in *sql* (lower-cased,
+    deduplicated, sorted). Returns [] on parse failure.
+
+    CTE names are excluded. sqlglot parses `FROM my_cte` as `exp.Table` exactly
+    like `FROM my_real_table` — the node type says "name in FROM position", not
+    "table on disk". Callers use this list to resolve storage (register a DuckDB
+    view over a Parquet glob, check `table_exists`, build lineage), and a CTE has
+    no storage: `WITH bands AS (...) SELECT ... FROM bands` used to yield
+    `["bands", "csv_104"]`, so the reader mounted `gs://.../bands/dt=*/*.parquet`,
+    got `IO Error: No files found`, and the whole widget fell back to the source DB.
+
+    Excluding is right even when a CTE shadows a real table of the same name —
+    inside that query the CTE is what the reference resolves to, so mounting the
+    physical table would silently serve different data.
+    """
     try:
         parsed = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
     except Exception:
         return []
 
+    # Every CTE in the statement, including nested ones — `find_all` walks the
+    # whole tree, so a CTE defined inside a subquery is covered too.
+    cte_names = {
+        name.lower()
+        for name in (cte.alias_or_name for cte in parsed.find_all(exp.CTE))
+        if name
+    }
+
     tables = set()
     for node in parsed.find_all(exp.Table):
-        if node.name:
+        if node.name and node.name.lower() not in cte_names:
             tables.add(node.name.lower())
 
     return sorted(list(tables))

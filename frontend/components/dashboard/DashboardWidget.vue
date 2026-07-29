@@ -76,10 +76,13 @@
       <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': loading }" />
     </button>
 
-    <!-- Widget body -->
+    <!-- Widget body.
+         Dimmed while a refresh is in flight over data we're still painting:
+         the numbers on screen are the previous filter's, and a spinning 12px
+         icon alone doesn't say so — it reads as a frozen page. -->
     <div
-      class="min-h-0 flex-1 overflow-hidden"
-      :class="editMode ? 'pt-7' : ''"
+      class="min-h-0 flex-1 overflow-hidden transition-opacity duration-200"
+      :class="[editMode ? 'pt-7' : '', loading && hasData ? 'opacity-50' : '']"
       @click="editMode && emit('edit-config', widget.id)"
     >
       <DashboardWidgetKpi
