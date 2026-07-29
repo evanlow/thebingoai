@@ -285,6 +285,60 @@ async def _render_orchestrator_prompt(
     return base_prompt
 
 
+def _previous_turn_asked_question(
+    context: AgentContext,
+    db_session_factory: Optional[Callable],
+) -> bool:
+    """True when the last assistant turn in this thread already asked the user a question.
+
+    One clarification round per exchange, enforced in the tool body rather than in
+    prompt text. The loop detector cannot catch this: it reads ``tool_calls`` off
+    ``state["messages"]`` (loop_detector.py:28-32), but ``_build_messages`` rebuilds
+    history as plain Human/AIMessage with no ``tool_calls``, so every turn starts
+    with a blank detector.
+
+    Fails open — if the conversation can't be resolved, a legitimate first ask must
+    never be blocked.
+    """
+    if not context.thread_id or db_session_factory is None:
+        return False
+    db = None
+    try:
+        db = db_session_factory()
+        from backend.models.agent_step import AgentStep
+        from backend.models.conversation import Conversation
+        from backend.models.message import Message
+
+        last_assistant_id = (
+            db.query(Message.id)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(
+                Conversation.thread_id == context.thread_id,
+                Conversation.user_id == context.user_id,
+                Message.role == "assistant",
+            )
+            .order_by(Message.id.desc())
+            .limit(1)
+            .scalar()
+        )
+        if last_assistant_id is None:
+            return False
+        return bool(
+            db.query(AgentStep.id)
+            .filter(
+                AgentStep.message_id == last_assistant_id,
+                AgentStep.tool_name == "ask_user_question",
+            )
+            .first()
+        )
+    except Exception as exc:
+        logger.warning("ask_user_question round check failed, allowing: %s", exc)
+        return False
+    finally:
+        if db is not None:
+            db.close()
+
+
 def _build_messages(
     user_question: str,
     history: Optional[list],
@@ -611,6 +665,15 @@ def build_orchestrator_tools(
             The validated questions as JSON. The frontend renders them as interactive UI.
             The user's selections will arrive as the next message in the conversation.
         """
+        if _previous_turn_asked_question(context, db_session_factory):
+            return json.dumps({
+                "error": (
+                    "You already asked the user a question in the previous turn. "
+                    "One clarification round per request. Proceed with the best "
+                    "interpretation of the answers you have and complete the task."
+                )
+            })
+
         try:
             parsed = json.loads(questions)
         except (ValueError, TypeError):
