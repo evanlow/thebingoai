@@ -404,6 +404,24 @@ async def _fire_chat_response_plugins(user_id, thread_id, user_message, assistan
         logger.warning("fire_chat_response_plugins error: %s", exc)
 
 
+def _fold_ask_persist_content(event: dict, final_message: str) -> str:
+    """Fold the ask_user_question force-stop's body into the message to persist.
+
+    That force-stop yields `done` with no preceding `token` events, so
+    `final_message` is empty and the turn would persist as an empty assistant
+    message — which replays as `AIMessage(content="")` on the next turn and is a
+    provider-compatibility hazard besides.
+
+    Pops rather than reads, so the key never reaches the client-visible `done`
+    payload (which spreads every remaining event key). A turn that actually
+    streamed tokens keeps them: this is a fallback, not an override.
+    """
+    content = event.pop("persist_content", None)
+    if content and not final_message:
+        return content
+    return final_message
+
+
 async def _persist_turn(
     db: Session,
     conversation,
@@ -799,6 +817,7 @@ async def _handle_chat_send(
                     collected_steps = event.get("steps", [])
                 collected_retry_succeeded = event.pop("retry_succeeded", None)
                 collected_judge_metadata = event.pop("judge_metadata", None)
+                final_message = _fold_ask_persist_content(event, final_message)
                 pending_done_event = {
                     "type": ws_type,
                     "request_id": request_id,

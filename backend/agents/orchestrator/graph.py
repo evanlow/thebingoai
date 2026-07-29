@@ -339,6 +339,38 @@ def _previous_turn_asked_question(
             db.close()
 
 
+def _render_asked_questions(questions: list) -> str:
+    """Human-readable rendering of an ask_user_question payload.
+
+    Persisted as the assistant message for the turn. `final_message` accumulates
+    only from `token` events (websocket.py) and the ask path streams none, so
+    without this the turn persists as an empty assistant message: `_build_messages`
+    then replays `AIMessage(content="")` and the next turn shows
+    `user → assistant:"" → user`, forcing the model to re-infer what it asked.
+    An empty assistant turn is also a provider-compatibility hazard.
+    """
+    lines: list = []
+    for q in questions:
+        if not isinstance(q, dict):
+            continue
+        text = str(q.get("question") or "").strip()
+        if not text:
+            continue
+        lines.append(f"- {text}")
+        options = q.get("options")
+        if isinstance(options, list):
+            labels = [
+                str(o.get("label") or "").strip()
+                for o in options
+                if isinstance(o, dict) and str(o.get("label") or "").strip()
+            ]
+            if labels:
+                lines.append(f"  Options: {' / '.join(labels)}")
+    if not lines:
+        return ""
+    return "I asked the user:\n" + "\n".join(lines)
+
+
 def _build_messages(
     user_question: str,
     history: Optional[list],
@@ -1438,12 +1470,24 @@ async def stream_orchestrator(
 
                 # Force-stop: ask_user_question ends the turn immediately
                 # (like Claude Code's AskUserQuestion — the agent waits for user input)
-                if tool_name == "ask_user_question":
+                # Only a *successful* ask stops the turn. A rejected one — malformed
+                # payload, or the one-round cap — returns {"error": ...}; the agent
+                # must stay on the loop and finish the task instead of stalling on a
+                # question the user never saw.
+                asked_questions = (
+                    parsed_output.get("questions")
+                    if isinstance(parsed_output, dict) else None
+                )
+                if tool_name == "ask_user_question" and asked_questions:
                     yield {
                         "type": "done",
                         "content": "Waiting for user input",
                         "thread_id": context.thread_id,
                         "steps": collected_steps,
+                        # Consumed by websocket.py as the assistant message body when
+                        # no tokens streamed. Popped there, so the client-visible
+                        # `done` payload is unchanged.
+                        "persist_content": _render_asked_questions(asked_questions),
                     }
                     return
 
