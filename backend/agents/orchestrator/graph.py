@@ -8,6 +8,7 @@ from backend.agents.orchestrator.profile_tools import build_profile_tools
 from backend.agents.orchestrator.orchestrator_dashboard_tools import build_dashboard_tools
 from backend.agents.orchestrator.memory_tools import build_memory_tools
 from backend.agents.orchestrator.manage_tool import build_manage_tool
+from backend.agents.orchestrator_prompt_blocks import ORCHESTRATOR_DASHBOARD_SCOPING
 from backend.agents.profile_renderer import ProfileRenderer, RuntimeContext
 from backend.agents.orchestrator.pre_steps import run_pre_steps, PreStepContext
 from backend.agents.orchestrator.response_judge import judge_response, JudgeVerdict
@@ -275,6 +276,17 @@ async def _render_orchestrator_prompt(
             available_connections=context.available_connections,
             connection_metadata=context.connection_metadata,
         )
+
+    # Kill switch. Seeded profiles carry the scoping block in their stored text,
+    # so it has to come off the *rendered* prompt — every path above included.
+    # Flipping DASHBOARD_SCOPING_QUESTIONS=false restores the build-immediately
+    # behaviour with no migration and no code edit. The one-round cap inside
+    # ask_user_question is deliberately NOT gated on this: it only prevents
+    # loops, and is never the thing you want to turn off.
+    if not settings.dashboard_scoping_questions:
+        base_prompt = base_prompt.replace(
+            ORCHESTRATOR_DASHBOARD_SCOPING + "\n\n", ""
+        ).replace(ORCHESTRATOR_DASHBOARD_SCOPING, "")
 
     # Per-turn @-mention block. The profile renderer and legacy prompt don't
     # know about mentions (only the lean prompt does), so append it here so the
