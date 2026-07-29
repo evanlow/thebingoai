@@ -8,6 +8,7 @@ from backend.models.user import User
 from backend.models.database_connection import DatabaseConnection
 from backend.models.dashboard import Dashboard
 from backend.schemas.widget_data import FilterParam, WidgetRefreshRequest, WidgetRefreshResponse, BulkRefreshRequest, BulkRefreshResponse, WidgetSuggestFixRequest, WidgetSuggestFixResponse
+from backend.services.schema_utils import normalize_sql_for
 from backend.services.widget_transform import transform_widget_data, _to_json_safe
 import logging
 from typing import List, Optional, Tuple
@@ -648,6 +649,9 @@ def _serve_widget_via_dataplane(
     base_sql, _ = rewrite_table_refs(
         request.sql, plane_table_map(connection, db), qualifier_allowlist(connection)
     )
+    # DuckDB reads the same ANSI quoting the agent writes, so this only quotes
+    # reserved-word identifiers (a column literally named `left`, `order`, `end`).
+    base_sql = normalize_sql_for(base_sql, "duckdb")
 
     # ── Dev: local plane → serve live over local Parquet ──────────────────
     if isinstance(plane, LocalFilesystemDataPlane):
@@ -723,6 +727,18 @@ def _serve_widget_via_dataplane(
     finally:
         if owns_reader and reader is not None:
             reader.close()
+
+
+def _plane_miss_key(connection_id, sql: str) -> tuple:
+    """Key for the request-scoped "this won't serve from the plane" memo.
+
+    A missing Parquet glob costs a full GCS round-trip (~3-4s) to discover, and
+    every widget on the same tables rediscovers it. Same connection + same table
+    set → same outcome, so probe once. Widgets on other tables still get theirs.
+    """
+    from backend.utils.sql_refs import extract_table_refs
+    tables = extract_table_refs(sql or "")  # sorted + deduped; [] on parse failure
+    return (connection_id, tuple(tables)) if tables else (connection_id, sql)
 
 
 router = APIRouter(prefix="/dashboards", tags=["widget-data"])
@@ -899,8 +915,16 @@ def _refresh_widget_sync(
             # SQL; "postgres" = repair ANSI double-quoted identifiers ("col") to
             # the target's native quoting — the agent sometimes emits them and
             # they break on MySQL (see conn 50 / dash 36).
+            # The native attempt runs normalized SQL: the agent emits ANSI
+            # `"col"` whatever the surface is (a *string* on BigQuery) and leaves
+            # reserved-word columns like `left` unquoted. The transpile plans
+            # below can't repair either for dataset/plane connections — their
+            # db_type isn't a sqlglot dialect, so `target` is invalid and every
+            # non-native plan raises. No-op when the SQL is already correct.
+            native_sql = normalize_sql_for(request.sql, _resolve_inject_dialect(connection))
+
             def _attempt(source, with_filter):
-                base = (request.sql if source is None
+                base = (native_sql if source is None
                         else transpile_to_engine(request.sql, source=source, target=target))
                 s, p = (_prepare(base) if with_filter else (base, None))
                 return connector.execute_query(s, params=p)
@@ -1065,6 +1089,10 @@ async def refresh_dashboard_widgets(
     connection_cache: dict = {}
     connector_cache: dict = {}
 
+    # Request-scoped memo of (connection, tables) that already failed to serve
+    # from the plane — see `_plane_miss_key`. Never leaks across requests.
+    plane_miss_keys: set = set()
+
     # Redis result cache (flag-gated, per-Org): generation, scope, and filter
     # canonicalization computed once for the whole dashboard; lookups are one
     # GET per widget. `bulk_cache_gen is not None` marks the cache active.
@@ -1128,7 +1156,8 @@ async def refresh_dashboard_widgets(
             # DuckDB-over-DataPlane serving (flag-gated, per migrated dashboard) —
             # same path as single-widget refresh, so bulk loads on cut-over Orgs
             # avoid the per-widget BQ job. Falls through on None (GAP-7).
-            if duck_enabled:
+            miss_key = _plane_miss_key(connection_id, sql) if duck_enabled else None
+            if miss_key is not None and miss_key not in plane_miss_keys:
                 try:
                     with _shared_serve_ctx(dash_is_shared, serving_org):
                         served = _serve_widget_via_dataplane(
@@ -1144,7 +1173,9 @@ async def refresh_dashboard_widgets(
                         _widget_cache_store(widget_cache_key, bulk_cache_ttl, served)
                         results[widget_id] = {"config": served.config, "refreshed_at": refreshed_at, "served_from": served.served_from}
                         continue
+                    plane_miss_keys.add(miss_key)
                 except Exception as e:
+                    plane_miss_keys.add(miss_key)
                     logger.warning(f"DuckDB serving failed for widget {widget_id}, falling back: {e}")
 
             # Try DataPlane cache — only when unfiltered (the `_dash_*` cache
@@ -1243,8 +1274,11 @@ async def refresh_dashboard_widgets(
                     # source: None = native as-is; "bigquery" = legacy BQ SQL;
                     # "postgres" = repair ANSI "col" identifiers to the target's
                     # native quoting (breaks on MySQL otherwise). See refresh_widget.
+                    # Same normalization as refresh_widget's native attempt.
+                    native_sql = normalize_sql_for(sql, _resolve_inject_dialect(connection))
+
                     def _attempt_bulk(source, with_filter):
-                        base = (sql if source is None
+                        base = (native_sql if source is None
                                 else transpile_to_engine(sql, source=source, target=target))
                         s, p = (_prepare_bulk(base) if with_filter else (base, None))
                         return connector.execute_query(s, params=p)

@@ -11,6 +11,11 @@ This module must stay import-free: `profile_renderer.py` imports
 profile_renderer → profile_defaults).
 """
 
+# Hard widget cap. Lives here (not in the verifier) because this module is the
+# import-free one — `dashboard_widget_verifier` re-exports it. Single source of
+# truth so the prompt can never advertise a limit the verifier then rejects.
+MAX_TOTAL_WIDGETS = 15
+
 # ---------------------------------------------------------------------------
 # Identity
 # ---------------------------------------------------------------------------
@@ -264,7 +269,9 @@ consecutive charts share the row equally (6+6).
 
 ### Widget Count Guidelines
 
-- Target **11-15 widgets** total (min 9, max 17)
+- **{MAX_WIDGETS} widgets is a HARD cap** — a dashboard with more is rejected and you
+  have to rebuild it. Target 11-{MAX_WIDGETS} total (min 9). "Very detailed" means
+  richer widgets, NOT more of them.
 - 3-5 KPIs + 1 filter bar + 3-5 section widgets + 3-6 charts + 1-2 tables (a pivot_table counts as a table)
 - Section widgets are the section headers (one per analysis section, one before the detail tables) — tables use `config.title` for their own title. Text widgets are for optional narrative prose only.
 
@@ -272,7 +279,7 @@ consecutive charts share the row equally (6+6).
 
 ```json
 {"type": "section", "title": "Revenue Trends & Seasonality", "sectionColor": "blue"}
-```"""
+```""".replace("{MAX_WIDGETS}", str(MAX_TOTAL_WIDGETS))
 
 
 # ---------------------------------------------------------------------------

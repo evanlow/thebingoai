@@ -18,6 +18,41 @@ _VALID_WIDGET_TYPES = {"kpi", "chart", "table", "text", "filter", "pivot_table",
 _DATA_WIDGET_TYPES = {"kpi", "chart", "table", "pivot_table"}
 _VALID_MAPPING_TYPES = {"kpi", "chart", "table", "pivot_table"}
 
+# sqlglot dialect per source db_type. Sibling of `widget_data._resolve_inject_dialect`
+# (same lockdown rule for plane-backed types) but deliberately fail-closed: an
+# unmapped type maps to "" — no rewrite at all, the pre-existing behaviour.
+# Guessing wrong is free for filter injection and destructive for a rewrite.
+_DB_TYPE_DIALECTS = {
+    "postgresql": "postgres",
+    "postgres": "postgres",
+    "mysql": "mysql",
+    "sqlite": "sqlite",
+    "bigquery": "bigquery",
+    "snowflake": "snowflake",
+    "redshift": "redshift",
+    "duckdb": "duckdb",
+}
+
+
+def _widget_sql_dialect(connection, connector) -> str:
+    """Dialect of the surface `_run_widget_query` will actually execute on.
+
+    Not always the source's: plane-backed connectors (dataset/CSV, sheets) and
+    `bigquery_ga4` run through the DataPlane, and an Org on `duckdb_widget_serving`
+    reads Parquet through DuckDB. Empty string when unknown → no rewrite.
+    """
+    if connection.db_type == "bigquery_ga4" or getattr(connector, "serves_from_plane", False) is True:
+        from backend.config import settings
+        return "bigquery" if settings.disable_local_data_plane else "duckdb"
+
+    org_id = getattr(connection, "org_id", None)
+    if org_id:
+        from backend.config.feature_flags import enabled
+        if enabled(str(org_id), "duckdb_widget_serving"):
+            return "duckdb"
+
+    return _DB_TYPE_DIALECTS.get(connection.db_type or "", "")
+
 
 def _run_widget_query(connection, sql: str, db_session_factory, connector):
     """Execute widget SQL against the right surface.
@@ -484,7 +519,13 @@ def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
             "widget_id": None,
             "code": "dashboard_rule",
             "message": rule_msg,
-            "fix_hint": "Apply the KPI deduplication / widget cap rules from the prompt.",
+            # Not "apply the rules from the prompt" — that is circular, and the
+            # agent burns a full regeneration round re-reading it.
+            "fix_hint": (
+                "Drop the surplus widgets from THIS list — do not regenerate the "
+                "dashboard. Merge duplicate breakdowns of the same dimension, fold "
+                "detail into the pivot_table, and keep at most one KPI per metric."
+            ),
         })
 
     return violations
@@ -600,6 +641,18 @@ def _cap_widget_rows(result, widget_id):
     return result
 
 
+def _mark_widget_failed(widget: dict, error: str) -> None:
+    """Record an unrecoverable SQL failure on the widget's own config.
+
+    Without this the widget ships with no `rows`/`value` at all, which renders
+    as an empty table — indistinguishable from "no data" when it actually means
+    "broken SQL". The error rides in the persisted widget JSON so the dashboard
+    can say so instead of showing a blank.
+    """
+    config = widget.setdefault("widget", {}).setdefault("config", {})
+    config["error"] = f"Query failed: {error}"[:500]
+
+
 async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_context: dict | None = None, user_id: str | None = None) -> str | None:
     """
     Execute the dataSource SQL for a widget and merge results into widget.widget.config.
@@ -609,6 +662,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
     Returns error string if both attempts fail, None on success.
     """
     from backend.models.database_connection import DatabaseConnection
+    from backend.services.schema_utils import normalize_sql_for
     from backend.services.widget_transform import transform_widget_data
 
     data_source = widget.get("dataSource")
@@ -641,11 +695,22 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         connector = get_connector_for_connection(connection)
 
+        # The agent writes ANSI-quoted identifiers regardless of the execution
+        # surface, so `c."role"` is a string literal on BigQuery and a column
+        # named `left` is a syntax error anywhere. Fix deterministically before
+        # falling back to the (slow, unreliable) LLM repair below.
+        dialect = _widget_sql_dialect(connection, connector)
+        normalized_sql = normalize_sql_for(sql, dialect)
+
         try:
-            result = await asyncio.to_thread(_run_widget_query, connection, sql, db_session_factory, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, normalized_sql, db_session_factory, connector)
             result = _cap_widget_rows(result, widget_id)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
+            # Persist so the serve path (api/widget_data) gets the fixed SQL too,
+            # instead of re-failing on every dashboard load.
+            if normalized_sql != sql:
+                data_source["sql"] = normalized_sql
             logger.info(f"Widget '{widget_id}': SQL executed, config populated with {result.row_count} rows")
             return
         except Exception as e:
@@ -664,8 +729,9 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
                 tables = extract_table_names(sql)
                 for tbl in list(tables)[:2]:
                     try:
+                        sample_sql = normalize_sql_for(f'SELECT * FROM "{tbl}" LIMIT 3', dialect)
                         sample_result = await asyncio.to_thread(
-                            _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
+                            _run_widget_query, connection, sample_sql, db_session_factory, connector,
                         )
                         sample_data += f"\nTable '{tbl}' sample:\n"
                         sample_data += f"  Columns: {sample_result.columns}\n"
@@ -678,7 +744,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         # Attempt LLM-powered SQL fix with sample data + baseJoin context
         fixed_sql = await _attempt_sql_fix(
-            sql=sql,
+            sql=normalized_sql,
             error_message=first_error_msg,
             connection=connection,
             mapping=mapping,
@@ -690,9 +756,11 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         if not fixed_sql:
             logger.warning(f"Widget '{widget_id}': LLM fix returned no SQL, using LLM-provided config")
+            _mark_widget_failed(widget, first_error_msg)
             return first_error_msg
 
         logger.info(f"Widget '{widget_id}': SQL fix attempted, retrying with corrected SQL")
+        fixed_sql = normalize_sql_for(fixed_sql, dialect)
         try:
             result = await asyncio.to_thread(_run_widget_query, connection, fixed_sql, db_session_factory, connector)
             result = _cap_widget_rows(result, widget_id)
@@ -705,6 +773,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         except Exception as retry_error:
             error_msg = f"Original: {first_error_msg} | Retry: {retry_error}"
             logger.warning(f"Widget '{widget_id}': SQL fix also failed, using LLM-provided config. {error_msg}")
+            _mark_widget_failed(widget, error_msg)
             return error_msg
     finally:
         if connector:

@@ -294,7 +294,8 @@ def test_exactly_one_alembic_head():
     cfg = Config(str(root / "alembic.ini"))
     cfg.set_main_option("script_location", str(root / "alembic"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
-    assert list(heads) == ["0rch5c0pe01"], heads
+    # Single-head guard; update the expected value whenever a revision is added.
+    assert list(heads) == ["w1dgc4p0001"], heads
 
 
 def test_the_previous_head_is_still_reachable():

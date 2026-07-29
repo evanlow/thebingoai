@@ -679,17 +679,16 @@ def test_source_db_fallback_works_for_mysql_connection(monkeypatch):
 
 def test_refresh_widget_postgres_source_repairs_ansi_quotes_for_mysql(monkeypatch):
     """Orchestration: a MySQL widget whose stored SQL uses ANSI double-quoted
-    identifiers must fall through the _attempt chain (native → bigquery →
-    postgres) — the postgres-source attempt repairs `"col"` to backticks, and
-    the loop runs that repaired SQL to success."""
+    identifiers must reach the source as backtick identifiers. `normalize_sql_for`
+    now repairs the quoting on the FIRST (native) attempt, so the widget renders
+    without burning the bigquery/postgres transpile plans behind it."""
     monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
 
     result = FakeQueryResult(columns=["amt"], rows=[(7,)], row_count=1)
 
     def _exec(sql, params=None):
         # The source only accepts MySQL-native backtick identifiers; ANSI
-        # double-quotes (native + the bigquery attempt's string-literal output)
-        # are rejected, forcing fall-through to the postgres-repair attempt.
+        # double-quotes are rejected.
         if "`amt`" in sql:
             return result
         raise Exception(f"unknown identifier quoting: {sql}")
@@ -714,10 +713,9 @@ def test_refresh_widget_postgres_source_repairs_ansi_quotes_for_mysql(monkeypatc
     assert resp is not None
     assert resp.row_count == 1
     assert resp.config == {"value": 7}
-    # Fell through the native attempt (raw ANSI quotes rejected) to a transpiled
-    # repair, and the winning SQL carries MySQL backticks — i.e. the postgres
-    # source attempt produced it.
-    assert fake_connector.execute_query.call_count >= 2
+    # One attempt, already correctly quoted. Before normalization this needed
+    # three (native + bigquery + postgres-repair).
+    assert fake_connector.execute_query.call_count == 1
     assert "`amt`" in fake_connector.execute_query.call_args_list[-1].args[0]
 
 
@@ -752,3 +750,185 @@ def test_refresh_widget_plane_backed_connector_reports_data_plane(monkeypatch):
     # Pin the real core connector too — the fake above only covers the contract.
     from backend.connectors.data_plane import DataPlaneConnector
     assert DataPlaneConnector.serves_from_plane is True
+
+
+# ── Request-scoped dataplane-miss memo ───────────────────────────────────────
+#
+# A cold/absent Parquet glob is discovered by *attempting* the read — a full GCS
+# round-trip (~3-4s). On the live run four widgets on the same table each paid it
+# (~14.3s of a ~20s dashboard load). Probe once per (connection, tables).
+
+
+def test_plane_miss_key_groups_widgets_on_the_same_tables():
+    a = wd._plane_miss_key(42, "SELECT role, COUNT(*) FROM csv_104 GROUP BY role")
+    b = wd._plane_miss_key(42, "SELECT salary FROM csv_104 WHERE salary > 0")
+    assert a == b
+
+
+def test_plane_miss_key_separates_different_tables_and_connections():
+    base = wd._plane_miss_key(42, "SELECT * FROM csv_104")
+    assert base != wd._plane_miss_key(42, "SELECT * FROM csv_999")
+    assert base != wd._plane_miss_key(43, "SELECT * FROM csv_104")
+
+
+def test_plane_miss_key_falls_back_to_the_sql_when_unparseable():
+    a = wd._plane_miss_key(42, "not sql ((")
+    b = wd._plane_miss_key(42, "also not sql ((")
+    assert a != b  # never collapse two queries we could not read
+
+
+def _memo_db(dashboard):
+    """MagicMock db for refresh_dashboard_widgets: no sample connections."""
+    db = MagicMock()
+    q = db.query.return_value
+    q.outerjoin.return_value = q
+    q.filter.return_value = q
+    q.first.return_value = dashboard
+    q.all.return_value = []
+    return db
+
+
+def _memo_dashboard(widgets):
+    return SimpleNamespace(id=1, user_id="u-1", org_id=None,
+                           data_context={}, widgets=widgets)
+
+
+def _memo_widget(wid, sql, connection_id=42):
+    return {
+        "id": wid,
+        "widget": {"type": "kpi", "config": {}},
+        "dataSource": {"connectionId": connection_id, "sql": sql, "mapping": {"type": "kpi"}},
+    }
+
+
+def _setup_bulk(monkeypatch, dashboard):
+    """Patch the bulk-refresh collaborators; returns the probe-call log."""
+    monkeypatch.setattr(
+        "backend.api.dashboards._dashboard_visible_to",
+        lambda q, user, db: q,
+    )
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: True)
+    monkeypatch.setattr(wd, "_widget_cache_enabled", lambda org_id: False)
+    # raising=False: another suite stubs out data_plane_service, so the real
+    # attribute is not always there when the whole suite runs.
+    monkeypatch.setattr(
+        "backend.services.data_plane_service.get_gcs_duckdb_reader",
+        lambda scope, db: None,
+        raising=False,
+    )
+    monkeypatch.setattr(wd, "_read_widget_from_cache", lambda *a, **k: None)
+    # Source fallback short-circuits into a per-widget {"error": …} result.
+    monkeypatch.setattr(wd, "_readable_connection", lambda *a, **k: None)
+
+    probes = []
+
+    def _probe(request, dash, user, db, reader=None):
+        probes.append(request.widget_id)
+        return None
+
+    monkeypatch.setattr(wd, "_serve_widget_via_dataplane", _probe)
+    return probes
+
+
+def test_bulk_refresh_probes_a_failing_scope_once(monkeypatch):
+    dashboard = _memo_dashboard([
+        _memo_widget("w1", "SELECT role FROM csv_104"),
+        _memo_widget("w2", "SELECT salary FROM csv_104"),
+        _memo_widget("w3", "SELECT COUNT(*) FROM csv_104"),
+    ])
+    probes = _setup_bulk(monkeypatch, dashboard)
+
+    _run(wd.refresh_dashboard_widgets(1, None, _user(), _memo_db(dashboard)))
+
+    assert probes == ["w1"]
+
+
+def test_bulk_refresh_still_probes_a_different_table(monkeypatch):
+    dashboard = _memo_dashboard([
+        _memo_widget("w1", "SELECT role FROM csv_104"),
+        _memo_widget("w2", "SELECT * FROM csv_999"),
+    ])
+    probes = _setup_bulk(monkeypatch, dashboard)
+
+    _run(wd.refresh_dashboard_widgets(1, None, _user(), _memo_db(dashboard)))
+
+    assert probes == ["w1", "w2"]
+
+
+def test_bulk_refresh_memo_does_not_leak_across_requests(monkeypatch):
+    dashboard = _memo_dashboard([_memo_widget("w1", "SELECT role FROM csv_104")])
+    probes = _setup_bulk(monkeypatch, dashboard)
+
+    _run(wd.refresh_dashboard_widgets(1, None, _user(), _memo_db(dashboard)))
+    _run(wd.refresh_dashboard_widgets(1, None, _user(), _memo_db(dashboard)))
+
+    assert probes == ["w1", "w1"]
+
+
+def test_bulk_refresh_serves_every_widget_when_the_probe_succeeds(monkeypatch):
+    dashboard = _memo_dashboard([
+        _memo_widget("w1", "SELECT role FROM csv_104"),
+        _memo_widget("w2", "SELECT salary FROM csv_104"),
+    ])
+    probes = _setup_bulk(monkeypatch, dashboard)
+
+    def _ok(request, dash, user, db, reader=None):
+        probes.append(request.widget_id)
+        return SimpleNamespace(config={"value": 1}, served_from="data_plane")
+
+    monkeypatch.setattr(wd, "_serve_widget_via_dataplane", _ok)
+    monkeypatch.setattr(wd, "_widget_cache_store", lambda *a, **k: None)
+
+    resp = _run(wd.refresh_dashboard_widgets(1, None, _user(), _memo_db(dashboard)))
+
+    assert probes == ["w1", "w2"]
+    assert resp.widgets["w1"]["served_from"] == "data_plane"
+
+
+# ── Serve-path SQL normalization ─────────────────────────────────────────────
+#
+# Widgets persisted with ANSI `"col"` quoting are string literals on BigQuery,
+# and a column named `left` is a syntax error everywhere. The transpile ladder
+# below can't repair either for dataset/plane connections — their db_type isn't
+# a sqlglot dialect, so every non-native plan raises. Normalize the native try.
+
+_RESERVED = 'SELECT c."role" AS role, c."left" AS left FROM csv_104 c'
+
+
+def test_source_fallback_normalizes_the_native_attempt(monkeypatch):
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "_read_widget_from_cache", lambda *a, **k: None)
+    from backend.config import settings
+    monkeypatch.setattr(settings, "disable_local_data_plane", True, raising=False)
+
+    seen = []
+
+    class _Recorder:
+        def execute_query(self, sql, params=None):
+            seen.append(sql)
+            return FakeQueryResult(columns=["role"], rows=[("eng",)], row_count=1)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection", lambda conn: _Recorder(),
+    )
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 1})
+
+    db = _db_with_first(FakeConnection(db_type="dataset"))
+    req = wd.WidgetRefreshRequest(connection_id=42, sql=_RESERVED, mapping={})
+    _run(wd.refresh_widget(req, _user(), db))
+
+    assert seen, "connector was never called"
+    assert "`role`" in seen[0]        # ANSI quotes would be a string literal on BQ
+    assert "`left`" in seen[0]        # reserved word now quoted
+
+
+# NOTE: the DuckDB branch of `_serve_widget_via_dataplane` also normalizes
+# (`normalize_sql_for(base_sql, "duckdb")`, quoting reserved-word identifiers).
+# It is not covered end-to-end here: every test that drives that branch resolves
+# a different `data_plane_service` module object than monkeypatch patches when
+# the whole suite runs, which is why its siblings above are in the known-failing
+# baseline. The rewrite itself is covered by
+# backend/tests/services/test_schema_utils_normalize.py.
