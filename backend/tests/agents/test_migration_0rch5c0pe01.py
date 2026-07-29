@@ -58,12 +58,18 @@ def test_no_live_defaults_import_at_upgrade():
     assert "orchestrator_prompt_blocks" not in src.split('"""', 2)[-1]
 
 
-def test_hash_sets_are_non_empty_and_look_like_sha256():
-    for name in ("_OLD_IDENTITY_HASHES", "_OLD_TOOLS_HASHES"):
-        digests = _literal(name)
-        assert digests
-        for d in digests:
-            assert len(d) == 64 and set(d) <= set("0123456789abcdef")
+def test_tools_hash_set_is_non_empty_and_looks_like_sha256():
+    digests = _literal("_OLD_TOOLS_HASHES")
+    assert digests
+    for d in digests:
+        assert len(d) == 64 and set(d) <= set("0123456789abcdef")
+
+
+def test_old_identities_are_texts_ordered_longest_first():
+    """Suffix matching needs the most specific tail to win."""
+    olds = _literal("_OLD_IDENTITIES")
+    assert olds and all(isinstance(t, str) and t for t in olds)
+    assert list(olds) == sorted(olds, key=len, reverse=True)
 
 
 # --- the snapshot is current -------------------------------------------
@@ -93,21 +99,18 @@ def test_tools_snapshot_carries_the_scoped_ban():
     assert "You MUST handle the full workflow automatically." not in tools
 
 
-def test_the_new_text_is_not_in_its_own_old_hash_set():
+def test_the_new_text_is_not_itself_a_known_old_default():
     """Otherwise a re-run would treat the fresh text as stale and rewrite forever."""
-    new_identity = hashlib.sha256(_literal("_NEW_IDENTITY").encode()).hexdigest()
+    new_identity = _literal("_NEW_IDENTITY")
+    assert not any(new_identity.endswith(o) for o in _literal("_OLD_IDENTITIES"))
     new_tools = hashlib.sha256(_literal("_NEW_TOOLS").encode()).hexdigest()
-    assert new_identity not in _literal("_OLD_IDENTITY_HASHES")
     assert new_tools not in _literal("_OLD_TOOLS_HASHES")
 
 
-def test_the_immediately_previous_default_is_in_the_hash_set():
-    """The 1674-char identity is what current installs are seeded with. If its
-    digest is missing they are skipped forever."""
-    assert (
-        "a4abe886dc1eafda60d205cf963af2583f82cc55c7561719f60279318d01effd"
-        in _literal("_OLD_IDENTITY_HASHES")
-    )
+def test_the_immediately_previous_default_is_matched():
+    """The 1674-char identity is what current installs are seeded with. If it is
+    missing from the match set they are skipped forever."""
+    assert _SEEDED_IDENTITY_1674 in _literal("_OLD_IDENTITIES")
     assert (
         "4a58590dc43e7dc7a15e9b4dba97823d4f51281dea6cbf82be2fa25a4523c414"
         in _literal("_OLD_TOOLS_HASHES")
@@ -148,8 +151,8 @@ def _row(conn, rid):
 
 
 # The 1674-char identity every current install is seeded with. Embedded as a
-# literal because the test container has no git and the text must hash-match
-# _OLD_IDENTITY_HASHES exactly.
+# literal because the test container has no git and the text must match
+# _OLD_IDENTITIES exactly.
 _SEEDED_IDENTITY_1674 = "You are a helpful, direct assistant built for data work.\n\nYou can query databases, create dashboards, manage reusable skills, search documents, and recall past conversations.\nUse your tools to fulfill requests. When a request is unclear, ask for clarification first.\nWhen a request requires action (tool calls), start by briefly acknowledging what you'll do — one sentence max. This appears as your immediate reply while you work.\n\n## Approach\n\n**Simple requests** (quick lookups, single-tool tasks, factual questions): Act immediately — no planning needed.\n\n**Complex requests** (multi-step tasks, dashboard creation, multi-table analysis, ambiguous scope): Follow the Plan-then-Execute workflow:\n\n### Phase 1 — Explore\nUnderstand what the user is asking. Use tools to discover relevant context:\n- Check available connections and schemas\n- Recall past context if relevant\n- Identify what information you need before proceeding\n\n### Phase 2 — Design\nFormulate your approach:\n- What tools/agents you'll use and in what order\n- What assumptions you're making\n- What the expected outcome looks like\n\n### Phase 3 — Review\nBefore executing, confirm with the user:\n- Use `ask_user_question` to get structured input on key decisions\n- Summarize what you intend to do and ask for confirmation\n- If the user modifies the plan, adjust before proceeding\n\n### Phase 4 — Execute\nCarry out the confirmed plan step by step.\n\n**When to skip planning:** If the user's intent is unambiguous AND requires only 1-2 tool calls, skip directly to execution.\n\n**When to plan:** Dashboard creation, multi-table analysis, requests with unclear scope, requests touching multiple agents or connections."
 
 
@@ -159,11 +162,63 @@ def _a_known_old_identity():
 
 def test_a_seeded_row_is_rewritten(conn, monkeypatch):
     old = _a_known_old_identity()
-    assert hashlib.sha256(old.encode()).hexdigest() in _literal("_OLD_IDENTITY_HASHES")
+    assert old in _literal("_OLD_IDENTITIES")
     _seed(conn, id=1, agent_type="orchestrator", identity=old, tools=None,
           published_snapshot=None)
     _run_upgrade(conn, monkeypatch)
     assert _row(conn, 1)["identity"] == _literal("_NEW_IDENTITY")
+
+
+def test_a_personalized_row_keeps_its_header_and_gains_the_new_tail(conn, monkeypatch):
+    """agent_profile_renderer.render_identity_text stores
+    `"{header}{voice}\\n\\n{default}"` on every draft save, so a personalized row is
+    the default with a name header glued on. Whole-text hashing skipped every one
+    of those — in practice most real rows.
+    """
+    header = 'Your name is Bingo.\n\n## Voice\n- Tone: high — direct, energetic.\n\n'
+    _seed(conn, id=1, agent_type="orchestrator",
+          identity=header + _SEEDED_IDENTITY_1674, tools=None, published_snapshot=None)
+    _run_upgrade(conn, monkeypatch)
+    got = _row(conn, 1)["identity"]
+    assert got.startswith(header), "the personalization header must survive verbatim"
+    assert got == header + _literal("_NEW_IDENTITY")
+    assert "ask_user_question Rules" in got
+
+
+def test_the_exact_local_db_shape_is_matched(conn, monkeypatch):
+    """Reproduces the row found in the local database during Phase 6: the seeded
+    1674-char default with 'Your name is Bingo.' prepended (1695 chars)."""
+    identity = "Your name is Bingo.\n\n" + _SEEDED_IDENTITY_1674
+    assert len(identity) == 1695
+    _seed(conn, id=1, agent_type="orchestrator", identity=identity, tools=None,
+          published_snapshot=None)
+    _run_upgrade(conn, monkeypatch)
+    got = _row(conn, 1)["identity"]
+    assert got == "Your name is Bingo.\n\n" + _literal("_NEW_IDENTITY")
+
+
+def test_a_personalized_snapshot_is_refreshed_too(conn, monkeypatch):
+    header = "Your name is Ada.\n\n"
+    _seed(conn, id=1, agent_type="orchestrator", identity=None, tools=None,
+          published_snapshot=json.dumps({
+              "identity": header + _SEEDED_IDENTITY_1674, "soul": "keep me",
+          }))
+    _run_upgrade(conn, monkeypatch)
+    snap = json.loads(_row(conn, 1)["published_snapshot"])
+    assert snap["identity"] == header + _literal("_NEW_IDENTITY")
+    assert snap["soul"] == "keep me"
+
+
+def test_a_hand_edited_tail_is_not_rewritten(conn, monkeypatch):
+    """Suffix matching must not become a wildcard: changing the workflow text
+    itself means the row is user-owned, header or no header."""
+    edited = "Your name is Bingo.\n\n" + _SEEDED_IDENTITY_1674.replace(
+        "**When to plan:**", "**When I feel like planning:**"
+    )
+    _seed(conn, id=1, agent_type="orchestrator", identity=edited, tools=None,
+          published_snapshot=None)
+    _run_upgrade(conn, monkeypatch)
+    assert _row(conn, 1)["identity"] == edited
 
 
 def test_a_hand_edited_row_is_left_byte_identical(conn, monkeypatch):
