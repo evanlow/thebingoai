@@ -904,3 +904,93 @@ def backfill_templates_for_core_connectors(db: Session) -> dict[str, int]:
         [reg for reg in _factory._CONNECTORS.values() if _is_dynamic_sql_registration(reg)],
         db,
     )
+
+
+_BACKFILL_LEASE_KEY = "bingo:template_backfill:lease"
+# ponytail: fixed TTL, no renewal. A backfill that outruns it lets a second
+# replica start — same idempotent work, no corruption, just the introspection
+# paid twice. Add a renewal heartbeat only if that actually shows up in logs.
+_BACKFILL_LEASE_TTL = 900  # seconds
+
+# Release only what we still hold: once the TTL lapses the key belongs to
+# whoever took it next, and a blind DEL would evict their lease.
+_RELEASE_LEASE_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
+
+
+def run_startup_backfill() -> None:
+    """Run the whole startup template backfill: every loaded plugin, then the
+    core connectors. Entry point for the daemon thread started in
+    `backend.main.lifespan`.
+
+    Single-flight across replicas. Pods now reach Ready in seconds, so a rolling
+    deploy has every replica in this function at once — before the work was
+    deferred, readiness gated on it and serialised it. A Redis lease
+    (`SET NX EX`) keeps one process doing the live source-DB introspection.
+    Losers skip rather than queue: the work is idempotent and reruns on the next
+    boot, and queueing would just recreate the pile-up.
+
+    Redis rather than `pg_try_advisory_lock`, which is what this first shipped
+    with and is wrong here: `DATABASE_URL` points at a **transaction-mode**
+    pooler (Supabase :6543, DO :25061), where consecutive statements need not
+    land on the same server session. The acquire and the release can hit
+    different backends, so replicas both proceed *and* the lock leaks onto a
+    pooled connection that nothing will ever unlock. `database/session.py` names
+    exactly this constraint. `services/seed.py:142` still takes an advisory lock
+    on that engine and has the same latent bug.
+
+    Also cheaper: nothing holds a database connection for the duration, which
+    matters against the managed PG's 25-connection cap.
+
+    Fails open. If Redis is unreachable the backfill runs unguarded — losing
+    single-flight beats losing the backfill.
+
+    Never raises. This runs detached on a thread, so anything escaping would be
+    lost — every failure path logs instead.
+    """
+    try:
+        import uuid
+
+        import redis as syncredis
+
+        from backend.config import settings
+        from backend.database.session import SessionLocal
+        from backend.plugins.loader import backfill_all_plugin_templates
+
+        token = uuid.uuid4().hex
+        try:
+            client = syncredis.from_url(settings.redis_url, decode_responses=True)
+            held = client.set(_BACKFILL_LEASE_KEY, token, nx=True, ex=_BACKFILL_LEASE_TTL)
+        except Exception:
+            logger.warning(
+                "Backfill lease unavailable, running without single-flight", exc_info=True,
+            )
+            client, held = None, True
+
+        if not held:
+            logger.info("Template backfill already running on another replica, skipping")
+            return
+
+        try:
+            with SessionLocal() as db:
+                try:
+                    backfill_all_plugin_templates()
+                except Exception:
+                    logger.warning("Plugin template backfill failed", exc_info=True)
+                try:
+                    backfill_templates_for_core_connectors(db)
+                except Exception:
+                    logger.warning("Core-connector template backfill failed", exc_info=True)
+        finally:
+            if client is not None:
+                try:
+                    client.eval(_RELEASE_LEASE_LUA, 1, _BACKFILL_LEASE_KEY, token)
+                except Exception:
+                    # Not worth retrying — the lease expires on its own.
+                    logger.warning("Failed to release backfill lease", exc_info=True)
+    except Exception:
+        logger.exception("Startup template backfill aborted")

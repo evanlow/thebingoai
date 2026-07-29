@@ -62,17 +62,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Shared sample provisioning failed", exc_info=True)
 
-    # Backfill dynamic SQL pipeline templates for core connectors (postgres /
-    # mysql / sqlite) which are registered at module import in
-    # `backend.connectors.factory`, not via a BingoPlugin.
-    try:
-        from backend.database.session import SessionLocal
-        from backend.services.template_materializer import backfill_templates_for_core_connectors
-        with SessionLocal() as db:
-            backfill_templates_for_core_connectors(db)
-    except Exception:
-        logger.warning("Core-connector template backfill failed", exc_info=True)
-
     # Backfill profiling for existing connections (runs once after deploy)
     try:
         from backend.tasks.profiling_tasks import backfill_profile_all_connections
@@ -86,6 +75,21 @@ async def lifespan(app: FastAPI):
         _start_lineage_subscriber()
     except Exception:
         logger.warning("Failed to start lineage cache subscriber", exc_info=True)
+
+    # Template backfill (core connectors + every plugin) does live source-DB
+    # introspection per connection — slow, and dead/misconfigured connections
+    # stall the event loop for their full connect timeout. Run it off the startup
+    # critical path on a thread so uvicorn serves /health immediately and
+    # readiness never waits on external DBs. Daemon, so a mid-flight backfill
+    # never delays process exit: the work is idempotent, self-gated by
+    # settings.template_backfill_on_startup, and reruns on the next boot.
+    # run_startup_backfill single-flights across replicas and swallows+logs its
+    # own failures — nothing to await or cancel here.
+    import threading
+    from backend.services.template_materializer import run_startup_backfill
+    threading.Thread(
+        target=run_startup_backfill, daemon=True, name="template-backfill",
+    ).start()
 
     yield
     # Shutdown
