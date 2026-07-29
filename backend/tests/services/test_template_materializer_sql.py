@@ -881,119 +881,118 @@ def test_backfill_for_core_connectors_walks_factory_registry():
     assert set(out.keys()) == {"postgres", "mysql"}
 
 
+
+
 # ── run_startup_backfill: single-flight + failure containment ─────────────
 #
 # These reuse this module's stubbing scaffolding rather than duplicating it in a
 # separate file. run_startup_backfill runs detached on a daemon thread from
 # backend.main.lifespan, so "never raises" and "exactly one replica introspects"
 # are the two properties worth pinning.
-
-
-def _lock_conn(*, acquired=True):
-    """Fake raw connection: .execution_options() -> self, .execute().scalar() -> acquired."""
-    conn = MagicMock()
-    conn.execution_options.return_value = conn
-    conn.execute.return_value.scalar.return_value = acquired
-    return conn
-
-
-def _backfill_db(*, dialect="postgresql", lock_conn=None):
-    """Session whose bind reports `dialect` and hands out `lock_conn`."""
-    db = MagicMock()
-    bind = MagicMock()
-    bind.dialect.name = dialect
-    bind.connect.return_value = lock_conn if lock_conn is not None else _lock_conn()
-    db.get_bind.return_value = bind
-    return db, bind
+#
+# The lease is Redis, not pg_try_advisory_lock: DATABASE_URL points at a
+# transaction-mode pooler where acquire and release can land on different server
+# sessions, which both defeats single-flight and leaks the lock.
 
 
 @contextmanager
-def _startup_backfill_env(db, *, plugin_backfill=None, loader_raises=False):
-    """Patch the three lazily-imported deps run_startup_backfill reaches for."""
+def _startup_backfill_env(*, redis_client=None, redis_raises=False,
+                          plugin_backfill=None, loader_raises=False):
+    """Patch the deps run_startup_backfill lazily imports.
+
+    Yields (redis_client, core_backfill_mock) so tests can assert on both.
+    """
+    client = redis_client if redis_client is not None else MagicMock()
+    if redis_client is None:
+        client.set.return_value = True
+
+    fake_redis = _types.ModuleType("redis")
+    fake_redis.from_url = (
+        MagicMock(side_effect=ConnectionError("redis down")) if redis_raises
+        else MagicMock(return_value=client)
+    )
+
+    fake_config = _types.ModuleType("backend.config")
+    fake_config.settings = MagicMock(redis_url="redis://localhost:6379/0")
+
     fake_session = _types.ModuleType("backend.database.session")
     fake_session.SessionLocal = MagicMock()
-    fake_session.SessionLocal.return_value.__enter__.return_value = db
+    fake_session.SessionLocal.return_value.__enter__.return_value = MagicMock(name="db")
 
     fake_loader = _types.ModuleType("backend.plugins.loader")
     if not loader_raises:
         fake_loader.backfill_all_plugin_templates = plugin_backfill or MagicMock()
 
     with patch.dict(sys.modules, {
+        "redis": fake_redis,
+        "backend.config": fake_config,
         "backend.database.session": fake_session,
         "backend.plugins.loader": fake_loader,
     }), patch.object(materializer, "backfill_templates_for_core_connectors") as core:
-        yield core
-
-
-def _executed_sql(conn):
-    return [str(c.args[0]) for c in conn.execute.call_args_list]
+        yield client, core
 
 
 def test_startup_backfill_logs_and_swallows_an_import_failure():
     """The imports live inside the outer try — a broken one must not leave the
     backfill silently dead with nothing in the logs."""
-    db, _ = _backfill_db()
     with patch.object(materializer, "logger") as log, \
-         _startup_backfill_env(db, loader_raises=True) as core:
+         _startup_backfill_env(loader_raises=True) as (_client, core):
         materializer.run_startup_backfill()  # must not raise
 
     assert log.exception.called, "a failed import must be logged, not swallowed"
     core.assert_not_called()
 
 
-def test_startup_backfill_skips_when_another_replica_holds_the_lock():
-    conn = _lock_conn(acquired=False)
-    db, _ = _backfill_db(lock_conn=conn)
+def test_startup_backfill_skips_when_another_replica_holds_the_lease():
+    client = MagicMock()
+    client.set.return_value = None  # redis SET NX returns nil when the key exists
     plugin_backfill = MagicMock()
 
-    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+    with _startup_backfill_env(redis_client=client, plugin_backfill=plugin_backfill) as (_c, core):
         materializer.run_startup_backfill()
 
     plugin_backfill.assert_not_called()
     core.assert_not_called()
-    conn.close.assert_called_once()
-    # Only the try-lock ran — no unlock, since we never held it.
-    assert len(_executed_sql(conn)) == 1
-    assert "pg_try_advisory_lock" in _executed_sql(conn)[0]
+    client.eval.assert_not_called()  # never held it, must not release it
 
 
-def test_startup_backfill_runs_both_under_the_lock_then_releases():
-    conn = _lock_conn(acquired=True)
-    db, _ = _backfill_db(lock_conn=conn)
+def test_startup_backfill_takes_the_lease_then_releases_its_own_token():
     plugin_backfill = MagicMock()
 
-    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+    with _startup_backfill_env(plugin_backfill=plugin_backfill) as (client, core):
         materializer.run_startup_backfill()
 
     plugin_backfill.assert_called_once()
-    core.assert_called_once_with(db)
-    sql = _executed_sql(conn)
-    assert "pg_try_advisory_lock" in sql[0]
-    assert "pg_advisory_unlock" in sql[-1]
-    conn.close.assert_called_once()
+    core.assert_called_once()
+
+    # Acquire: SET NX with a TTL, so a crashed replica can't wedge the lease.
+    _key, token = client.set.call_args.args
+    assert client.set.call_args.kwargs["nx"] is True
+    assert client.set.call_args.kwargs["ex"] == materializer._BACKFILL_LEASE_TTL
+
+    # Release: compare-and-delete against the token we wrote, not a blind DEL.
+    assert client.eval.call_args.args[0] == materializer._RELEASE_LEASE_LUA
+    assert client.eval.call_args.args[-1] == token
 
 
-def test_startup_backfill_releases_the_lock_when_a_backfill_raises():
-    conn = _lock_conn(acquired=True)
-    db, _ = _backfill_db(lock_conn=conn)
+def test_startup_backfill_releases_the_lease_when_a_backfill_raises():
     plugin_backfill = MagicMock(side_effect=RuntimeError("boom"))
 
-    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+    with _startup_backfill_env(plugin_backfill=plugin_backfill) as (client, core):
         materializer.run_startup_backfill()  # must not raise
 
-    # One failing half must not skip the other, and the lock must still drop.
-    core.assert_called_once_with(db)
-    assert "pg_advisory_unlock" in _executed_sql(conn)[-1]
-    conn.close.assert_called_once()
+    # One failing half must not skip the other, and the lease must still drop.
+    core.assert_called_once()
+    client.eval.assert_called_once()
 
 
-def test_startup_backfill_skips_the_lock_on_non_postgres():
-    db, bind = _backfill_db(dialect="sqlite")
+def test_startup_backfill_fails_open_when_redis_is_unreachable():
+    """Losing single-flight beats losing the backfill — it is idempotent."""
     plugin_backfill = MagicMock()
 
-    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+    with _startup_backfill_env(redis_raises=True, plugin_backfill=plugin_backfill) as (client, core):
         materializer.run_startup_backfill()
 
-    bind.connect.assert_not_called()  # no advisory-lock SQL on sqlite
     plugin_backfill.assert_called_once()
-    core.assert_called_once_with(db)
+    core.assert_called_once()
+    client.eval.assert_not_called()  # no lease taken, so nothing to release
