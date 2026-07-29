@@ -904,3 +904,75 @@ def backfill_templates_for_core_connectors(db: Session) -> dict[str, int]:
         [reg for reg in _factory._CONNECTORS.values() if _is_dynamic_sql_registration(reg)],
         db,
     )
+
+
+_BACKFILL_LOCK_KEY = "bingo_template_backfill"
+
+
+def run_startup_backfill() -> None:
+    """Run the whole startup template backfill: every loaded plugin, then the
+    core connectors. Entry point for the daemon thread started in
+    `backend.main.lifespan`.
+
+    Single-flight across replicas. Pods now reach Ready in seconds, so a rolling
+    deploy has every replica in this function at once — before the work was
+    deferred, readiness gated on it and serialised it. A **session-level**
+    `pg_try_advisory_lock` keeps exactly one process doing the live source-DB
+    introspection. Losers skip rather than queue: the work is idempotent and
+    reruns on the next boot, and queueing would just recreate the pile-up.
+
+    Session-level rather than transaction-scoped because the backfill commits
+    per connection, which would drop a txn-scoped lock at the first commit. The
+    lock lives on a dedicated AUTOCOMMIT connection so it neither sits
+    idle-in-transaction (the DB role sets `idle_in_transaction_session_timeout`,
+    which would silently drop the lock mid-run) nor rides the pooled Session,
+    which may swap its underlying connection across those commits. Same reasoning
+    as `backend/services/seed.py`.
+
+    Never raises. This runs detached on a thread, so anything escaping would be
+    lost — every failure path logs instead.
+    """
+    try:
+        from sqlalchemy import text
+
+        from backend.database.session import SessionLocal
+        from backend.plugins.loader import backfill_all_plugin_templates
+
+        with SessionLocal() as db:
+            bind = db.get_bind()
+            # Advisory locks are Postgres-only. sqlite-backed dev/test setups run
+            # a single process anyway, so there is nothing to single-flight.
+            lock_conn = (
+                bind.connect().execution_options(isolation_level="AUTOCOMMIT")
+                if bind.dialect.name == "postgresql"
+                else None
+            )
+            if lock_conn is not None:
+                acquired = lock_conn.execute(
+                    text(f"SELECT pg_try_advisory_lock(hashtext('{_BACKFILL_LOCK_KEY}'))")
+                ).scalar()
+                if not acquired:
+                    lock_conn.close()
+                    logger.info(
+                        "Template backfill already running on another replica, skipping"
+                    )
+                    return
+            try:
+                try:
+                    backfill_all_plugin_templates()
+                except Exception:
+                    logger.warning("Plugin template backfill failed", exc_info=True)
+                try:
+                    backfill_templates_for_core_connectors(db)
+                except Exception:
+                    logger.warning("Core-connector template backfill failed", exc_info=True)
+            finally:
+                if lock_conn is not None:
+                    try:
+                        lock_conn.execute(
+                            text(f"SELECT pg_advisory_unlock(hashtext('{_BACKFILL_LOCK_KEY}'))")
+                        )
+                    finally:
+                        lock_conn.close()
+    except Exception:
+        logger.exception("Startup template backfill aborted")

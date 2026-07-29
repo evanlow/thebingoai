@@ -879,3 +879,121 @@ def test_backfill_for_core_connectors_walks_factory_registry():
 
     # postgres and mysql qualify; dataset is filtered out.
     assert set(out.keys()) == {"postgres", "mysql"}
+
+
+# ── run_startup_backfill: single-flight + failure containment ─────────────
+#
+# These reuse this module's stubbing scaffolding rather than duplicating it in a
+# separate file. run_startup_backfill runs detached on a daemon thread from
+# backend.main.lifespan, so "never raises" and "exactly one replica introspects"
+# are the two properties worth pinning.
+
+
+def _lock_conn(*, acquired=True):
+    """Fake raw connection: .execution_options() -> self, .execute().scalar() -> acquired."""
+    conn = MagicMock()
+    conn.execution_options.return_value = conn
+    conn.execute.return_value.scalar.return_value = acquired
+    return conn
+
+
+def _backfill_db(*, dialect="postgresql", lock_conn=None):
+    """Session whose bind reports `dialect` and hands out `lock_conn`."""
+    db = MagicMock()
+    bind = MagicMock()
+    bind.dialect.name = dialect
+    bind.connect.return_value = lock_conn if lock_conn is not None else _lock_conn()
+    db.get_bind.return_value = bind
+    return db, bind
+
+
+@contextmanager
+def _startup_backfill_env(db, *, plugin_backfill=None, loader_raises=False):
+    """Patch the three lazily-imported deps run_startup_backfill reaches for."""
+    fake_session = _types.ModuleType("backend.database.session")
+    fake_session.SessionLocal = MagicMock()
+    fake_session.SessionLocal.return_value.__enter__.return_value = db
+
+    fake_loader = _types.ModuleType("backend.plugins.loader")
+    if not loader_raises:
+        fake_loader.backfill_all_plugin_templates = plugin_backfill or MagicMock()
+
+    with patch.dict(sys.modules, {
+        "backend.database.session": fake_session,
+        "backend.plugins.loader": fake_loader,
+    }), patch.object(materializer, "backfill_templates_for_core_connectors") as core:
+        yield core
+
+
+def _executed_sql(conn):
+    return [str(c.args[0]) for c in conn.execute.call_args_list]
+
+
+def test_startup_backfill_logs_and_swallows_an_import_failure():
+    """The imports live inside the outer try — a broken one must not leave the
+    backfill silently dead with nothing in the logs."""
+    db, _ = _backfill_db()
+    with patch.object(materializer, "logger") as log, \
+         _startup_backfill_env(db, loader_raises=True) as core:
+        materializer.run_startup_backfill()  # must not raise
+
+    assert log.exception.called, "a failed import must be logged, not swallowed"
+    core.assert_not_called()
+
+
+def test_startup_backfill_skips_when_another_replica_holds_the_lock():
+    conn = _lock_conn(acquired=False)
+    db, _ = _backfill_db(lock_conn=conn)
+    plugin_backfill = MagicMock()
+
+    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+        materializer.run_startup_backfill()
+
+    plugin_backfill.assert_not_called()
+    core.assert_not_called()
+    conn.close.assert_called_once()
+    # Only the try-lock ran — no unlock, since we never held it.
+    assert len(_executed_sql(conn)) == 1
+    assert "pg_try_advisory_lock" in _executed_sql(conn)[0]
+
+
+def test_startup_backfill_runs_both_under_the_lock_then_releases():
+    conn = _lock_conn(acquired=True)
+    db, _ = _backfill_db(lock_conn=conn)
+    plugin_backfill = MagicMock()
+
+    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+        materializer.run_startup_backfill()
+
+    plugin_backfill.assert_called_once()
+    core.assert_called_once_with(db)
+    sql = _executed_sql(conn)
+    assert "pg_try_advisory_lock" in sql[0]
+    assert "pg_advisory_unlock" in sql[-1]
+    conn.close.assert_called_once()
+
+
+def test_startup_backfill_releases_the_lock_when_a_backfill_raises():
+    conn = _lock_conn(acquired=True)
+    db, _ = _backfill_db(lock_conn=conn)
+    plugin_backfill = MagicMock(side_effect=RuntimeError("boom"))
+
+    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+        materializer.run_startup_backfill()  # must not raise
+
+    # One failing half must not skip the other, and the lock must still drop.
+    core.assert_called_once_with(db)
+    assert "pg_advisory_unlock" in _executed_sql(conn)[-1]
+    conn.close.assert_called_once()
+
+
+def test_startup_backfill_skips_the_lock_on_non_postgres():
+    db, bind = _backfill_db(dialect="sqlite")
+    plugin_backfill = MagicMock()
+
+    with _startup_backfill_env(db, plugin_backfill=plugin_backfill) as core:
+        materializer.run_startup_backfill()
+
+    bind.connect.assert_not_called()  # no advisory-lock SQL on sqlite
+    plugin_backfill.assert_called_once()
+    core.assert_called_once_with(db)

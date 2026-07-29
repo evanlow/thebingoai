@@ -135,9 +135,17 @@ def backfill_all_plugin_templates() -> None:
     """Run template backfill for every loaded plugin.
 
     Split out of `discover_and_load_plugins` so the slow, live source-DB
-    introspection runs OFF the startup critical path (see the deferred task in
+    introspection runs OFF the startup critical path (see the deferred thread in
     `backend.main.lifespan`). Idempotent; each plugin self-gates on
     settings.template_backfill_on_startup inside `_backfill_templates_for_plugin`.
+
+    Behaviour change from the split: Celery/agent worker processes reach the
+    plugin system via `discover_and_load_plugins` (`backend/tasks/upload_tasks.py`
+    module import + the `celeryd_init` / `worker_process_init` signals) and so
+    used to backfill too — 5 more pods introspecting the same customer databases
+    in parallel, with no readiness probe serialising them. Only `backend.main`
+    calls this now: backend pods own the backfill, and they cover every
+    connection, so coverage is unchanged while the concurrency drops.
     """
     for plugin in list(_loaded_plugins.values()):
         try:
