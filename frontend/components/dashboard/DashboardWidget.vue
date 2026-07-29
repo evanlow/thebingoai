@@ -126,12 +126,12 @@
 
     <!-- Provenance footer (view mode only) -->
     <div
-      v-if="!editMode && (widget.sources?.length || lastRefreshedAt)"
+      v-if="!editMode && (sourceLabel || lastRefreshedAt)"
       class="widget-footer"
     >
-      <span v-if="widget.sources?.length" class="provenance" :title="`from ${widget.sources[0]}`">
+      <span v-if="sourceLabel" class="provenance" :title="`from ${sourceLabel}`">
         <span class="provenance-prefix">↗ from</span>
-        <a class="provenance-link">{{ widget.sources[0] }}</a>
+        <span class="provenance-source">{{ sourceLabel }}</span>
       </span>
       <span v-else class="provenance-empty" />
       <span v-if="lastRefreshedAt" class="age" :title="lastRefreshedAt">{{ formatRelativeTime(lastRefreshedAt) }}</span>
@@ -171,6 +171,7 @@ import { computed, ref, toRef } from 'vue'
 import { GripVertical, X, RefreshCw, Code, Copy, Settings } from 'lucide-vue-next'
 import type { DashboardWidget } from '~/types/dashboard'
 import { useWidgetData } from '~/composables/useWidgetData'
+import { useConnections } from '~/composables/useConnections'
 import { parseUtcDate } from '~/utils/format'
 import { hasRenderableData } from '~/utils/widgetRender'
 
@@ -207,6 +208,17 @@ const widgetDisplayName = computed(() =>
 )
 
 const hasData = computed(() => hasRenderableData(props.widget))
+
+// Provenance label: the uploaded filename, never the internal storage table
+// name. Only fetch connections when there's one to resolve — public briefing
+// embeds have `dataSource` scrubbed server-side and are unauthenticated.
+const { ensureLoaded: ensureConnectionsLoaded, getSourceLabel } = useConnections()
+if (props.widget.dataSource?.connectionId) ensureConnectionsLoaded()
+
+const sourceLabel = computed(() => {
+  const connectionId = props.widget.dataSource?.connectionId
+  return connectionId ? getSourceLabel(connectionId) : null
+})
 
 function formatRelativeTime(isoString: string): string {
   const diff = Date.now() - parseUtcDate(isoString).getTime()
@@ -292,16 +304,13 @@ function formatRelativeTime(isoString: string): string {
 .provenance-prefix {
   flex-shrink: 0;
 }
-.provenance-link {
-  color: var(--ember);
+.provenance-source {
   font-weight: 500;
-  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
 }
-.provenance-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .age {
   font-family: var(--font-mono);

@@ -296,9 +296,11 @@ import ChatComposer from '~/components/chat/ChatComposer.vue'
 import { useChatFileUpload } from '~/composables/useChatFileUpload'
 import { useChat } from '~/composables/useChat'
 import { useDatasetStatus } from '~/composables/useDatasetStatus'
+import { useConnections } from '~/composables/useConnections'
 
 const store = useDashboardStore()
 const ws = useWorkspaceStore()
+const { ensureLoaded: ensureConnectionsLoaded, getSourceLabel } = useConnections()
 useDatasetStatus()
 const route = useRoute()
 const { isMobile } = useIsMobile()
@@ -317,6 +319,7 @@ onMounted(() => {
     if (!isNaN(id)) store.openDashboard(id)
   }
   store.fetchDashboards()
+  ensureConnectionsLoaded()
 })
 
 // Leaving the dashboard route entirely (to /chat, settings, etc.) frees the
@@ -409,15 +412,12 @@ function openConfigEditor(widgetId: string) {
   configEditorWidget.value = store.currentWidgets.find(w => w.id === widgetId) ?? null
 }
 
+// Shows the file the user uploaded, never the internal storage table name.
+// Sources with no readable name (SQL connections) hide the line entirely.
 const dashboardSourceTitle = computed(() => {
-  const d = store.currentDashboard
-  if (!d) return undefined
-  const widgetSource = store.currentWidgets.find(w => w.sources?.length)?.sources?.[0]
-  return widgetSource
-    ?? (d.data_context as any)?.source_title
-    ?? (d.data_context as any)?.source_name
-    ?? (d.data_context as any)?.source_task
-    ?? undefined
+  if (!store.currentDashboard) return undefined
+  const connectionId = store.currentWidgets.find(w => w.dataSource?.connectionId)?.dataSource?.connectionId
+  return (connectionId ? getSourceLabel(connectionId) : null) ?? undefined
 })
 
 function handleShare() {

@@ -1,10 +1,17 @@
 // Module-level reactive cache shared across all component instances
-const cache = ref<Record<number, { name: string; dbType: string }> | null>(null)
+const cache = ref<
+  Record<number, { name: string; dbType: string; sourceFilename: string | null }> | null
+>(null)
 let fetchPromise: Promise<void> | null = null
 
 // Dynamic type labels populated from /api/connections/types
 const typeLabels = ref<Record<string, string>>({})
 let typesFetched = false
+
+// Non-upload connectors reuse `source_filename` for internal metadata (a JSON
+// blob on Facebook Ads, a seed marker on the sample DB), so only accept a value
+// that actually looks like a filename — anything else is never shown.
+const FILENAME_RE = /^[^{}\n]+\.[A-Za-z0-9]{1,8}$/
 
 export const useConnections = () => {
   const api = useApi()
@@ -19,7 +26,16 @@ export const useConnections = () => {
     ]).then(([data, types]: [any, any]) => {
       const connections = Array.isArray(data) ? data : (data?.connections ?? [])
       cache.value = Object.fromEntries(
-        connections.map((c: any) => [c.id, { name: c.name, dbType: c.db_type ?? '' }])
+        connections.map((c: any) => [
+          c.id,
+          {
+            name: c.name,
+            dbType: c.db_type ?? '',
+            sourceFilename: FILENAME_RE.test(c.source_filename ?? '')
+              ? c.source_filename
+              : null,
+          },
+        ])
       )
       if (types) {
         typesFetched = true
@@ -43,5 +59,11 @@ export const useConnections = () => {
     return label ? `${label} : ${entry.name}` : entry.name
   }
 
-  return { ensureLoaded, getConnectionLabel }
+  // The file the user uploaded. null when there is nothing readable to show
+  // (SQL connections) — callers hide the label rather than fall back to the
+  // internal storage table name.
+  const getSourceLabel = (id: number): string | null =>
+    cache.value?.[id]?.sourceFilename ?? null
+
+  return { ensureLoaded, getConnectionLabel, getSourceLabel }
 }
