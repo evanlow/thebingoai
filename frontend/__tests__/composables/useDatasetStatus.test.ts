@@ -424,3 +424,104 @@ describe('useDatasetStatus', () => {
     expect(mockAttachedFiles.value).toHaveLength(0)
   })
 })
+
+describe('useDatasetStatus — documenting step', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockGetProfilingStatus.mockReset()
+    mockReprofile.mockReset()
+    mockAttachedFiles.value = []
+    wsHandlers.clear()
+  })
+
+  /** A dataset chip that has finished uploading and is awaiting the server. */
+  function processingChip(connectionId = 42) {
+    return {
+      file: { name: 'data.csv', type: 'text/csv', size: 100 },
+      file_id: `connection:${connectionId}`,
+      connection_id: connectionId,
+      preview_url: null,
+      resolved_type: 'text/csv',
+      status: 'processing',
+    }
+  }
+
+  it('reports documenting, not ready, while the connection awaits its docs (poll path)', async () => {
+    const store = useChatStore()
+    store.currentThreadId = 't1'
+    store.markDocsPending(42)
+    mockAttachedFiles.value = [processingChip()]
+    mockGetProfilingStatus.mockResolvedValue({
+      status: 'ready', progress: null, error: null, completed_at: '2024-01-01T00:05:00Z',
+    })
+
+    const { datasets } = useDatasetStatus()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(datasets.value[0].step).toBe('documenting')
+    expect(datasets.value[0].completedAt).toBeNull()
+  })
+
+  it('reports documenting when readiness arrives over the WebSocket instead', async () => {
+    const store = useChatStore()
+    store.currentThreadId = 't1'
+    store.markDocsPending(42)
+    mockGetProfilingStatus.mockResolvedValue({
+      status: 'ready', progress: null, error: null, completed_at: '2024-01-01T00:05:00Z',
+    })
+    mockAttachedFiles.value = [processingChip()]
+
+    const { datasets } = useDatasetStatus()
+    wsHandlers.get('dataset.status')!({
+      file_id: 'connection:42', thread_id: 't1', step: 'ready', connection_id: 42,
+    })
+    await Promise.resolve()
+
+    expect(datasets.value.find(d => d.connectionId === 42)!.step).toBe('documenting')
+    // The chip is held back too — the state machine must not close early.
+    expect(mockAttachedFiles.value[0].status).toBe('processing')
+  })
+
+  it('advances to ready and flips the chip once the docs clear', async () => {
+    const store = useChatStore()
+    store.currentThreadId = 't1'
+    store.markDocsPending(42)
+    mockGetProfilingStatus.mockResolvedValue({
+      status: 'ready', progress: null, error: null, completed_at: '2024-01-01T00:05:00Z',
+    })
+    mockAttachedFiles.value = [processingChip()]
+
+    const { datasets } = useDatasetStatus()
+    wsHandlers.get('dataset.status')!({
+      file_id: 'connection:42', thread_id: 't1', step: 'ready', connection_id: 42,
+    })
+    await Promise.resolve()
+    expect(mockAttachedFiles.value[0].status).toBe('processing')
+
+    store.clearDocsPending(42)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mockAttachedFiles.value[0].status).toBe('ready')
+    expect(datasets.value.find(d => d.connectionId === 42)!.step).toBe('ready')
+  })
+
+  it('goes straight to ready when nothing is documenting', async () => {
+    const store = useChatStore()
+    store.currentThreadId = 't1'
+    mockGetProfilingStatus.mockResolvedValue({
+      status: 'ready', progress: null, error: null, completed_at: '2024-01-01T00:05:00Z',
+    })
+    mockAttachedFiles.value = [processingChip()]
+
+    const { datasets } = useDatasetStatus()
+    wsHandlers.get('dataset.status')!({
+      file_id: 'connection:42', thread_id: 't1', step: 'ready', connection_id: 42,
+    })
+    await Promise.resolve()
+
+    expect(mockAttachedFiles.value[0].status).toBe('ready')
+    expect(datasets.value.find(d => d.connectionId === 42)!.step).toBe('ready')
+  })
+})

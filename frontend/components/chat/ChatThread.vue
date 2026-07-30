@@ -53,12 +53,15 @@
     </div>
 
     <!-- Scrollable message content -->
-    <div ref="threadRef" class="flex-1 overflow-y-auto px-14 pt-7 pb-6">
-      <div class="max-w-[760px] mx-auto">
+    <div ref="threadRef" class="flex-1 overflow-y-auto px-5 pt-7 pb-6">
+      <div class="max-w-[900px] mx-auto">
         <div v-if="chatStore.messagesLoading && chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
           <div class="h-6 w-6 rounded-full border-2 border-[var(--line)] border-t-indigo-500 animate-spin" role="status" aria-label="Loading conversation" />
         </div>
-        <div v-else-if="chatStore.messages.length === 0" class="flex h-full items-center justify-center py-24">
+        <div
+          v-else-if="chatStore.messages.length === 0"
+          class="flex h-full items-center justify-center py-24"
+        >
           <div v-if="chatStore.currentConversation?.type === 'permanent'" class="text-center max-w-sm">
             <h2 class="text-[22px] font-serif tracking-tight text-[var(--ink-0)] mb-2">
               Welcome to {{ chatStore.permanentConversation?.title || 'Bingo' }}
@@ -90,9 +93,24 @@
               <div class="flex-1 border-t border-[var(--line-2)]" />
             </div>
 
+            <!-- The files this question was asked about, above the question itself.
+                 One card per attachment, full width, and they stay for the life of
+                 the thread — the documentation lives inside them. -->
+            <div
+              v-if="datasetCardsFor(message).length > 0"
+              class="flex flex-col gap-1.5"
+            >
+              <DatasetProgressCard
+                v-for="ds in datasetCardsFor(message)"
+                :key="ds.fileId ?? ds.name"
+                :dataset="ds"
+                @retry="retryProfiling"
+              />
+            </div>
+
             <!-- Regular message bubble -->
             <ChatMessageBubble
-              v-else-if="!isQaAnswerMessage(message, index)"
+              v-if="message.source !== 'context_reset' && !isQaAnswerMessage(message, index)"
               :message="message"
               :show-actions="shouldShowActions(message, index)"
               :action-type="getActionType(message)"
@@ -128,10 +146,30 @@ const router = useRouter()
 const { config: featureConfig } = useFeatureConfig()
 const api = useApi()
 const agentProfile = useAgentProfile()
-const { datasets } = useDatasetStatus()
+// retryProfiling is handed down to each card — resolving it inside the card
+// would give every one of them its own poller set over every dataset.
+const { datasets, retryProfiling } = useDatasetStatus()
 const { briefings, ensure: ensureBriefings } = useBriefingsList()
 
 const datasetCount = computed(() => datasets.value.length)
+
+// The cards belong to the user message whose attachments they describe, so they
+// keep their place in the transcript instead of floating at the bottom.
+// `_resolve_attachments` persists the dataset's id as `connection:<n>`, which is
+// the same key useDatasetStatus reports as fileId.
+const datasetCardsFor = (message: Message) => {
+  if (message.role !== 'user' || !message.attachments?.length) return []
+  const cards = []
+  for (const att of message.attachments) {
+    const fileId = att.file_id
+    if (!fileId?.startsWith('connection:')) continue
+    const ds = datasets.value.find(d => d.fileId === fileId)
+    // Attachment order, not dataset order — the cards read top-down as attached.
+    if (ds) cards.push(ds)
+  }
+  return cards
+}
+
 const isPermanentThread = computed(() =>
   chatStore.currentThreadId === chatStore.permanentConversation?.id
 )

@@ -204,6 +204,7 @@ class Settings(BaseSettings):
     enable_governance: bool = False
     agent_mesh_enabled: bool = False
     orchestrator_lean_tools: bool = False  # ≤10 primary tools + manage meta-tool + @-mention scope
+    dashboard_scoping_questions: bool = True  # ask audience/grain/time-range/metrics before building a dashboard
     template_backfill_on_startup: bool = True  # plugin-template framework: backfill existing connections at boot
 
     # LLM data-privacy floor (env LLM_METADATA_ONLY). True (default) forces

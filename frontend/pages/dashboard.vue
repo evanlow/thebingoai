@@ -296,9 +296,11 @@ import ChatComposer from '~/components/chat/ChatComposer.vue'
 import { useChatFileUpload } from '~/composables/useChatFileUpload'
 import { useChat } from '~/composables/useChat'
 import { useDatasetStatus } from '~/composables/useDatasetStatus'
+import { useConnections } from '~/composables/useConnections'
 
 const store = useDashboardStore()
 const ws = useWorkspaceStore()
+const { ensureLoaded: ensureConnectionsLoaded, getSourceLabel } = useConnections()
 useDatasetStatus()
 const route = useRoute()
 const { isMobile } = useIsMobile()
@@ -317,6 +319,7 @@ onMounted(() => {
     if (!isNaN(id)) store.openDashboard(id)
   }
   store.fetchDashboards()
+  ensureConnectionsLoaded()
 })
 
 // Leaving the dashboard route entirely (to /chat, settings, etc.) frees the
@@ -409,15 +412,12 @@ function openConfigEditor(widgetId: string) {
   configEditorWidget.value = store.currentWidgets.find(w => w.id === widgetId) ?? null
 }
 
+// Shows the file the user uploaded, never the internal storage table name.
+// Sources with no readable name (SQL connections) hide the line entirely.
 const dashboardSourceTitle = computed(() => {
-  const d = store.currentDashboard
-  if (!d) return undefined
-  const widgetSource = store.currentWidgets.find(w => w.sources?.length)?.sources?.[0]
-  return widgetSource
-    ?? (d.data_context as any)?.source_title
-    ?? (d.data_context as any)?.source_name
-    ?? (d.data_context as any)?.source_task
-    ?? undefined
+  if (!store.currentDashboard) return undefined
+  const connectionId = store.currentWidgets.find(w => w.dataSource?.connectionId)?.dataSource?.connectionId
+  return (connectionId ? getSourceLabel(connectionId) : null) ?? undefined
 })
 
 function handleShare() {
@@ -434,7 +434,7 @@ function handleAddWidget(type: import('~/types/dashboard').WidgetType) {
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 const chat = useChat()
-const { getFileIds, clearFiles } = useChatFileUpload()
+const { getFileIds, clearFiles, attachedFiles } = useChatFileUpload()
 
 const searchQuery = ref('')
 const filterPill = ref<'all' | 'mine' | 'scheduled' | 'shared'>('all')
@@ -477,7 +477,9 @@ const dashboardListItems = computed(() => {
 
 async function handleEmptyStateSend() {
   const text = chatStore.inputText.trim()
-  if (!text) return
+  // Datasets alone are a valid send: processing them IS the request.
+  const datasetName = attachedFiles.value.find(f => !f.sent && f.status === 'attached')?.file.name
+  if (!text && !datasetName) return
   const fileIds = getFileIds()
 
   // Always start a fresh task — never piggyback on the previously-loaded thread
@@ -488,7 +490,7 @@ async function handleEmptyStateSend() {
   chatStore.pendingNewConversationId = tempId
   chatStore.addConversation({
     id: tempId,
-    title: text.substring(0, 80),
+    title: (text || datasetName || 'File Upload').substring(0, 80),
     type: 'task',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

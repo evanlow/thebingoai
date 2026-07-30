@@ -92,12 +92,7 @@
     <div v-if="sourceTitle || lastRefreshedAt" class="dash-meta">
       <template v-if="sourceTitle">
         Built from
-        <a
-          v-if="sourceHref"
-          :href="sourceHref"
-          class="dash-meta-link"
-        >{{ sourceTitle }}</a>
-        <span v-else class="dash-meta-link cursor-default">{{ sourceTitle }}</span>
+        <span class="dash-meta-source">{{ sourceTitle }}</span>
         <template v-if="lastRefreshedAt"> · last refreshed {{ formatRelativeTime(lastRefreshedAt) }}</template>
       </template>
       <template v-else-if="lastRefreshedAt">
@@ -124,7 +119,6 @@ const props = defineProps<{
   refreshing: boolean
   dashboardId?: number
   sourceTitle?: string
-  sourceHref?: string
   lastRefreshedAt?: string
 }>()
 
@@ -233,12 +227,9 @@ function formatRelativeTime(isoString: string): string {
   color: var(--ink-3);
   margin-top: 4px;
 }
-.dash-meta-link {
-  color: var(--ember);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.dash-meta-source {
+  font-weight: 500;
 }
-.dash-meta-link:hover { opacity: 0.8; }
 
 /* Header action buttons */
 .hdr-btn {

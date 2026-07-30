@@ -14,9 +14,10 @@
         v-html="renderMentions(message.content)"
       />
 
-      <!-- Attachments -->
-      <div v-if="message.attachments && message.attachments.length > 0" class="mt-2 flex flex-wrap gap-2 max-w-[80%]">
-        <template v-for="attachment in message.attachments" :key="attachment.file_id ?? attachment.name">
+      <!-- Attachments. Datasets are excluded: they get a full progress card above
+           this bubble, and a pill here would name the same file twice. -->
+      <div v-if="pillAttachments.length > 0" class="mt-2 flex flex-wrap gap-2 max-w-[80%]">
+        <template v-for="attachment in pillAttachments" :key="attachment.file_id ?? attachment.name">
           <!-- Image thumbnail -->
           <div
             v-if="isImageType(attachment.type)"
@@ -40,7 +41,13 @@
             v-else
             class="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-100 dark:bg-neutral-800 px-3 py-2 max-w-48"
           >
-            <svg class="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <!-- eslint-disable-next-line vue/no-v-html -- static bundled SVG asset -->
+            <div
+              v-if="fileIconHtml(attachment.type, attachment.name)"
+              class="h-4 w-4 flex-shrink-0"
+              v-html="fileIconHtml(attachment.type, attachment.name)"
+            />
+            <svg v-else class="h-4 w-4 flex-shrink-0 text-gray-500 dark:text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <div class="min-w-0 flex-1">
@@ -53,7 +60,7 @@
     </div>
 
     <!-- Skill suggestion message -->
-    <div v-else-if="message.source === 'skill_suggestion'" class="pr-4 md:pr-32">
+    <div v-else-if="message.source === 'skill_suggestion'" class="pr-4 md:pr-10">
       <div class="flex gap-2.5 items-start">
         <div class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
           <span class="text-white text-sm">&starf;</span>
@@ -77,7 +84,7 @@
     </div>
 
     <!-- Assistant message: left-aligned plain text -->
-    <div v-else class="pr-4 md:pr-32">
+    <div v-else class="pr-4 md:pr-10">
       <div class="flex gap-2.5 items-start">
         <div class="w-7 h-7 rounded-[var(--r-md)] bg-transparent flex items-center justify-center flex-shrink-0 overflow-hidden mt-0.5" :class="{ 'avatar-spin': isLoading }">
           <img v-if="agentAvatarUrl" :src="agentAvatarUrl" class="w-full h-full object-cover" alt="Agent" />
@@ -110,7 +117,7 @@
           <svg class="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
           </svg>
-          <span class="font-medium text-gray-600 dark:text-neutral-300">{{ f.label }}</span>
+          <span class="font-medium text-gray-600 dark:text-neutral-300">{{ displayLabel(f.label) }}</span>
           <span>· {{ f.row_count }}×{{ f.col_count }}</span>
           <UiDropdown :items="exportItems(f)" align="left">
             <template #trigger>
@@ -248,6 +255,7 @@ import UiDropdown from '~/components/ui/UiDropdown.vue'
 import { useDashboardStore } from '~/stores/dashboard'
 import { parseUtcDate, formatDate } from '~/utils/format'
 import { IMAGE_MIME_TYPES } from '~/composables/_chatConstants'
+import { fileIconHtml } from '~/composables/useFileIcons'
 
 const props = defineProps<{
   message: Message
@@ -454,6 +462,20 @@ const viewDashboard = async () => {
 }
 
 const isImageType = (mimeType: string) => IMAGE_MIME_TYPES.has(mimeType)
+
+// Datasets are rendered as their own progress card above this bubble, so they are
+// dropped from the pill row. Images, PDFs and DOCX are unaffected.
+const pillAttachments = computed(() =>
+  (props.message.attachments ?? []).filter(a => !a.file_id?.startsWith('connection:'))
+)
+
+// `label` is the SQL table the agent queried (`csv_<id>`), not a name the user
+// chose. Swap in the upload's filename when the docs payload knows it.
+const displayLabel = (label: string) => {
+  const m = /^csv_(\d+)$/.exec(label)
+  const docs = m ? chatStore.datasetDocs?.[Number(m[1])] : null
+  return docs?.filename || label
+}
 
 const formatAttachmentSize = (bytes: number) => {
   if (!bytes) return ''

@@ -1,5 +1,7 @@
 from typing import List, Optional, TYPE_CHECKING
 
+from backend.agents.orchestrator_prompt_blocks import ORCHESTRATOR_WORKFLOW
+
 if TYPE_CHECKING:
     from backend.models.custom_agent import CustomAgent
     from backend.models.user_skill import UserSkill
@@ -105,13 +107,15 @@ def build_lean_orchestrator_prompt(
     user_memories_context: str = "",
     available_connections: Optional[List[int]] = None,
     connection_metadata: Optional[list] = None,
-    mentions: "Optional[List[ResolvedMention]]" = None,
 ) -> str:
     """Build a lean orchestrator prompt for orchestrator_lean_tools=True.
 
     Drops the inline custom-agent / skill listings and the long tool-usage
     guide. The bound tools (≤10) carry their own descriptions and the routing
     rule above tells the model how to pick among them.
+
+    The per-turn @-mention block is NOT appended here — `_render_orchestrator_prompt`
+    appends it for every prompt path, and doing it in both places printed it twice.
     """
     base = _LEAN_CHASSIS + "\n" + _LEAN_ROUTING_RULE + "\n" + _LEAN_MENTION_FEWSHOT
 
@@ -132,10 +136,6 @@ def build_lean_orchestrator_prompt(
             connections_str = ", ".join(str(c) for c in available_connections)
         base += f"\n## Available Database Connections\n{connections_str}\n"
 
-    mentions_block = render_mentions_block(mentions)
-    if mentions_block:
-        base += "\n" + mentions_block + "\n"
-
     return base
 
 _ORCHESTRATOR_CHASSIS = """You are a helpful, direct assistant.
@@ -151,42 +151,7 @@ These rules apply to every reply to the user, not just error cases:
 - **Never paste raw query result rows or column dumps.** The chat UI renders the data_agent result as a table directly under your message — listing rows in prose is redundant noise. Reference specific values only when they support a point you're making (e.g., "the top earner is the Modern Cottage at $74,460"); do not enumerate the dataset.
 - Lead with insights and direct answers: top values, trends, anomalies, comparisons, recommendations. 1–5 short bullets or one tight paragraph is usually enough.
 
-## Approach
-
-**Simple requests** (quick lookups, single-tool tasks, factual questions): Act immediately — no planning needed.
-
-**Complex requests** (multi-step tasks, dashboard creation, multi-table analysis, ambiguous scope): Follow the Plan-then-Execute workflow:
-
-### Phase 1 — Explore
-Understand what the user is asking. Use tools to discover relevant context:
-- Check available connections and schemas
-- Recall past context if relevant
-- Identify what information you need before proceeding
-
-### Phase 2 — Design
-Formulate your approach:
-- What tools/agents you'll use and in what order
-- What assumptions you're making
-- What the expected outcome looks like
-
-### Phase 3 — Review
-Before executing, confirm with the user:
-- Use `ask_user_question` to get structured input on key decisions
-- Summarize what you intend to do and ask for confirmation
-- If the user modifies the plan, adjust before proceeding
-
-### Phase 4 — Execute
-Carry out the confirmed plan step by step.
-
-**When to skip planning:** If the user's intent is unambiguous AND requires only 1-2 tool calls, skip directly to execution (e.g., "list my dashboards", "what tables do I have?").
-
-**When to plan:** Dashboard creation, multi-table analysis, requests with unclear scope ("analyze my data", "build something useful"), requests touching multiple agents or connections.
-
-### ask_user_question Rules
-- Call with 1-4 structured questions (2-4 options each)
-- After calling, STOP immediately — do NOT continue in the same turn
-- The user's selections arrive as the next message — then continue execution
-- Do NOT use for simple yes/no — just ask in plain text instead"""
+""" + ORCHESTRATOR_WORKFLOW
 
 _BASE_IDENTITY = """## Who You Are
 

@@ -1,10 +1,12 @@
 <template>
-  <div class="flex gap-2.5">
-    <!-- Left: icon + connector line -->
-    <div class="flex flex-col items-center">
-      <!-- Step icon -->
+  <!-- One column of a horizontal stepper. The connector is drawn as two half
+       lines flanking the icon, so the icon lands over the centre of its label
+       and the first/last icons sit inset by half a column. -->
+  <div class="flex-1 min-w-0">
+    <div class="flex items-center">
+      <div class="h-px flex-1" :class="isFirst ? 'bg-transparent' : leftLineClass" />
       <div
-        class="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 z-[1]"
+        class="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0"
         :class="iconClasses"
       >
         <!-- Completed: checkmark -->
@@ -19,28 +21,17 @@
         </svg>
         <!-- Pending: empty -->
       </div>
-      <!-- Connector line -->
-      <div
-        v-if="!isLast"
-        class="w-px h-4"
-        :class="connectorClasses"
-      />
+      <div class="h-px flex-1" :class="isLast ? 'bg-transparent' : rightLineClass" />
     </div>
 
-    <!-- Right: label + timestamp -->
-    <div class="flex-1 min-w-0 pt-px">
-      <div class="flex items-center gap-1.5">
-        <span class="text-sm font-medium" :class="labelColor">
-          {{ status === 'active' ? activeLabel : (status === 'failed' ? failedLabel : label) }}
-        </span>
-        <span v-if="formattedTime" class="text-sm text-gray-300 ml-auto shrink-0">
-          {{ formattedTime }}
-        </span>
+    <!-- Label + timestamp, centred under the icon -->
+    <div class="mt-1 px-1 text-center leading-tight">
+      <div class="text-xs font-medium" :class="labelColor">
+        {{ status === 'active' ? activeLabel : (status === 'failed' ? failedLabel : label) }}
       </div>
-      <!-- Error message -->
-      <p v-if="error && status === 'failed'" class="text-sm text-red-400 mt-0.5">
-        {{ error }}
-      </p>
+      <div v-if="formattedTime" class="text-[11px] text-gray-300">
+        {{ formattedTime }}
+      </div>
     </div>
   </div>
 </template>
@@ -55,9 +46,10 @@ const props = defineProps<{
   activeLabel: string
   timestamp: string | null
   isLast: boolean
-  nextStatus?: StepState
-  error?: string | null
+  prevStatus?: StepState
 }>()
+
+const isFirst = computed(() => props.prevStatus === undefined)
 
 const failedLabel = computed(() => props.label.replace(/built|profiled/i, 'failed').replace(/^Uploaded$/, 'Upload failed'))
 
@@ -84,18 +76,12 @@ const labelColor = computed(() => {
   }
 })
 
-const connectorClasses = computed(() => {
-  if (props.status === 'completed' && props.nextStatus === 'completed') {
-    return 'bg-emerald-500'
-  }
-  if (props.status === 'completed' && props.nextStatus === 'active') {
-    return 'bg-gradient-to-b from-emerald-500 to-gray-200'
-  }
-  if (props.status === 'completed' && props.nextStatus === 'failed') {
-    return 'bg-gradient-to-b from-emerald-500 to-red-500'
-  }
-  return 'bg-gray-200 dark:bg-neutral-700'
-})
+// A half line is green once the step it leaves behind is done, so a completed
+// step followed by a pending one reads as a segment half filled.
+const DONE = 'bg-emerald-500'
+const TODO = 'bg-gray-200 dark:bg-neutral-700'
+const leftLineClass = computed(() => (props.prevStatus === 'completed' ? DONE : TODO))
+const rightLineClass = computed(() => (props.status === 'completed' ? DONE : TODO))
 
 const formattedTime = computed(() => {
   if (!props.timestamp) return null

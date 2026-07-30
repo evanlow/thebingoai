@@ -25,7 +25,7 @@ export interface Message {
   steps_log_expanded?: boolean  // user-toggled; defaults to collapsed
   created_at: string
   attachments?: FileAttachment[]
-  source?: 'chat' | 'heartbeat' | 'system' | 'context_reset' | 'qa_answer' | 'skill_suggestion'
+  source?: 'chat' | 'heartbeat' | 'system' | 'context_reset' | 'qa_answer' | 'skill_suggestion' | 'dataset_docs'
   skillSuggestions?: SkillSuggestion[]
   loop_detected?: boolean
   briefing_id?: number | null
@@ -52,6 +52,23 @@ export interface FileAttachment {
   preview_url: string | null
   status: 'uploading' | 'ready' | 'error'
   storage_key?: string
+}
+
+export interface DatasetDocsColumn {
+  name: string
+  display_name: string | null
+  description: string | null
+}
+
+/** The `dataset.docs` WebSocket payload: what Bingo read a dataset's columns as. */
+export interface DatasetDocs {
+  connection_id: number
+  table_name: string
+  filename: string | null
+  table_description: string | null
+  // Column order follows the connection's stored context, which is not schema order.
+  columns: DatasetDocsColumn[]
+  total_columns: number
 }
 
 export interface Conversation {
@@ -83,6 +100,15 @@ export const useChatStore = defineStore('chat', {
     })() as string | null,
     messages: [] as Message[],
     messagesLoading: false,
+    // Connections whose dataset documentation is still being generated. Profiling
+    // finishes well before the LLM does, so the dataset's own step can't be used
+    // to keep the "Reading your data…" state up until the docs message lands.
+    // Keyed by connection, not thread: upload two files and the first one's docs
+    // must not clear the second one's progress.
+    docsPendingConnections: [] as number[],
+    // The structured `dataset.docs` payload, keyed by connection id. Written when
+    // documentation completes; the empty terminal event stores a zero-column entry.
+    datasetDocs: {} as Record<number, DatasetDocs>,
     // Per-thread cache of fully-loaded messages (incl. agent_steps). Lets a task
     // viewed once this session reopen instantly without refetching. Invalidated
     // for a thread when a new message is sent to it (its history changed).
@@ -95,7 +121,9 @@ export const useChatStore = defineStore('chat', {
     showUploadPanel: false,
     isStreaming: false,
     expandedThinking: new Set<string>(),
-    infoPanelOpen: true,
+    // Closed by default — the upload flow now plays out in the thread itself,
+    // so the panel opening on its own just steals width from the content.
+    infoPanelOpen: false,
     selectedMessageId: null as string | null,
     conversationSummary: null as ConversationSummary | null,
     skillSuggestions: [] as SkillSuggestion[],
@@ -116,6 +144,18 @@ export const useChatStore = defineStore('chat', {
   getters: {
     currentConversation: (state) => {
       return state.conversations.find(c => c.id === state.currentThreadId)
+    },
+    /**
+     * currentThreadId, but only when it names a conversation the server knows.
+     *
+     * The dashboard empty state parks a local `pending-<ts>` placeholder here
+     * while it navigates, so anything crossing the network must read this
+     * instead — the backend answers "Conversation not found" for an id it never
+     * issued, and a null tells it to create the conversation as usual.
+     */
+    realThreadId: (state): string | null => {
+      const id = state.currentThreadId
+      return !id || id.startsWith('pending-') ? null : id
     },
     permanentConversation: (state) => {
       return state.conversations.find(c => c.type === 'permanent') ?? null
@@ -298,6 +338,20 @@ export const useChatStore = defineStore('chat', {
       if (conversation) {
         conversation.updated_at = updatedAt
       }
+    },
+
+    markDocsPending(connectionId: number) {
+      if (!this.docsPendingConnections.includes(connectionId)) {
+        this.docsPendingConnections.push(connectionId)
+      }
+    },
+
+    clearDocsPending(connectionId: number) {
+      this.docsPendingConnections = this.docsPendingConnections.filter(id => id !== connectionId)
+    },
+
+    setDatasetDocs(docs: DatasetDocs) {
+      this.datasetDocs[docs.connection_id] = docs
     },
 
     incrementUnread(threadId: string) {

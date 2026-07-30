@@ -329,18 +329,20 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
     @tool
     def profile_table(connection_id: int, table_name: str) -> Dict[str, Any]:
         """
-        Profile a table's data distribution. Returns summary statistics for each column
-        to inform dashboard design decisions. Call this before designing KPIs, charts,
-        or filters — it reveals which columns have useful cardinality, numeric ranges,
-        and date spans so you can make data-informed visualization choices.
+        Profile a table's structure. Returns per-column shape to inform dashboard design
+        decisions. Call this before designing KPIs, charts, or filters — it reveals which
+        columns have useful cardinality and how complete they are, so you can make
+        structure-informed visualization choices.
 
         Args:
             connection_id: Database connection ID
             table_name: Name of the table to profile
 
         Returns:
-            Dict with row_count and per-column statistics (min/max/avg for numeric,
-            min/max for date, distinct_count + top_values for categorical)
+            Dict with row_count and per-column type, null_count and distinct_count.
+            Statistics computed from real records (avg, min/max, top_values) are
+            included only when the org's privacy policy permits — do not rely on them,
+            and never invent one when absent.
         """
         if not context.can_access_connection(connection_id):
             return {"error": f"Connection {connection_id} not authorized or not available"}
@@ -390,8 +392,9 @@ def build_data_agent_tools(context: AgentContext) -> List[Callable]:
                     db_type=db_type_str,
                     is_dataset=is_dataset,
                 )
-            # Privacy: under metadata_only_llm, drop real values (min/max/top_values)
-            # from the profile before it reaches the LLM; keep derived stats.
+            # Privacy: under metadata_only_llm, drop everything computed from real
+            # records (min/max/top_values/avg) before the profile reaches the LLM;
+            # keep the structural counts.
             from backend.services.llm_privacy import (
                 metadata_only_for_connection, strip_profile_values,
             )

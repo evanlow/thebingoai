@@ -195,6 +195,43 @@ async def _resolve_conversation(
     return conversation, is_new
 
 
+def _render_dataset_summary(conn, connection_id: int, context: dict) -> str:
+    """Render a dataset connection as a routing summary — deliberately not a data dictionary.
+
+    The orchestrator only needs enough to recognise the dataset and hand it to
+    data_agent. Column names, types and glossary descriptions are withheld on
+    purpose: given them, the model answers "tell me more about this dataset" by
+    paraphrasing the schema instead of querying it, since a data dictionary is a
+    complete-looking answer to that question and no statistic is present to
+    suggest otherwise. The agents that actually write SQL build their own
+    full-schema blocks (data_agent.build_dataset_context_block, and the
+    dashboard_agent context suffix), so nothing downstream loses information.
+    """
+    lines = [
+        f"=== Dataset: {conn.source_filename or conn.name} ===",
+        f"Connection ID: {connection_id} (queryable via SQL)",
+    ]
+    for table_name, table_info in (context.get("tables") or {}).items():
+        # Stored contexts use camelCase; _build_schema_fallback writes snake_case.
+        row_count = table_info.get("rowCount", table_info.get("row_count"))
+        columns = table_info.get("columns") or {}
+        parts = [f"table {table_name}"]
+        if row_count is not None:
+            parts.append(f"{row_count:,} rows")
+        if columns:
+            parts.append(f"{len(columns)} columns")
+        line = f"- {', '.join(parts)}"
+        if table_info.get("description"):
+            line += f" — {table_info['description']}"
+        lines.append(line)
+    lines.append(
+        "Schema metadata only — no column list, no data values. To say anything about "
+        "what this data contains or shows, query it through data_agent; do not describe "
+        "the dataset from this block."
+    )
+    return "\n".join(lines)
+
+
 def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> Optional[dict]:
     """Build a synthetic file_contents entry from a DatabaseConnection record.
 
@@ -225,23 +262,11 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
 
     if conn.profiling_status == "ready" and conn.data_context is not None:
         try:
-            context = conn.data_context
-            profile_lines = [f"=== Dataset Profile: {conn.source_filename or conn.name} ==="]
-            profile_lines.append(f"Connection ID: {connection_id} (queryable via SQL)")
-            tables = context.get("tables", {})
-            for table_name, table_info in tables.items():
-                profile_lines.append(f"\nTable: {table_name}")
-                row_count = table_info.get("row_count")
-                if row_count is not None:
-                    profile_lines.append(f"Row count: {row_count:,}")
-                columns = table_info.get("columns", {})
-                if columns:
-                    profile_lines.append("Columns:")
-                    for col_name, col_info in list(columns.items())[:50]:
-                        col_type = col_info.get("type", "")
-                        role = col_info.get("role", "")
-                        profile_lines.append(f"  - {col_name} ({col_type}, {role})")
-            profile_text = "\n".join(profile_lines)
+            # Enriched: overlays the semantic layer so the table description written
+            # by the dataset docs task travels with the summary.
+            from backend.services.semantic_layer import load_enriched_context
+            context = load_enriched_context(db, connection_id) or conn.data_context
+            profile_text = _render_dataset_summary(conn, connection_id, context)
             file_data["profile_text"] = profile_text
             file_data["truncated_text"] = profile_text
             file_data["profile_status"] = "ready"
@@ -257,7 +282,10 @@ def _build_dataset_file_content(db: Session, user: User, connection_id: int) -> 
 
 
 def _build_schema_fallback(conn, connection_id: int) -> dict:
-    """Build minimal dataset info from schema JSON when profiling isn't complete."""
+    """Build minimal dataset info from schema JSON when profiling isn't complete.
+
+    Counts only, no column names — same reasoning as _render_dataset_summary.
+    """
     lines = [f"=== Dataset: {conn.source_filename or conn.name} ==="]
     lines.append(f"Connection ID: {connection_id} (queryable via SQL)")
     try:
@@ -267,14 +295,19 @@ def _build_schema_fallback(conn, connection_id: int) -> dict:
             for table_name, table_data in schema_data.get("tables", {}).items():
                 columns = table_data.get("columns", [])
                 row_count = table_data.get("row_count")
-                lines.append(f"\nTable: {table_name}")
+                parts = [f"table {table_name}"]
                 if row_count is not None:
-                    lines.append(f"Row count: {row_count:,}")
+                    parts.append(f"{row_count:,} rows")
                 if columns:
-                    col_names = [c.get("name", "") for c in columns]
-                    lines.append(f"Columns: {', '.join(col_names)}")
+                    parts.append(f"{len(columns)} columns")
+                lines.append(f"- {', '.join(parts)}")
     except (FileNotFoundError, Exception):
         pass
+    lines.append(
+        "Schema metadata only — no column list, no data values. To say anything about "
+        "what this data contains or shows, query it through data_agent; do not describe "
+        "the dataset from this block."
+    )
     return {"truncated_text": "\n".join(lines), "profile_status": "ready"}
 
 
@@ -369,6 +402,24 @@ async def _fire_chat_response_plugins(user_id, thread_id, user_message, assistan
         )
     except Exception as exc:
         logger.warning("fire_chat_response_plugins error: %s", exc)
+
+
+def _fold_ask_persist_content(event: dict, final_message: str) -> str:
+    """Fold the ask_user_question force-stop's body into the message to persist.
+
+    That force-stop yields `done` with no preceding `token` events, so
+    `final_message` is empty and the turn would persist as an empty assistant
+    message — which replays as `AIMessage(content="")` on the next turn and is a
+    provider-compatibility hazard besides.
+
+    Pops rather than reads, so the key never reaches the client-visible `done`
+    payload (which spreads every remaining event key). A turn that actually
+    streamed tokens keeps them: this is a fallback, not an override.
+    """
+    content = event.pop("persist_content", None)
+    if content and not final_message:
+        return content
+    return final_message
 
 
 async def _persist_turn(
@@ -766,6 +817,7 @@ async def _handle_chat_send(
                     collected_steps = event.get("steps", [])
                 collected_retry_succeeded = event.pop("retry_succeeded", None)
                 collected_judge_metadata = event.pop("judge_metadata", None)
+                final_message = _fold_ask_persist_content(event, final_message)
                 pending_done_event = {
                     "type": ws_type,
                     "request_id": request_id,

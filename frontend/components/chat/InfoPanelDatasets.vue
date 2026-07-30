@@ -82,61 +82,9 @@
             </div>
           </div>
 
-          <!-- Timeline card: in-progress or failed -->
-          <div
-            v-else
-            class="rounded-lg bg-[var(--paper-1)] border px-2.5 py-2"
-            :class="ds.step === 'failed' ? 'border-red-200' : 'border-[var(--line)]'"
-          >
-            <!-- File header -->
-            <div class="flex items-center gap-2 mb-2">
-              <svg class="w-3.5 h-3.5 text-[var(--ink-2)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span class="text-sm font-medium text-gray-600 dark:text-neutral-400 truncate min-w-0 flex-1">{{ ds.name }}</span>
-              <span class="text-sm text-gray-300 shrink-0">{{ formatSize(ds.size) }}</span>
-            </div>
-
-            <!-- Vertical timeline -->
-            <div class="pl-1">
-              <!-- Step 1: Uploaded -->
-              <DatasetTimelineStep
-                :status="stepStatus(ds, 'uploading')"
-                label="Uploaded"
-                active-label="Uploading..."
-                :timestamp="stepTimestampFor(ds, 'uploading')"
-                :is-last="false"
-                :next-status="stepStatus(ds, 'schema')"
-              />
-              <!-- Step 2: Schema -->
-              <DatasetTimelineStep
-                :status="stepStatus(ds, 'schema')"
-                label="Schema built"
-                active-label="Building schema..."
-                :timestamp="stepTimestampFor(ds, 'schema')"
-                :is-last="false"
-                :next-status="stepStatus(ds, 'profiling')"
-              />
-              <!-- Step 3: Profiling -->
-              <DatasetTimelineStep
-                :status="stepStatus(ds, 'profiling')"
-                label="Data profiled"
-                active-label="Profiling data..."
-                :timestamp="stepTimestampFor(ds, 'profiling')"
-                :is-last="true"
-                :error="ds.step === 'failed' && stepStatus(ds, 'profiling') === 'failed' ? ds.error : null"
-              />
-            </div>
-
-            <!-- Retry button for failed profiling -->
-            <button
-              v-if="ds.step === 'failed' && ds.connectionId && stepStatus(ds, 'profiling') === 'failed'"
-              @click="retryProfiling(ds.connectionId!)"
-              class="mt-1.5 ml-6 text-sm text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded px-2 py-0.5 hover:bg-[var(--paper-3)] transition-colors"
-            >
-              Retry
-            </button>
-          </div>
+          <!-- Timeline card: in-progress or failed. The chat thread renders the same
+               card with the documentation step appended. -->
+          <DatasetProgressCard v-else :dataset="ds" @retry="retryProfiling" />
         </div>
       </div>
     </div>
@@ -148,7 +96,9 @@ import type { DatasetStatus } from '~/composables/useDatasetStatus'
 import type { DatabaseSchema, SchemaColumn } from '~/types/connection'
 
 const chatStore = useChatStore()
-const { datasets, retryProfiling, cancelDataset } = useDatasetStatus()
+// retryProfiling is handed to the card rather than resolved inside it — one
+// status instance per page, not one per card.
+const { datasets, cancelDataset, retryProfiling } = useDatasetStatus()
 
 const api = useApi()
 
@@ -184,56 +134,10 @@ watch(
   { immediate: true },
 )
 
-type StepName = 'uploading' | 'schema' | 'profiling'
-type StepState = 'completed' | 'active' | 'pending' | 'failed'
-
-const STEP_ORDER: StepName[] = ['uploading', 'schema', 'profiling']
-
-function stepStatus(ds: DatasetStatus, stepName: StepName): StepState {
-  const stepIdx = STEP_ORDER.indexOf(stepName)
-  const currentIdx = STEP_ORDER.indexOf(ds.step as StepName)
-
-  // If dataset is ready, all steps are completed
-  if (ds.step === 'ready') return 'completed'
-
-  // If dataset failed, determine which step failed and derive states
-  if (ds.step === 'failed') {
-    let failedIdx: number
-    if (ds.error === 'Upload failed') failedIdx = 0
-    else if (!ds.connectionId) failedIdx = 1
-    else failedIdx = 2
-
-    if (stepIdx < failedIdx) return 'completed'
-    if (stepIdx === failedIdx) return 'failed'
-    return 'pending'
-  }
-
-  if (stepIdx < currentIdx) return 'completed'
-  if (stepIdx === currentIdx) return 'active'
-  return 'pending'
-}
-
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-// Live clock for active steps — ticks every second
-const currentTime = ref(new Date().toISOString())
-let clockInterval: ReturnType<typeof setInterval> | null = null
-onMounted(() => { clockInterval = setInterval(() => { currentTime.value = new Date().toISOString() }, 1000) })
-onUnmounted(() => { if (clockInterval) clearInterval(clockInterval) })
-
-function stepTimestampFor(ds: DatasetStatus, step: StepName): string | null {
-  const status = stepStatus(ds, step)
-  if (status === 'active') return currentTime.value
-  if (status === 'completed') {
-    if (step === 'uploading') return ds.uploadedAt
-    if (step === 'schema') return ds.schemaBuiltAt
-    if (step === 'profiling') return ds.completedAt
-  }
-  return null
 }
 
 // --- Collapsible dataset cards ---

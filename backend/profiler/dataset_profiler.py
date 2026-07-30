@@ -65,10 +65,11 @@ class DatasetProfile:
     def to_prompt_text(self, filename: str, include_values: bool = True) -> str:
         """Render the full profile as structured text for LLM injection.
 
-        ``include_values=False`` (metadata_only_llm) omits real data values —
-        the sample rows, categorical value counts/mode, numeric
-        min/median/quantiles/max, and datetime ranges — while keeping derived
-        stats (counts, null%, unique, mean/std/skew/outliers, correlations).
+        ``include_values=False`` (metadata_only_llm) omits everything computed from
+        the real records — sample rows, categorical value counts/mode, numeric
+        mean/std/skew/min/median/quantiles/max, and datetime ranges — while keeping
+        the structural counts (row/column counts, null%, unique, outlier count) and
+        correlations.
         """
         lines: list[str] = []
 
@@ -100,12 +101,15 @@ class DatasetProfile:
             lines.append(f"  {null_info}")
 
             if col.dtype == "numeric":
-                # Mean/Std are derived; Median/Min/Q25/Q75/Max are real values.
-                lines.append(f"  Mean: {_fmtf(col.mean)} | Std: {_fmtf(col.std)}")
+                # Mean/Std/Skewness are magnitudes computed from the real records —
+                # withheld with the values, matching llm_privacy._VALUE_KEYS, which
+                # drops `avg` from profile_table for the same reason. Counts (nulls,
+                # unique, outliers) count rows rather than report what any row holds.
                 if include_values:
+                    lines.append(f"  Mean: {_fmtf(col.mean)} | Std: {_fmtf(col.std)}")
                     lines.append(f"  Min: {_fmtf(col.min_val)} | Q25: {_fmtf(col.q25)} | Median: {_fmtf(col.median)} | Q75: {_fmtf(col.q75)} | Max: {_fmtf(col.max_val)}")
                 extra = []
-                if col.skewness is not None:
+                if include_values and col.skewness is not None:
                     extra.append(f"Skewness: {col.skewness:.2f}")
                 if col.outlier_count is not None:
                     extra.append(f"Outliers: {_fmt(col.outlier_count)} (beyond {settings.profile_outlier_std:.0f}\u03c3)")

@@ -212,3 +212,32 @@ class TestProfileDefaults:
         combined = "\n".join(v for v in d.values() if v)
         for marker in _STALE_MARKERS:
             assert marker not in combined
+
+
+class TestDocumentationDrivesTheStory:
+    """The documented meaning replaces averages as the design signal.
+
+    `avg` no longer reaches the agent (llm_privacy._VALUE_KEYS), so the framework has
+    to name descriptions and business definitions as the inputs that pick the
+    aggregation, the questions and the section titles. Both prompt paths compose from
+    these blocks (asserted above), so guarding the block guards both.
+    """
+
+    def test_framework_no_longer_lists_averages_as_something_you_have(self):
+        assert "and numeric **averages**" not in DASHBOARD_EDA_FRAMEWORK
+
+    def test_framework_forbids_inventing_a_withheld_stat(self):
+        assert "never invent one" in DASHBOARD_EDA_FRAMEWORK
+
+    def test_descriptions_decide_unit_and_aggregation(self):
+        assert "Read the column's description first" in DASHBOARD_EDA_FRAMEWORK
+        assert "Never infer this from a statistic." in DASHBOARD_EDA_FRAMEWORK
+
+    def test_documented_columns_are_where_the_questions_come_from(self):
+        assert "Documented meaning first" in DASHBOARD_EDA_FRAMEWORK
+
+    def test_established_findings_become_the_question_skeleton(self):
+        assert "Findings already established with the user" in DASHBOARD_EDA_FRAMEWORK
+
+    def test_section_titles_use_the_documentation_vocabulary(self):
+        assert "Draw the wording from the documentation" in DASHBOARD_EDA_FRAMEWORK

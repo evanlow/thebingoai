@@ -76,10 +76,13 @@
       <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': loading }" />
     </button>
 
-    <!-- Widget body -->
+    <!-- Widget body.
+         Dimmed while a refresh is in flight over data we're still painting:
+         the numbers on screen are the previous filter's, and a spinning 12px
+         icon alone doesn't say so — it reads as a frozen page. -->
     <div
-      class="min-h-0 flex-1 overflow-hidden"
-      :class="editMode ? 'pt-7' : ''"
+      class="min-h-0 flex-1 overflow-hidden transition-opacity duration-200"
+      :class="[editMode ? 'pt-7' : '', loading && hasData ? 'opacity-50' : '']"
       @click="editMode && emit('edit-config', widget.id)"
     >
       <DashboardWidgetKpi
@@ -123,12 +126,12 @@
 
     <!-- Provenance footer (view mode only) -->
     <div
-      v-if="!editMode && (widget.sources?.length || lastRefreshedAt)"
+      v-if="!editMode && (sourceLabel || lastRefreshedAt)"
       class="widget-footer"
     >
-      <span v-if="widget.sources?.length" class="provenance" :title="`from ${widget.sources[0]}`">
+      <span v-if="sourceLabel" class="provenance" :title="`from ${sourceLabel}`">
         <span class="provenance-prefix">↗ from</span>
-        <a class="provenance-link">{{ widget.sources[0] }}</a>
+        <span class="provenance-source">{{ sourceLabel }}</span>
       </span>
       <span v-else class="provenance-empty" />
       <span v-if="lastRefreshedAt" class="age" :title="lastRefreshedAt">{{ formatRelativeTime(lastRefreshedAt) }}</span>
@@ -168,6 +171,7 @@ import { computed, ref, toRef } from 'vue'
 import { GripVertical, X, RefreshCw, Code, Copy, Settings } from 'lucide-vue-next'
 import type { DashboardWidget } from '~/types/dashboard'
 import { useWidgetData } from '~/composables/useWidgetData'
+import { useConnections } from '~/composables/useConnections'
 import { parseUtcDate } from '~/utils/format'
 import { hasRenderableData } from '~/utils/widgetRender'
 
@@ -204,6 +208,17 @@ const widgetDisplayName = computed(() =>
 )
 
 const hasData = computed(() => hasRenderableData(props.widget))
+
+// Provenance label: the uploaded filename, never the internal storage table
+// name. Only fetch connections when there's one to resolve — public briefing
+// embeds have `dataSource` scrubbed server-side and are unauthenticated.
+const { ensureLoaded: ensureConnectionsLoaded, getSourceLabel } = useConnections()
+if (props.widget.dataSource?.connectionId) ensureConnectionsLoaded()
+
+const sourceLabel = computed(() => {
+  const connectionId = props.widget.dataSource?.connectionId
+  return connectionId ? getSourceLabel(connectionId) : null
+})
 
 function formatRelativeTime(isoString: string): string {
   const diff = Date.now() - parseUtcDate(isoString).getTime()
@@ -289,16 +304,13 @@ function formatRelativeTime(isoString: string): string {
 .provenance-prefix {
   flex-shrink: 0;
 }
-.provenance-link {
-  color: var(--ember);
+.provenance-source {
   font-weight: 500;
-  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
 }
-.provenance-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .age {
   font-family: var(--font-mono);

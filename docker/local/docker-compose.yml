@@ -67,7 +67,15 @@ services:
       context: ../../
       dockerfile: docker/backend/Dockerfile
     container_name: thebingo-celery
-    command: celery -A backend.tasks.upload_tasks worker --loglevel=info
+    # --concurrency: without it celery forks one worker per core (12 on a dev
+    # laptop), and prefork workers are long-lived — RSS only grows. On
+    # 2026-07-29 the four worker containers between them held ~16 GiB of a
+    # 15.84 GiB Docker VM after two days up, and a global OOM killed the
+    # frontend, the backend, and three workers at once. 4 is plenty locally.
+    # --max-tasks-per-child recycles a worker after N tasks so its memory is
+    # actually handed back; this is the fix that keeps it from creeping.
+    command: celery -A backend.tasks.upload_tasks worker --concurrency=4 --max-tasks-per-child=50 --loglevel=info
+    mem_limit: 4g
     environment:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -93,7 +101,10 @@ services:
       context: ../../
       dockerfile: docker/backend/Dockerfile
     container_name: thebingo-celery-beat
+    # Scheduler, single process, no prefork pool — nothing to recycle, just a
+    # ceiling so it can't participate in a VM-wide OOM.
     command: celery -A backend.tasks.upload_tasks beat --loglevel=info
+    mem_limit: 512m
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_URL=redis://redis:6379/2
@@ -110,7 +121,8 @@ services:
       context: ../../
       dockerfile: docker/backend/Dockerfile
     container_name: thebingo-agent-worker
-    command: celery -A backend.tasks.upload_tasks worker --queues=agent.data,agent.dashboard,agent.rag,agent.custom --concurrency=2 --loglevel=info
+    command: celery -A backend.tasks.upload_tasks worker --queues=agent.data,agent.dashboard,agent.rag,agent.custom --concurrency=2 --max-tasks-per-child=50 --loglevel=info
+    mem_limit: 2g
     environment:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -134,7 +146,11 @@ services:
       context: ../../
       dockerfile: docker/backend/Dockerfile
     container_name: thebingo-pipelines
-    command: celery -A backend.tasks.upload_tasks worker --queues=pipelines --concurrency=10 --loglevel=info
+    # Concurrency stays 10 — `upload_tasks.py:41` documents it as the cap on
+    # simultaneous pipeline runs, so lowering it changes dispatch behaviour, not
+    # just memory. Bound it with recycling + a ceiling instead.
+    command: celery -A backend.tasks.upload_tasks worker --queues=pipelines --concurrency=10 --max-tasks-per-child=50 --loglevel=info
+    mem_limit: 4g
     environment:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1

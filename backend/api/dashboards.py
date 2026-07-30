@@ -1,4 +1,5 @@
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -204,6 +205,35 @@ def _skeleton_widgets(widgets) -> list:
     return out
 
 
+_TITLE_SUFFIX_RE = re.compile(r"\s*\(([^()]*)\)\s*$")
+
+
+def _strip_source_suffix(title: str, widgets) -> str:
+    """Drop a trailing "(csv_104)" the dashboard agent echoed into the title.
+
+    The storage table name is internal — users recognise the file they
+    uploaded, not the key it is stored under. Only a suffix naming an actual
+    source table is removed, so "Q3 Sales (2024)" is left alone.
+    """
+    match = _TITLE_SUFFIX_RE.search(title or "")
+    if not match:
+        return title
+    sources = {
+        s
+        for w in widgets or []
+        if isinstance(w, dict)
+        for s in (w.get("sources") or [])
+        if isinstance(s, str)
+    }
+    if not sources:
+        return title
+    tokens = [t.strip() for t in match.group(1).split(",")]
+    if not all(t in sources for t in tokens):
+        return title
+    # A title that is nothing but the table name has nothing left to show.
+    return title[: match.start()].rstrip() or title
+
+
 def _dashboard_to_response(
     dashboard: Dashboard,
     *,
@@ -224,7 +254,7 @@ def _dashboard_to_response(
     ) if dashboard.user_id else None
     return DashboardResponse(
         id=dashboard.id,
-        title=dashboard.title,
+        title=_strip_source_suffix(dashboard.title, dashboard.widgets),
         description=dashboard.description,
         widgets=(
             _lite_widgets(dashboard.widgets) if lite

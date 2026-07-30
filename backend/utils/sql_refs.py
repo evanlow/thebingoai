@@ -130,19 +130,69 @@ def transpile_bq_to_duckdb(sql: str) -> str:
 
 
 def extract_table_refs(sql: str) -> list[str]:
-    """Return list of table names referenced in *sql* (lower-cased, deduplicated, sorted).
-    Returns [] on parse failure."""
+    """Return list of *physical* table names referenced in *sql* (lower-cased,
+    deduplicated, sorted). Returns [] on parse failure.
+
+    CTE names are excluded. sqlglot parses `FROM my_cte` as `exp.Table` exactly
+    like `FROM my_real_table` — the node type says "name in FROM position", not
+    "table on disk". Callers use this list to resolve storage (register a DuckDB
+    view over a Parquet glob, check `table_exists`, build lineage), and a CTE has
+    no storage: `WITH bands AS (...) SELECT ... FROM bands` used to yield
+    `["bands", "csv_104"]`, so the reader mounted `gs://.../bands/dt=*/*.parquet`,
+    got `IO Error: No files found`, and the whole widget fell back to the source DB.
+
+    Excluding is right even when a CTE shadows a real table of the same name —
+    inside that query the CTE is what the reference resolves to, so mounting the
+    physical table would silently serve different data.
+
+    Exclusion is resolved **per scope**, not against one statement-wide set of CTE
+    names, because a bare-name match is not proof that a reference is the CTE:
+    `WITH orders AS (SELECT * FROM orders) SELECT * FROM orders` has a physical
+    `orders` inside the CTE body (a non-recursive CTE cannot reference itself), and
+    `WITH orders AS (...) ... FROM public.orders` is qualified. Both used to return
+    `[]`. That matters beyond serving: the org-governance plugin enforces per-table
+    ACLs by iterating this list, so an empty list means no authorization check runs
+    at all.
+
+    When in doubt this over-reports. Naming a table that isn't on the plane only
+    costs a failed view registration and a fallback to the source DB; missing one
+    has no equivalent backstop.
+    """
     try:
         parsed = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
     except Exception:
         return []
 
-    tables = set()
-    for node in parsed.find_all(exp.Table):
-        if node.name:
-            tables.add(node.name.lower())
+    physical: set[str] = set()   # names a scope resolved to a real table
+    cte_bound: set[str] = set()  # names a scope resolved to a CTE / derived table
 
-    return sorted(list(tables))
+    # `scope.sources` maps each name visible in a scope to an `exp.Table` when it
+    # is a physical reference, or to a nested `Scope` when it is a CTE or derived
+    # table — exactly the distinction the bare-name match could not make.
+    try:
+        from sqlglot.optimizer.scope import traverse_scope
+
+        for scope in traverse_scope(parsed):
+            for name, source in scope.sources.items():
+                if isinstance(source, exp.Table):
+                    if source.name:
+                        physical.add(source.name.lower())
+                elif name:
+                    cte_bound.add(name.lower())
+    except Exception:
+        # Leaves cte_bound empty, so the backfill below reports every name — the
+        # safe direction (see docstring) rather than a silent under-report.
+        pass
+
+    # Nodes the scope walk doesn't reach (an INSERT target, DDL) are still real
+    # tables. Only a name bound to a CTE somewhere is suppressed here; a name the
+    # walk already resolved to a physical table stays, so a CTE in one scope
+    # cannot hide a real table of the same name in another.
+    for node in parsed.find_all(exp.Table):
+        if node.name and node.name.lower() not in cte_bound:
+            physical.add(node.name.lower())
+
+    return sorted(physical)
 
 
 def qualifier_allowlist(connection) -> set[str] | None:
