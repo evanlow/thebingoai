@@ -65,5 +65,29 @@ export const useConnections = () => {
   const getSourceLabel = (id: number): string | null =>
     cache.value?.[id]?.sourceFilename ?? null
 
-  return { ensureLoaded, getConnectionLabel, getSourceLabel }
+  // Fold a just-created connection in. `ensureLoaded` returns early forever once
+  // the cache is warm, so without this a dataset uploaded later in the session has
+  // no entry and its dashboards silently lose their source label. Upsert rather
+  // than invalidate: nulling the cache lets an in-flight fetch's `.then` write
+  // pre-upload data back over it.
+  const upsertConnection = (c: {
+    id: number
+    name: string
+    db_type?: string
+    source_filename?: string | null
+  }) => {
+    if (cache.value === null) return  // ensureLoaded will fetch it from the server
+    cache.value = {
+      ...cache.value,
+      [c.id]: {
+        name: c.name,
+        dbType: c.db_type ?? '',
+        sourceFilename: FILENAME_RE.test(c.source_filename ?? '')
+          ? (c.source_filename as string)
+          : null,
+      },
+    }
+  }
+
+  return { ensureLoaded, getConnectionLabel, getSourceLabel, upsertConnection }
 }

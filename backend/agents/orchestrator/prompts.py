@@ -107,13 +107,15 @@ def build_lean_orchestrator_prompt(
     user_memories_context: str = "",
     available_connections: Optional[List[int]] = None,
     connection_metadata: Optional[list] = None,
-    mentions: "Optional[List[ResolvedMention]]" = None,
 ) -> str:
     """Build a lean orchestrator prompt for orchestrator_lean_tools=True.
 
     Drops the inline custom-agent / skill listings and the long tool-usage
     guide. The bound tools (≤10) carry their own descriptions and the routing
     rule above tells the model how to pick among them.
+
+    The per-turn @-mention block is NOT appended here — `_render_orchestrator_prompt`
+    appends it for every prompt path, and doing it in both places printed it twice.
     """
     base = _LEAN_CHASSIS + "\n" + _LEAN_ROUTING_RULE + "\n" + _LEAN_MENTION_FEWSHOT
 
@@ -133,10 +135,6 @@ def build_lean_orchestrator_prompt(
         else:
             connections_str = ", ".join(str(c) for c in available_connections)
         base += f"\n## Available Database Connections\n{connections_str}\n"
-
-    mentions_block = render_mentions_block(mentions)
-    if mentions_block:
-        base += "\n" + mentions_block + "\n"
 
     return base
 

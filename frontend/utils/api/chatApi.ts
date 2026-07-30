@@ -71,6 +71,17 @@ export function createChatApi(fetchWithRefresh: Function, authStore: any, router
         method: 'POST',
       })
     },
+    /**
+     * Persist a dataset-only turn — files sent with no question, answered locally
+     * without an agent run. Nothing else writes those two messages, so without
+     * this the thread reads empty after a reload.
+     */
+    async datasetAck(threadId: string, fileIds: string[], content: string) {
+      return fetchWithRefresh(`/api/chat/conversations/${threadId}/dataset-ack`, {
+        method: 'POST',
+        body: { file_ids: fileIds, content },
+      })
+    },
     async cancelDataset(fileId: string) {
       return fetchWithRefresh(`/api/chat/files/${encodeURIComponent(fileId)}/dataset`, {
         method: 'DELETE',

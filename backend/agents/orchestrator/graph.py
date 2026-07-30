@@ -231,19 +231,21 @@ async def _render_orchestrator_prompt(
 ) -> str:
     """Render profile-driven prompt (with pre-steps) or legacy fallback.
 
-    When `settings.orchestrator_lean_tools` is True, return the lean prompt
-    that pairs with the ≤10 primary tool surface and includes a per-turn
-    @-mention block.
+    When `settings.orchestrator_lean_tools` is True, build the lean prompt that
+    pairs with the ≤10 primary tool surface.
+
+    Every branch assigns `base_prompt` and falls through to the shared tail below
+    — the kill switch and the @-mention block must apply to all three, not just
+    the two that happen to reach the bottom of the function.
     """
     if settings.orchestrator_lean_tools:
-        return build_lean_orchestrator_prompt(
+        base_prompt = build_lean_orchestrator_prompt(
             soul_prompt=soul_prompt,
             user_memories_context=user_memories_context,
             available_connections=context.available_connections,
             connection_metadata=context.connection_metadata,
-            mentions=mentions,
         )
-    if profile:
+    elif profile:
         pre_ctx = PreStepContext(
             user_id=context.user_id,
             query=user_question,
@@ -288,9 +290,9 @@ async def _render_orchestrator_prompt(
             ORCHESTRATOR_DASHBOARD_SCOPING + "\n\n", ""
         ).replace(ORCHESTRATOR_DASHBOARD_SCOPING, "")
 
-    # Per-turn @-mention block. The profile renderer and legacy prompt don't
-    # know about mentions (only the lean prompt does), so append it here so the
-    # model sees resolved page_ids / connection_ids and the routing bias.
+    # Per-turn @-mention block. None of the three builders knows about mentions,
+    # so append it once here — the model needs the resolved page_ids /
+    # connection_ids and the routing bias.
     mentions_block = render_mentions_block(mentions)
     if mentions_block:
         base_prompt = f"{base_prompt}\n\n{mentions_block}"

@@ -69,3 +69,57 @@ describe('useConnections.getSourceLabel', () => {
     expect(getSourceLabel(104)).toBeNull()
   })
 })
+
+describe('useConnections.upsertConnection', () => {
+  beforeEach(() => {
+    listMock.mockReset().mockResolvedValue(CONNECTIONS)
+    getTypesMock.mockReset().mockResolvedValue([])
+  })
+
+  it('labels a connection created after the cache went warm', async () => {
+    // ensureLoaded returns early forever once loaded, so a dataset uploaded later
+    // in the session had no entry and its dashboards lost the source label.
+    const { ensureLoaded, getSourceLabel, upsertConnection } = await loadComposable()
+    await ensureLoaded()
+    expect(getSourceLabel(200)).toBeNull()
+
+    upsertConnection({ id: 200, name: 'Q3_sales', db_type: 'dataset', source_filename: 'Q3_sales.csv' })
+    expect(getSourceLabel(200)).toBe('Q3_sales.csv')
+  })
+
+  it('still refuses a value that is not filename-shaped', async () => {
+    const { ensureLoaded, getSourceLabel, upsertConnection } = await loadComposable()
+    await ensureLoaded()
+
+    upsertConnection({ id: 201, name: 'ads', source_filename: '{"token_refreshed_at": "2026-05-26"}' })
+    expect(getSourceLabel(201)).toBeNull()
+  })
+
+  it('overwrites an existing entry rather than duplicating it', async () => {
+    const { ensureLoaded, getSourceLabel, upsertConnection } = await loadComposable()
+    await ensureLoaded()
+
+    upsertConnection({ id: 104, name: 'HR_dataset', db_type: 'dataset', source_filename: 'HR_v2.csv' })
+    expect(getSourceLabel(104)).toBe('HR_v2.csv')
+  })
+
+  it('is a no-op before the first load, and the fetch still wins', async () => {
+    // Nothing to merge into yet — ensureLoaded will pick the row up from the server,
+    // so upserting into a null cache must not fabricate a partial one.
+    const { ensureLoaded, getSourceLabel, upsertConnection } = await loadComposable()
+    upsertConnection({ id: 104, name: 'HR_dataset', source_filename: 'stale.csv' })
+    expect(getSourceLabel(104)).toBeNull()
+
+    await ensureLoaded()
+    expect(getSourceLabel(104)).toBe('HR_dataset.csv')
+  })
+
+  it('leaves the other cached connections alone', async () => {
+    const { ensureLoaded, getSourceLabel, upsertConnection } = await loadComposable()
+    await ensureLoaded()
+
+    upsertConnection({ id: 200, name: 'Q3_sales', source_filename: 'Q3_sales.csv' })
+    expect(getSourceLabel(104)).toBe('HR_dataset.csv')
+    expect(getSourceLabel(7)).toBeNull()
+  })
+})

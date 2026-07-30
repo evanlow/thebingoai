@@ -121,6 +121,7 @@ export const useChatFileUpload = () => {
   const api = useApi()
   const chatStore = useChatStore()
   const config = useRuntimeConfig()
+  const { upsertConnection } = useConnections()
 
   /**
    * True when every attached file has finished everything the send is waiting on:
@@ -278,11 +279,20 @@ export const useChatFileUpload = () => {
           undefined,
           (percent: number) => updateProgress(indexOfFile(file), percent),
           tid,
-        ) as { id: number; name: string; row_count: number }
+        ) as { id: number; name: string; row_count: number; source_filename?: string | null }
         markProcessing(indexOfFile(file), {
           file_id: `connection:${result.id}`,
           connection_id: result.id,
           row_count: result.row_count ?? null,
+        })
+        // Seed the connection cache now — a dashboard built from this upload in the
+        // same session needs the filename to label its source, and the cache never
+        // refetches once warm.
+        upsertConnection({
+          id: result.id,
+          name: result.name,
+          db_type: 'dataset',
+          source_filename: result.source_filename,
         })
       } catch (err: any) {
         markError(indexOfFile(file), err?.message || 'Dataset upload failed')

@@ -3,9 +3,10 @@ import posixpath
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.auth.dependencies import get_current_user
+from backend.auth.dependencies import forbid_viewer, get_current_user
 from backend.config import settings
 from backend.database.session import get_db
 from backend.models.user import User
@@ -40,6 +41,65 @@ async def create_conversation(
         db, user_id=current_user.id, title="File Upload"
     )
     return {"thread_id": conversation.thread_id}
+
+
+class DatasetAckRequest(BaseModel):
+    """A dataset-only turn: files arrived with no question attached."""
+
+    file_ids: List[str] = Field(default_factory=list, max_length=20)
+    content: str = Field(max_length=4000)
+
+
+@router.post(
+    "/conversations/{thread_id}/dataset-ack",
+    status_code=201,
+    dependencies=[Depends(forbid_viewer)],
+)
+async def dataset_ack(
+    thread_id: str,
+    request: DatasetAckRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Persist a dataset-only turn the agent never ran.
+
+    Uploading files with no question is answered in the browser — the processing
+    *was* the request, so spending an agent turn on an empty prompt would burn a
+    credit for a canned sentence, and the WS path rejects an empty message anyway.
+    Nothing then writes to `messages`, so the thread read empty after a reload.
+    This endpoint records the same two rows a normal turn would: no LLM call, no
+    credits, no title generation.
+    """
+    from backend.api.websocket import _resolve_attachments
+    from backend.services.conversation_service import ConversationService
+
+    conversation = ConversationService.get_conversation_by_thread(
+        db, thread_id, current_user.id
+    )
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Datasets only. This endpoint writes a turn nobody validated, so it must not
+    # double as a way to staple arbitrary Redis-backed files onto a message.
+    for fid in request.file_ids:
+        _, _, cid = fid.partition(":")
+        if not fid.startswith("connection:") or not cid.isdigit():
+            raise HTTPException(
+                status_code=400, detail=f"Expected a connection: file_id, got {fid!r}"
+            )
+
+    # Per-connection ownership is enforced inside _build_dataset_file_content, so a
+    # connection the caller doesn't own contributes no attachment.
+    _, attachments = await _resolve_attachments(
+        request.file_ids, chat_file_service, db=db, user=current_user
+    )
+
+    ConversationService.add_message(
+        db, conversation.id, "user", "", attachments=attachments or None
+    )
+    ConversationService.add_message(db, conversation.id, "assistant", request.content)
+
+    return {"thread_id": thread_id, "attachments": len(attachments)}
 
 
 @router.post("/files/upload")

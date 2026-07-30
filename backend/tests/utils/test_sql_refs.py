@@ -65,6 +65,40 @@ def test_extract_excludes_cte_shadowing_a_real_table():
     assert extract_table_refs(sql) == ["raw_orders"]
 
 
+def test_cte_does_not_hide_the_physical_table_it_reads():
+    """A non-recursive CTE cannot reference itself, so the inner `orders` is the
+    real table. Matching bare names statement-wide swallowed it and returned [] —
+    and the org-governance plugin enforces per-table ACLs by iterating this list,
+    so an empty list means no authorization check runs at all.
+    """
+    sql = "WITH orders AS (SELECT * FROM orders) SELECT * FROM orders"
+    assert extract_table_refs(sql) == ["orders"]
+
+
+def test_a_qualified_ref_survives_a_same_named_cte():
+    """`node.name` drops the qualifier, so `public.orders` used to collide with a
+    CTE called `orders` and disappear."""
+    sql = "WITH orders AS (SELECT * FROM public.orders) SELECT * FROM orders"
+    assert extract_table_refs(sql) == ["orders"]
+
+
+def test_a_name_that_is_a_cte_in_one_scope_and_a_table_in_another():
+    """CTE bindings are per-scope: `t` is a CTE inside the derived table only, and
+    the outer `t` is a real table. Physical must win."""
+    sql = "SELECT * FROM (WITH t AS (SELECT 1 AS x) SELECT * FROM t) a JOIN t ON 1 = 1"
+    assert extract_table_refs(sql) == ["t"]
+
+
+def test_recursive_cte_self_reference_is_still_excluded():
+    sql = "WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n FROM r) SELECT * FROM r"
+    assert extract_table_refs(sql) == []
+
+
+def test_insert_target_is_reported():
+    """The scope walk doesn't reach an INSERT target, so the backfill has to."""
+    assert extract_table_refs("INSERT INTO t SELECT * FROM src") == ["src", "t"]
+
+
 def test_rewrite_single_table():
     result_sql, success = rewrite_table_refs("SELECT * FROM legacy", {"legacy": "new_table"})
     assert success is True

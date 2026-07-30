@@ -69,6 +69,11 @@ const chatSends = () => wsSend.mock.calls
 vi.stubGlobal('useCreditBalance', () => ({ refresh: vi.fn() }))
 vi.stubGlobal('useDatasetStatus', () => ({ datasets: ref([]) }))
 
+// The dataset-only turn persists itself over REST — no agent runs, so nothing else
+// would write it to the DB.
+const datasetAckMock = vi.fn(async () => ({}))
+vi.stubGlobal('useApi', () => ({ chat: { datasetAck: datasetAckMock } }))
+
 const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }))
 vi.mock('~/utils/analytics', () => ({ trackEvent: trackEventMock }))
 vi.stubGlobal('useMentions', () => ({
@@ -437,6 +442,138 @@ describe('useChatStreaming — the answer waits for documentation', () => {
     await tick()
 
     expect(chatSends()).toHaveLength(1)
+  })
+
+  it('does not wait again on a connection whose documentation already arrived', async () => {
+    // Either the docs task beat the upload's HTTP response, or the upload published
+    // a terminal `dataset.docs` inline because it never enqueued the task (auto-docs
+    // off, inline profiling failed, an append) — that one is emitted before the
+    // response, so it always wins. The ws handler has recorded and cleared it by the
+    // time the send path resumes, so re-marking it pending would wait on an event
+    // that has come and gone.
+    uploadsAs(42)
+    const landed = mockUploadPendingDatasets.getMockImplementation()!
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      await landed()
+      store.setDatasetDocs({
+        connection_id: 42, table_name: 'csv_42', filename: 'f0.csv',
+        table_description: null, columns: [], total_columns: 3,
+      })
+    })
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('what is in here?')
+    await tick()
+
+    // No clearDocsPending, no 120 s self-heal — the question goes out immediately.
+    expect(store.docsPendingConnections).not.toContain(42)
+    expect(chatSends()).toHaveLength(1)
+  })
+
+  it('still answers locally when an early-docs append arrives with no question', async () => {
+    // The dataset-only branch keys on this turn's uploads, not on what it waited
+    // for — otherwise an append whose docs landed early would fall through to the
+    // agent with an empty prompt, which the backend rejects outright.
+    uploadsAs(42)
+    const landed = mockUploadPendingDatasets.getMockImplementation()!
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      await landed()
+      store.setDatasetDocs({
+        connection_id: 42, table_name: 'csv_42', filename: 'f0.csv',
+        table_description: null, columns: [], total_columns: 3,
+      })
+    })
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('')
+    await tick()
+
+    expect(chatSends()).toHaveLength(0)
+    expect(store.messages.at(-1)!.content).toContain('f0.csv')
+  })
+
+  it('leaves a dataset retained from an earlier turn out of file_ids', async () => {
+    // clearFiles() keeps sent datasets in the composer so the panel still shows
+    // them. Re-sending their file_ids re-injects the whole profile into every later
+    // prompt and re-persists the attachment — and they already reach the agent via
+    // connection_ids and the server's thread-dataset sweep.
+    const retained = attachment({
+      file: { name: 'old.csv', type: CSV_MIME, size: 5 },
+      status: 'ready', file_id: 'connection:9', connection_id: 9, sent: true,
+    })
+    mockAttachedFiles.value = [retained, attachment({ file: { name: 'f0.csv', type: CSV_MIME, size: 5 } })]
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      mockAttachedFiles.value = [retained, attachment({
+        file: { name: 'f0.csv', type: CSV_MIME, size: 5 },
+        status: 'processing', file_id: 'connection:42', connection_id: 42, sent: true,
+      })]
+    })
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('and this one?')
+    await tick()
+    store.clearDocsPending(42)
+    await tick()
+
+    expect(chatSends()[0].file_ids).toEqual(['connection:42'])
+  })
+})
+
+describe('useChatStreaming — the dataset-only turn is persisted', () => {
+  let store: ReturnType<typeof useChatStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    wsHandlers.clear()
+    wsUnsubs.clear()
+    wsSend.mockClear()
+    datasetAckMock.mockReset().mockResolvedValue({})
+    mockUploadPendingDatasets.mockReset()
+    mockAttachedFiles.value = []
+    store = useChatStore()
+    store.currentThreadId = 't1'
+    store.pendingConnectionIds = []
+  })
+
+  /** Drive a dataset-only turn to completion. */
+  async function datasetOnlyTurn() {
+    uploadsAs(42)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('')
+    await tick()
+    store.clearDocsPending(42)
+    await tick()
+  }
+
+  it('writes the turn the agent never ran', async () => {
+    await datasetOnlyTurn()
+
+    expect(datasetAckMock).toHaveBeenCalledTimes(1)
+    const [threadId, fileIds, content] = datasetAckMock.mock.calls[0] as any[]
+    expect(threadId).toBe('t1')
+    expect(fileIds).toEqual(['connection:42'])
+    expect(content).toContain('f0.csv')
+    expect(content).toBe(store.messages.at(-1)!.content)
+  })
+
+  it('keeps the reply on screen when the write fails', async () => {
+    datasetAckMock.mockRejectedValue(new Error('offline'))
+    await datasetOnlyTurn()
+
+    expect(store.messages.at(-1)!.content).toContain('f0.csv')
+    expect(store.isStreaming).toBe(false)
+  })
+
+  it('does not write anything for an ordinary turn', async () => {
+    uploadsAs(42)
+    const { sendMessage } = useChatStreaming()
+    sendMessage('what is in here?')
+    await tick()
+    store.clearDocsPending(42)
+    await tick()
+
+    expect(chatSends()).toHaveLength(1)
+    expect(datasetAckMock).not.toHaveBeenCalled()
   })
 })
 

@@ -38,6 +38,11 @@ vi.stubGlobal('useApi', () => ({
   },
 }))
 
+// A finished dataset upload seeds the connection cache, so a dashboard built from
+// it in the same session can label its source without a refetch.
+const mockUpsertConnection = vi.fn()
+vi.stubGlobal('useConnections', () => ({ upsertConnection: mockUpsertConnection }))
+
 // Use dynamic import to ensure stubs are applied before module loads
 let useChatFileUpload: any
 

@@ -122,6 +122,52 @@ def test_a_seeded_profile_is_stripped_too(monkeypatch):
     assert ORCHESTRATOR_ASK_RULES in rendered
 
 
+# --- lean mode reaches the shared tail -------------------------------------
+#
+# Lean mode used to `return` its prompt directly, so neither the strip nor the
+# @-mention block applied to it. That was inert only because the lean prompt has no
+# scoping block to strip — a coincidence, not a guarantee.
+
+
+def _render_lean(monkeypatch, *, flag: bool, mentions=None):
+    monkeypatch.setattr(settings, "dashboard_scoping_questions", flag, raising=False)
+    monkeypatch.setattr(settings, "orchestrator_lean_tools", True, raising=False)
+    return asyncio.run(graph_mod._render_orchestrator_prompt(
+        None, "build me a dashboard", _ctx(), None, None, None, "", "", "", None, "test",
+        mentions=mentions,
+    ))
+
+
+def test_lean_mode_reaches_the_strip(monkeypatch):
+    """Stub the lean builder so it *does* carry the block — the real one doesn't,
+    and this has to pin the wiring rather than that coincidence."""
+    monkeypatch.setattr(
+        graph_mod, "build_lean_orchestrator_prompt",
+        lambda **_: f"LEAN HEAD\n\n{ORCHESTRATOR_DASHBOARD_SCOPING}\n\nLEAN TAIL",
+    )
+    assert ORCHESTRATOR_DASHBOARD_SCOPING in _render_lean(monkeypatch, flag=True)
+    assert ORCHESTRATOR_DASHBOARD_SCOPING not in _render_lean(monkeypatch, flag=False)
+
+
+def test_lean_mode_renders_the_mention_block_exactly_once(monkeypatch):
+    """Both the lean builder and the shared tail used to append it."""
+    from backend.schemas.chat import ResolvedMention
+
+    mention = ResolvedMention(
+        type="dashboard", id=42, name="q4-revenue", display_name="Q4 Revenue",
+    )
+    rendered = _render_lean(monkeypatch, flag=True, mentions=[mention])
+    assert rendered.count("## Resolved @-mentions for this turn") == 1
+    assert rendered.count('- dashboard #42 — "Q4 Revenue"') == 1
+
+
+def test_lean_mode_carries_no_scoping_block_today(monkeypatch):
+    """Documents the real state: lean mode omits the shared workflow blocks, so
+    scoping is absent there whatever the flag says. If this starts failing, lean
+    mode gained the feature — decide whether that was intended."""
+    assert ORCHESTRATOR_DASHBOARD_SCOPING not in _render_lean(monkeypatch, flag=True)
+
+
 # --- the round cap survives the flip ---------------------------------------
 
 

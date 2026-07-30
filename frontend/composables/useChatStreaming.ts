@@ -31,6 +31,7 @@ export const useChatStreaming = () => {
     return `${head}${body}\n\nWhat would you like to know about ${files.length === 1 ? 'it' : 'them'}?`
   }
   const ws = useWebSocket()
+  const api = useApi()
   const { refresh: refreshCredits } = useCreditBalance()
 
   // query.result (the CSV/Excel export side-channel) is delivered via Redis
@@ -593,12 +594,17 @@ export const useChatStreaming = () => {
         syncStepsLog()
       }
 
-      // Recompute from the files themselves: the caller's fileIds were collected
+      // Recompute from this turn's uploads: the caller's fileIds were collected
       // before uploadPendingDatasets ran, so every dataset id is new since then.
       // getFileIds() can't be used here — clearFiles() has already marked them sent.
-      const datasetFileIds = attachedFiles.value
-        .filter(f => f.file_id && CSV_MIME_SET2.has(f.resolved_type))
-        .map(f => f.file_id as string)
+      //
+      // Datasets retained from earlier turns are deliberately excluded. They still
+      // reach the agent via connection_ids and the server's own thread-dataset
+      // sweep, whereas re-sending their file_ids re-injects each full profile into
+      // every later prompt and re-persists the attachment on every message.
+      const datasetFileIds = uploadedThisTurn
+        .map(f => f.file_id)
+        .filter((id): id is string => !!id)
       if (datasetFileIds.length > 0) {
         deferredFileIds = [...new Set([...deferredFileIds, ...datasetFileIds])]
       }
@@ -610,7 +616,18 @@ export const useChatStreaming = () => {
       // the file with bare column names. Marking pending here rather than trusting
       // the server's dataset.docs.start removes the race between that event and
       // the upload's own HTTP response.
-      const awaitedConnectionIds = uploadedThisTurn.map(f => f.connection_id!)
+      //
+      // Skip anything whose docs already landed. Two ways that happens before this
+      // line runs: the docs task finishes ahead of the upload's HTTP response, or the
+      // upload publishes a terminal `dataset.docs` inline because it never enqueued
+      // the task (CSV_AUTO_GENERATE_DOCS off, inline profiling failed, or an append
+      // to an existing dataset) — that one is emitted *before* the response, so it
+      // always wins the race. Either way the ws handler has already cleared the
+      // connection, so re-marking it would wait on an event that has come and gone,
+      // locking the composer until the 120 s self-heal.
+      const awaitedConnectionIds = uploadedThisTurn
+        .filter(f => !chatStore.datasetDocs[f.connection_id!])
+        .map(f => f.connection_id!)
       if (awaitedConnectionIds.length > 0) {
         const names = uploadedThisTurn.map(f => f.file.name).join(', ')
         awaitedConnectionIds.forEach(id => {
@@ -640,10 +657,23 @@ export const useChatStreaming = () => {
 
       // Files with no question: the processing WAS the request. Answer from what
       // we already know instead of spending an agent turn on an empty prompt.
-      if (!message.trim() && awaitedConnectionIds.length > 0) {
-        chatStore.updateMessageById(assistantMsgId, {
-          content: describeProcessedDatasets(uploadedThisTurn),
-        })
+      // Keyed on uploadedThisTurn, not awaitedConnectionIds — an append whose docs
+      // arrived early belongs here too.
+      if (!message.trim() && uploadedThisTurn.length > 0) {
+        const content = describeProcessedDatasets(uploadedThisTurn)
+        chatStore.updateMessageById(assistantMsgId, { content })
+
+        // The agent never ran, so nothing server-side knows this turn happened and
+        // both bubbles vanish on reload. Persist them directly.
+        if (chatStore.currentThreadId) {
+          try {
+            await (api.chat as any).datasetAck(chatStore.currentThreadId, datasetFileIds, content)
+          } catch (err) {
+            // The reply is already on screen — a failed write must not break the turn.
+            console.warn('dataset acknowledgement not persisted', err)
+          }
+        }
+
         chatStore.pendingConnectionIds = []
         cleanup()
         return
