@@ -114,7 +114,7 @@ const emit = defineEmits<{
 }>()
 
 const chatStore = useChatStore()
-const { addFiles, attachedFiles, removeFile, allFilesReady, canSubmitFiles, hasPendingDatasets } = useChatFileUpload()
+const { addFiles, attachedFiles, removeFile, isReadingData: filesReading, canSubmitFiles, hasPendingDatasets } = useChatFileUpload()
 
 // A dataset on its own is a valid send — processing it IS the request.
 const canSend = computed(() =>
@@ -123,7 +123,7 @@ const canSend = computed(() =>
   canSubmitFiles.value
 )
 
-const isReadingData = computed(() => chatStore.isStreaming && !allFilesReady.value)
+const isReadingData = computed(() => chatStore.isStreaming && filesReading.value)
 
 const textareaRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)

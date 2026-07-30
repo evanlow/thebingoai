@@ -50,12 +50,16 @@ def test_frozen_snapshot_has_all_sections():
     assert all(isinstance(v, str) and v for v in new_defaults.values())
 
 
-def test_frozen_snapshot_matches_current_defaults():
-    """Sanity: the frozen text equals the current composed defaults. If a future
-    block edit is intended to change what this revision writes, regenerate the
-    snapshot deliberately — this test flags accidental drift."""
-    from backend.agents.profile_defaults import DEFAULTS
+def test_frozen_snapshot_stays_frozen():
+    """This revision has shipped. Its snapshot must keep writing the text it
+    wrote then, or a fresh install and an upgraded one diverge.
 
+    There used to be a test here asserting the snapshot equals the live
+    composed DEFAULTS. That is the invariant of the *newest* refresh
+    migration, not a historical one — holding it here forced every later
+    prompt edit back into this file, which is exactly what a frozen snapshot
+    exists to prevent. `test_migration_d0cst0ry0a1b` owns it now, and pins
+    the digest below as the text it must recognise and replace."""
     tree = ast.parse(_load_source())
     new_defaults = next(
         ast.literal_eval(node.value)
@@ -63,9 +67,10 @@ def test_frozen_snapshot_matches_current_defaults():
         if isinstance(node, ast.Assign)
         and any(getattr(t, "id", None) == "_NEW_DEFAULTS" for t in node.targets)
     )
-    live = DEFAULTS["dashboard_agent"]
-    for section in ("identity", "soul", "tools", "guardrails"):
-        assert new_defaults[section] == live[section]
+    digest = hashlib.sha256(new_defaults["tools"].encode()).hexdigest()
+    assert digest == (
+        "ef73c9e062fbf0354e301f94d05f96b268c8df82166251d30572db1d4e310809"
+    )
 
 
 def test_matcher_replaces_old_default_and_spares_edits():

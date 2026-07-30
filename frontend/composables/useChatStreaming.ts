@@ -555,7 +555,7 @@ export const useChatStreaming = () => {
       const uploadingNames = attachedFiles.value
         .filter(f => f.status === 'attached')
         .map(f => f.file.name)
-      await uploadPendingDatasets(chatStore.currentThreadId || undefined)
+      const { failed: failedUploads } = await uploadPendingDatasets(chatStore.realThreadId || undefined)
       const uploadedThisTurn = attachedFiles.value.filter(
         f => uploadingNames.includes(f.file.name) && f.connection_id != null
       )
@@ -564,17 +564,43 @@ export const useChatStreaming = () => {
       // `__pending__:<name>`. Every card/pill consumer keys on `connection:<id>`,
       // so without this rewrite the live turn shows pills and no cards — and the
       // documentation, which lives inside the card, has nowhere to render.
-      if (uploadedThisTurn.length > 0 && userMessage.attachments) {
+      // A failed upload gets the same treatment in reverse: its pill has to stop
+      // claiming it is still processing, or the turn reads as if the file landed.
+      if ((uploadedThisTurn.length > 0 || failedUploads.length > 0) && userMessage.attachments) {
         const byName = new Map(uploadedThisTurn.map(f => [f.file.name, f]))
+        const failedNames = new Set(failedUploads)
         chatStore.updateMessageById(userMessage.id, {
           attachments: userMessage.attachments.map(att => {
+            if (failedNames.has(att.name)) return { ...att, status: 'error' as const }
             const f = byName.get(att.name)
             return f?.file_id ? { ...att, file_id: f.file_id } : att
           }),
         })
       }
 
-      const pendingNow = attachedFiles.value.filter(f => CSV_MIME_SET2.has(f.resolved_type) && !f.file_id && !f.sent)
+      if (failedUploads.length > 0) {
+        const names = failedUploads.join(', ')
+        stepsLog.push(`${formatTs()}  ✗ Upload failed: ${names}`)
+        syncStepsLog()
+
+        // Nothing uploaded and nothing to ask: the WS handler would reject the
+        // empty message with "Empty message", which reports the wrong failure.
+        // Answer with the real one instead of spending a turn on it.
+        if (uploadedThisTurn.length === 0 && !message.trim()) {
+          chatStore.updateMessageById(assistantMsgId, {
+            content: `I couldn't process ${names}. The upload failed before I could read the file — please try attaching it again.`,
+          })
+          chatStore.pendingConnectionIds = []
+          cleanup()
+          return
+        }
+      }
+
+      // `status !== 'error'`: a failed upload never gets a file_id, so counting
+      // it as pending waits on an event that is never coming.
+      const stillUploading = (f: typeof attachedFiles.value[number]) =>
+        CSV_MIME_SET2.has(f.resolved_type) && !f.file_id && f.status !== 'error'
+      const pendingNow = attachedFiles.value.filter(f => stillUploading(f) && !f.sent)
 
       if (pendingNow.length > 0) {
         const names = pendingNow.map(f => f.file.name).join(', ')
@@ -584,8 +610,7 @@ export const useChatStreaming = () => {
         // Wait for markProcessing to set file_id after HTTP 200
         await new Promise<void>(resolve => {
           const stop = watch(attachedFiles, (files) => {
-            const stillPending = files.filter(f => CSV_MIME_SET2.has(f.resolved_type) && !f.file_id)
-            if (stillPending.length === 0) { stop(); resolve() }
+            if (!files.some(stillUploading)) { stop(); resolve() }
           }, { deep: false })
         })
 
@@ -665,9 +690,9 @@ export const useChatStreaming = () => {
 
         // The agent never ran, so nothing server-side knows this turn happened and
         // both bubbles vanish on reload. Persist them directly.
-        if (chatStore.currentThreadId) {
+        if (chatStore.realThreadId) {
           try {
-            await (api.chat as any).datasetAck(chatStore.currentThreadId, datasetFileIds, content)
+            await (api.chat as any).datasetAck(chatStore.realThreadId, datasetFileIds, content)
           } catch (err) {
             // The reply is already on screen — a failed write must not break the turn.
             console.warn('dataset acknowledgement not persisted', err)
@@ -683,7 +708,7 @@ export const useChatStreaming = () => {
       ws.send({
         type: 'chat.send',
         request_id: requestId,
-        thread_id: chatStore.currentThreadId || null,
+        thread_id: chatStore.realThreadId,
         message,
         connection_ids: allConnectionIds,
         mentions,

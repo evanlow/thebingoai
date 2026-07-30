@@ -44,8 +44,8 @@ Phase 1 — Context:
 
 Phase 2 — Profile & Design:
 4. Call `profile_table(connection_id, table_name)` on the 2-4 tables you picked to get their
-   distribution stats (row count, per-column cardinality, null counts, numeric averages, and —
-   when the org's privacy policy allows — numeric/date ranges and top values). This is the
+   distribution stats (row count, per-column cardinality, null counts, and — when the org's
+   privacy policy allows — numeric averages, numeric/date ranges and top values). This is the
    data-scientist input the EDA pass reasons over; do not skip it.
 5. Call `get_widget_spec("all")` ONCE to fetch the specs for every widget type in a single call BEFORE designing.
 6. Work through the EDA framework below (Data Understanding → Analytical Questions → Metric & Widget Mapping → Narrative Assembly) using the schema, the `build_dashboard_context` output, and the `profile_table` stats.

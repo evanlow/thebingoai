@@ -219,7 +219,7 @@ const editorRef  = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const containerRef = ref<HTMLElement | null>(null)
 
-const { attachedFiles, addFiles, removeFile, allFilesReady, canSubmitFiles, hasPendingDatasets } = useChatFileUpload()
+const { attachedFiles, addFiles, removeFile, isReadingData: filesReading, canSubmitFiles, hasPendingDatasets } = useChatFileUpload()
 
 // A dataset on its own is a valid send — processing it IS the request.
 const canSend = computed(() =>
@@ -230,7 +230,7 @@ const canSend = computed(() =>
 
 // Only meaningful while a turn is in flight; that's the whole window in which a
 // dataset can be mid-upload or mid-documentation.
-const isReadingData = computed(() => chatStore.isStreaming && !allFilesReady.value)
+const isReadingData = computed(() => chatStore.isStreaming && filesReading.value)
 const fileErrors = ref<Array<{ name: string; error: string }>>([])
 
 const datasetsInContext = computed(() => chatStore.conversationDatasets?.length ?? 0)

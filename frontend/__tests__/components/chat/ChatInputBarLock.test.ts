@@ -35,9 +35,15 @@ const fileState = {
   canSubmitFiles: ref(true),
   hasPendingDatasets: ref(false),
 }
+// Mirrors the real composable: with an empty composer there is no data to read,
+// so `allFilesReady` being false on its own must not light the label.
+const isReadingData = computed(
+  () => fileState.attachedFiles.value.length > 0 && !fileState.allFilesReady.value
+)
 vi.stubGlobal('useChatFileUpload', () => ({
   attachedFiles: fileState.attachedFiles,
   allFilesReady: fileState.allFilesReady,
+  isReadingData,
   canSubmitFiles: fileState.canSubmitFiles,
   hasPendingDatasets: fileState.hasPendingDatasets,
   addFiles: vi.fn(),
@@ -129,6 +135,7 @@ describe('ChatInputBar — reading-your-data lock', () => {
 
   it('locks the editor and shows the waiting label while datasets are non-terminal', async () => {
     chatStore.isStreaming = true
+    fileState.attachedFiles.value = [{ file: { name: 'data.csv' }, status: 'uploading' }]
     fileState.allFilesReady.value = false
     const w = mountBar()
     await nextTick()
@@ -140,6 +147,7 @@ describe('ChatInputBar — reading-your-data lock', () => {
 
   it('re-enables once every dataset is terminal and the turn ends', async () => {
     chatStore.isStreaming = true
+    fileState.attachedFiles.value = [{ file: { name: 'data.csv' }, status: 'uploading' }]
     const w = mountBar()
     await nextTick()
     expect(w.find('[data-testid="composer-waiting"]').exists()).toBe(true)
@@ -157,6 +165,18 @@ describe('ChatInputBar — reading-your-data lock', () => {
   it('shows no waiting label when nothing is streaming', async () => {
     const w = mountBar()
     await nextTick()
+    expect(w.find('[data-testid="composer-waiting"]').exists()).toBe(false)
+  })
+
+  it('shows no waiting label on a text-only turn with nothing attached', async () => {
+    // Regression: the label keyed on `!allFilesReady`, which is false for an
+    // empty composer — so every plain chat claimed to be reading data.
+    chatStore.isStreaming = true
+    fileState.attachedFiles.value = []
+    fileState.allFilesReady.value = false
+    const w = mountBar()
+    await nextTick()
+
     expect(w.find('[data-testid="composer-waiting"]').exists()).toBe(false)
   })
 })

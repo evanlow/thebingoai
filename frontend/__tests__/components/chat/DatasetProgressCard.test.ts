@@ -37,7 +37,7 @@ function dataset(step: string, overrides: Record<string, any> = {}) {
   }
 }
 
-const mountCard = (props: Record<string, any>) =>
+const mountCard = (props: any) =>
   mount(DatasetProgressCard, { props, global: { stubs } })
 
 describe('DatasetProgressCard', () => {
@@ -96,7 +96,10 @@ describe('DatasetProgressCard', () => {
     const btn = wrapper.find('button')
     expect(btn.text()).toBe('Retry')
     await btn.trigger('click')
-    expect(retryProfiling).toHaveBeenCalledWith(7)
+    // Emitted, not called here: resolving retryProfiling inside the card would
+    // give every card its own ws subscription and poller set.
+    expect(wrapper.emitted('retry')).toEqual([[7]])
+    expect(retryProfiling).not.toHaveBeenCalled()
   })
 
   it('does not offer a retry for an upload that failed before a connection existed', () => {

@@ -139,21 +139,47 @@ export const useChatFileUpload = () => {
     })
   })
 
+  /**
+   * There is a file, and it is not finished yet. Composed here rather than in
+   * each composer: `allFilesReady` is deliberately false for an empty list, so
+   * negating it on its own labels every plain text chat "Reading your data…".
+   */
+  const isReadingData = computed<boolean>(
+    () => attachedFiles.value.length > 0 && !allFilesReady.value
+  )
+
+  /**
+   * Record a freshly created conversation in the sidebar.
+   *
+   * The page may already have drawn a `pending-<ts>` placeholder for this same
+   * turn. Adding on top of one leaves two rows: chat.done's
+   * replacePendingConversation swaps the placeholder for the real conversation
+   * but has no way to know a copy was inserted separately.
+   */
+  const registerConversation = (tid: string) => {
+    const conv = {
+      id: tid,
+      title: 'File Upload',
+      type: 'task' as const,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      message_count: 0,
+    }
+    chatStore.pendingNewConversationId
+      ? chatStore.replacePendingConversation(conv)
+      : chatStore.addConversation(conv)
+  }
+
   /** Ensure a conversation exists for file uploads, creating one if needed. */
   const ensureThread = async (): Promise<string> => {
-    if (chatStore.currentThreadId) return chatStore.currentThreadId
+    // realThreadId, not currentThreadId: a `pending-` placeholder is not a
+    // conversation the server can attach an upload to.
+    if (chatStore.realThreadId) return chatStore.realThreadId
 
     const chatApi = api.chat as any
     const { thread_id: tid } = await chatApi.createConversation() as { thread_id: string }
     chatStore.setCurrentThread(tid)
-    chatStore.addConversation({
-      id: tid,
-      title: 'File Upload',
-      type: 'task',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      message_count: 0,
-    })
+    registerConversation(tid)
     return tid
   }
 
@@ -227,20 +253,13 @@ export const useChatFileUpload = () => {
               updateProgress(idx, percent)
             }
           },
-          chatStore.currentThreadId || null
+          chatStore.realThreadId
         ) as { files: Array<{ file_id: string; thread_id: string }>; thread_id: string }
 
         // Handle auto-created conversation
-        if (response.thread_id && !chatStore.currentThreadId) {
+        if (response.thread_id && !chatStore.realThreadId) {
           chatStore.setCurrentThread(response.thread_id)
-          chatStore.addConversation({
-            id: response.thread_id,
-            title: 'File Upload',
-            type: 'task',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            message_count: 0,
-          })
+          registerConversation(response.thread_id)
         }
 
         response.files.forEach((fileResult, i) => {
@@ -261,10 +280,15 @@ export const useChatFileUpload = () => {
   /**
    * Upload every dataset still sitting in 'attached'. Called from the send path,
    * so nothing reaches the server until the user actually asks a question.
+   *
+   * Returns the names that never made it. A red chip is not enough on its own:
+   * the send path continues with whatever uploaded, so without this the user
+   * gets an answer about a file the agent never received.
    */
-  const uploadPendingDatasets = async (threadId?: string): Promise<void> => {
+  const uploadPendingDatasets = async (threadId?: string): Promise<{ failed: string[] }> => {
+    const failed: string[] = []
     const pending = attachedFiles.value.filter(f => f.status === 'attached')
-    if (pending.length === 0) return
+    if (pending.length === 0) return { failed }
 
     for (const pendingFile of pending) {
       const file = pendingFile.file
@@ -296,8 +320,11 @@ export const useChatFileUpload = () => {
         })
       } catch (err: any) {
         markError(indexOfFile(file), err?.message || 'Dataset upload failed')
+        failed.push(file.name)
       }
     }
+
+    return { failed }
   }
 
   const removeFile = (index: number) => {
@@ -340,6 +367,7 @@ export const useChatFileUpload = () => {
     removeFile,
     clearFiles,
     allFilesReady,
+    isReadingData,
     canSubmitFiles,
     hasPendingDatasets,
     getFileIds,

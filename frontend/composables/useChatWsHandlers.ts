@@ -108,6 +108,10 @@ export const useChatWsHandlers = () => {
     const unsubStart = ws.on('dataset.docs.start', (data: any) => {
       const connectionId: number | undefined = data.connection_id
       if (!data.thread_id || connectionId == null) return
+      // Documentation already landed for this connection — a start event after
+      // the fact (a replay on reconnect, a re-upload) would wait on a completion
+      // that has come and gone, locking the composer until the 120 s self-heal.
+      if (chatStore.datasetDocs[connectionId]) return
       chatStore.markDocsPending(connectionId)
       // Self-heal: if generation dies the completion event never comes.
       setTimeout(() => chatStore.clearDocsPending(connectionId), 120_000)

@@ -198,9 +198,11 @@ export const useDatasetStatus = () => {
   const restDatasets = ref<Map<string, { file_id: string; name: string; status: string; connection_id: number | null }>>(new Map())
 
   async function loadConversationDatasets() {
-    if (!chatStore.currentThreadId) return
+    // realThreadId: the dashboard's `pending-` placeholder names no conversation
+    // the server can list datasets for — it would 404 on every send from there.
+    if (!chatStore.realThreadId) return
     try {
-      const result = await (api.chat as any).getConversationDatasets(chatStore.currentThreadId) as {
+      const result = await (api.chat as any).getConversationDatasets(chatStore.realThreadId) as {
         datasets: Array<{ file_id: string; name: string; status: string; connection_id: number | null }>
       }
       const map = new Map<string, typeof result.datasets[0]>()

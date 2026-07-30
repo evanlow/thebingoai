@@ -99,7 +99,7 @@
     <!-- Retry button for failed profiling -->
     <button
       v-if="dataset.step === 'failed' && dataset.connectionId && stepStatus('profiling') === 'failed'"
-      @click="retryProfiling(dataset.connectionId!)"
+      @click="emit('retry', dataset.connectionId!)"
       class="mt-1.5 text-sm text-[var(--ink-2)] bg-[var(--paper-2)] border border-[var(--line)] rounded px-2 py-0.5 hover:bg-[var(--paper-3)] transition-colors"
     >
       Retry
@@ -118,7 +118,11 @@ const props = defineProps<{
   dataset: DatasetStatus
 }>()
 
-const { retryProfiling } = useDatasetStatus()
+// Retry is delegated to the parent, which already holds a useDatasetStatus
+// instance. Calling it here would give every card on screen its own ws
+// subscription, poller set and REST reload over all the same datasets.
+const emit = defineEmits<{ retry: [connectionId: number] }>()
+
 const chatStore = useChatStore()
 const api = useApi()
 

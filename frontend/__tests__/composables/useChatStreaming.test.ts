@@ -8,13 +8,19 @@ const { mockAttachedFiles, mockUploadPendingDatasets } = vi.hoisted(() => {
   const { ref } = require('vue')
   return {
     mockAttachedFiles: ref([] as any[]),
-    mockUploadPendingDatasets: vi.fn(async () => {}),
+    mockUploadPendingDatasets: vi.fn(
+      async (_threadId?: string): Promise<{ failed: string[] } | void> => {}
+    ),
   }
 })
 vi.mock('~/composables/useChatFileUpload', () => ({
   useChatFileUpload: () => ({
     attachedFiles: mockAttachedFiles,
-    uploadPendingDatasets: mockUploadPendingDatasets,
+    // Most cases stub only the side effect (the files gaining connection ids);
+    // the `{ failed }` contract is filled in here so they don't each have to
+    // repeat it. A case testing an upload failure resolves it explicitly.
+    uploadPendingDatasets: async (threadId?: string) =>
+      (await mockUploadPendingDatasets(threadId)) ?? { failed: [] },
   }),
 }))
 
@@ -317,6 +323,65 @@ describe('useChatStreaming — deferred dataset upload', () => {
 
     expect(chatSends()).toHaveLength(1)
     expect(chatSends()[0].file_ids).toEqual([])
+  })
+
+  it('never puts a pending- placeholder on the wire', async () => {
+    // The dashboard empty state parks its local placeholder in currentThreadId
+    // while it navigates. Awaiting the upload hands control back long enough for
+    // that to happen even with nothing attached, and the backend answers
+    // "Conversation not found" for an id it never issued.
+    store.currentThreadId = `pending-${123}`
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('what were sales last month?')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(chatSends()).toHaveLength(1)
+    expect(chatSends()[0].thread_id).toBeNull()
+  })
+
+  it('reports a failed upload instead of asking about a file that never landed', async () => {
+    mockAttachedFiles.value = [attachment()]
+    mockUploadPendingDatasets.mockResolvedValue({ failed: ['data.csv'] })
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('')          // dataset-only: the processing WAS the request
+    await new Promise(r => setTimeout(r, 0))
+
+    // An empty message would come back as "Empty message" and bury the real cause.
+    expect(chatSends()).toHaveLength(0)
+    expect(datasetAckMock).not.toHaveBeenCalled()
+    const assistant = store.messages.at(-1)!
+    expect(assistant.role).toBe('assistant')
+    expect(assistant.content).toContain('data.csv')
+  })
+
+  it('still asks the question when only some of the uploads failed', async () => {
+    mockAttachedFiles.value = [
+      attachment(),
+      attachment({ file: { name: 'b.csv', type: CSV_MIME, size: 5 } }),
+    ]
+    mockUploadPendingDatasets.mockImplementation(async () => {
+      mockAttachedFiles.value = [
+        attachment({ status: 'error' }),
+        attachment({
+          file: { name: 'b.csv', type: CSV_MIME, size: 5 },
+          status: 'processing', file_id: 'connection:2', connection_id: 2, sent: true,
+        }),
+      ]
+      return { failed: ['data.csv'] }
+    })
+
+    const { sendMessage } = useChatStreaming()
+    sendMessage('compare these')
+    await new Promise(r => setTimeout(r, 0))
+    store.clearDocsPending(2)
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(chatSends()[0].file_ids).toEqual(['connection:2'])
+    // The failed file's optimistic pill must stop claiming it is processing.
+    const user = store.messages.find(m => m.role === 'user')!
+    expect(user.attachments!.find(a => a.name === 'data.csv')!.status).toBe('error')
   })
 })
 

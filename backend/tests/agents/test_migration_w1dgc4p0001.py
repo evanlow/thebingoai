@@ -64,11 +64,19 @@ def test_snapshot_carries_the_enforced_cap():
 def test_old_hashes_include_the_text_the_previous_revision_wrote():
     """Installs sitting at d0cst0ry0a1b hold the text it wrote. If its digest is not
     in the match set they are skipped forever and never see the new cap."""
-    # Every digest the previous revision matched on, plus the digest of the text
-    # it actually wrote (which is what those installs are holding right now).
+    import hashlib
+
+    # Every digest the previous revision matched on…
     inherited = _literal("_OLD_TOOLS_HASHES", _PREVIOUS)["dashboard_agent"]
-    assert inherited <= _literal("_OLD_TOOLS_HASHES")
-    assert len(_literal("_OLD_TOOLS_HASHES")) == len(inherited) + 1
+    old_hashes = _literal("_OLD_TOOLS_HASHES")
+    assert inherited <= old_hashes
+
+    # …plus the text it actually writes, which is what a fresh install holds when
+    # it arrives here. Asserted by digest rather than by set size: more than one
+    # d0cst0ry0a1b text is in the wild, and dropping either one strands whoever
+    # is holding it.
+    written = _literal("_NEW_TOOLS", _PREVIOUS)["dashboard_agent"]
+    assert hashlib.sha256(written.encode()).hexdigest() in old_hashes
 
     # …and the current default must NOT be treated as old, or every fresh install
     # rewrites a row with the text it already has.

@@ -43,13 +43,40 @@ def test_no_live_defaults_import_at_upgrade():
     assert "_NEW_TOOLS" in src
 
 
-def test_snapshot_covers_both_agents_and_matches_current_defaults():
+def test_snapshot_covers_both_agents():
+    """data_agent is still live-equal — nothing has refreshed it since. The
+    dashboard_agent text is frozen instead: `w1dgc4p0001` refreshes it again
+    downstream, so this revision's job is to write the text that revision knows
+    how to recognise, not whatever the prompt blocks say today.
+
+    Exactly one revision per agent may assert live-equality — the newest one.
+    Holding it here too is what dragged every later prompt edit back into this
+    file and its predecessors."""
     from backend.agents.profile_defaults import DEFAULTS
 
     new_tools = _literal("_NEW_TOOLS")
     assert set(new_tools) == {"dashboard_agent", "data_agent"}
-    for agent_type, text in new_tools.items():
-        assert text == DEFAULTS[agent_type]["tools"]
+    assert new_tools["data_agent"] == DEFAULTS["data_agent"]["tools"]
+    assert hashlib.sha256(new_tools["dashboard_agent"].encode()).hexdigest() == (
+        "f35055b4ee341b28005774adb7eb27d8204fdd6538a55cb51297678d662e815e"
+    )
+
+
+def test_dashboard_snapshot_is_recognised_downstream():
+    """A fresh install runs this revision and then `w1dgc4p0001`. If that one
+    cannot match what this one wrote, the refresh silently stops here and the
+    install ends up on older text than an upgraded one."""
+    downstream = (
+        _MIGRATION.parent / "w1dgc4p0001_refresh_dashboard_profile_widget_cap.py"
+    )
+    old_hashes = next(
+        ast.literal_eval(n.value)
+        for n in ast.parse(downstream.read_text()).body
+        if isinstance(n, ast.Assign)
+        and any(getattr(t, "id", None) == "_OLD_TOOLS_HASHES" for t in n.targets)
+    )
+    written = _literal("_NEW_TOOLS")["dashboard_agent"]
+    assert hashlib.sha256(written.encode()).hexdigest() in old_hashes
 
 
 def test_snapshot_carries_the_new_rules():

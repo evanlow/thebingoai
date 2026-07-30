@@ -145,6 +145,18 @@ export const useChatStore = defineStore('chat', {
     currentConversation: (state) => {
       return state.conversations.find(c => c.id === state.currentThreadId)
     },
+    /**
+     * currentThreadId, but only when it names a conversation the server knows.
+     *
+     * The dashboard empty state parks a local `pending-<ts>` placeholder here
+     * while it navigates, so anything crossing the network must read this
+     * instead — the backend answers "Conversation not found" for an id it never
+     * issued, and a null tells it to create the conversation as usual.
+     */
+    realThreadId: (state): string | null => {
+      const id = state.currentThreadId
+      return !id || id.startsWith('pending-') ? null : id
+    },
     permanentConversation: (state) => {
       return state.conversations.find(c => c.type === 'permanent') ?? null
     },

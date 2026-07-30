@@ -104,6 +104,7 @@
                 v-for="ds in datasetCardsFor(message)"
                 :key="ds.fileId ?? ds.name"
                 :dataset="ds"
+                @retry="retryProfiling"
               />
             </div>
 
@@ -145,7 +146,9 @@ const router = useRouter()
 const { config: featureConfig } = useFeatureConfig()
 const api = useApi()
 const agentProfile = useAgentProfile()
-const { datasets } = useDatasetStatus()
+// retryProfiling is handed down to each card — resolving it inside the card
+// would give every one of them its own poller set over every dataset.
+const { datasets, retryProfiling } = useDatasetStatus()
 const { briefings, ensure: ensureBriefings } = useBriefingsList()
 
 const datasetCount = computed(() => datasets.value.length)

@@ -84,7 +84,7 @@
 
           <!-- Timeline card: in-progress or failed. The chat thread renders the same
                card with the documentation step appended. -->
-          <DatasetProgressCard v-else :dataset="ds" />
+          <DatasetProgressCard v-else :dataset="ds" @retry="retryProfiling" />
         </div>
       </div>
     </div>
@@ -96,8 +96,9 @@ import type { DatasetStatus } from '~/composables/useDatasetStatus'
 import type { DatabaseSchema, SchemaColumn } from '~/types/connection'
 
 const chatStore = useChatStore()
-// retryProfiling moved with the timeline card into DatasetProgressCard
-const { datasets, cancelDataset } = useDatasetStatus()
+// retryProfiling is handed to the card rather than resolved inside it — one
+// status instance per page, not one per card.
+const { datasets, cancelDataset, retryProfiling } = useDatasetStatus()
 
 const api = useApi()
 
