@@ -95,7 +95,8 @@ def test_mark_widget_failed_truncates():
 def _patch_execute(monkeypatch, connection, run_side_effect):
     """Wire _execute_widget_sql's collaborators; returns the list of SQL run."""
     db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = connection
+    # _resolve_widget_connections loads all rows for the build in one query
+    db.query.return_value.filter.return_value.all.return_value = [connection]
     monkeypatch.setattr(dt, "get_connector_for_connection",
                         lambda c: SimpleNamespace(serves_from_plane=True, close=lambda: None))
     monkeypatch.setattr("backend.services.widget_transform.transform_widget_data",
