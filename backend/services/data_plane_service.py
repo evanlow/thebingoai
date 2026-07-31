@@ -29,6 +29,15 @@ logger = logging.getLogger(__name__)
 _local_plane_cache: dict[str, Any] = {}
 _local_plane_cache_lock = threading.Lock()
 
+# Cache BigQueryGCSPlane instances by data_planes row id so the credential
+# decrypt + authenticated client construction survive across dashboard builds
+# and pipeline runs. Content-keyed: the fingerprint covers config +
+# credentials_encrypted, so editing or rotating a plane row misses the cache
+# and rebuilds — no TTL, no staleness window. Instances are safe to share
+# (BQ/GCS clients are thread-safe; nothing in prod code closes planes).
+_bq_plane_cache: dict[Any, tuple[str, Any]] = {}
+_bq_plane_cache_lock = threading.Lock()
+
 _provision_on_miss = None
 
 _registration_trace = []
@@ -282,18 +291,33 @@ def _instantiate(row):
         return _local_plane_cache[root]
 
     if row.type == "google_cloud_project":
+        import hashlib
+        import json as _json
+        fingerprint = hashlib.sha256(
+            _json.dumps(row.config, sort_keys=True, default=str).encode()
+            + str(row.credentials_encrypted or "").encode()
+        ).hexdigest()
+        hit = _bq_plane_cache.get(row.id)
+        if hit is not None and hit[0] == fingerprint:
+            return hit[1]
+
         from backend.security.encryption import decrypt_password
         from backend.data_plane.bigquery_gcs import BigQueryGCSPlane
         sa_json = (
             decrypt_password(row.credentials_encrypted)
             if row.credentials_encrypted else ""
         )
-        return BigQueryGCSPlane(
+        plane = BigQueryGCSPlane(
             gcp_project=row.config["gcp_project"],
             gcs_bucket=row.config["gcs_bucket"],
             bq_dataset=row.config["bq_dataset"],
             service_account_json=sa_json,
         )
+        with _bq_plane_cache_lock:
+            # Keyed by row id: a rotated credential replaces the entry rather
+            # than leaking a second one; the old instance is GC'd.
+            _bq_plane_cache[row.id] = (fingerprint, plane)
+        return plane
 
     raise ValueError(f"Unknown data_plane type: {row.type!r}")
 
