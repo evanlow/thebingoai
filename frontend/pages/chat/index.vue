@@ -116,7 +116,7 @@ import { useBriefingsList } from '~/composables/useBriefingsList'
 
 const chatStore = useChatStore()
 const chat = useChat()
-const { getFileIds, clearFiles } = useChatFileUpload()
+const { getFileIds, clearFiles, attachedFiles } = useChatFileUpload()
 const { isMobile } = useIsMobile()
 const router = useRouter()
 const route = useRoute()
@@ -166,11 +166,9 @@ const stopRightResize = () => {
 
 // ── Lifecycle ─────────────────────────────────────────────
 onMounted(() => {
-  if (isMobile.value) {
-    chatStore.infoPanelOpen = false
-  } else {
-    chatStore.infoPanelOpen = hasPaneContent.value
-  }
+  // The panel stays closed until the user opens it — the upload flow now plays
+  // out in the thread, so nothing needs the side pane to be visible.
+  chatStore.infoPanelOpen = false
   if (chatStore.inputText.trim()) {
     handleSend()
   } else if (!chatStore.currentThreadId) {
@@ -182,12 +180,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onWindowResize)
-})
-
-watch(hasPaneContent, (now, prev) => {
-  if (!prev && now && !isMobile.value) {
-    chatStore.infoPanelOpen = true
-  }
 })
 
 // ── View transition ───────────────────────────────────────
@@ -268,7 +260,9 @@ const onWindowResize = () => {
 
 // ── Message handlers ──────────────────────────────────────
 const handleSend = () => {
-  if (!chatStore.inputText.trim()) return
+  // Datasets alone are a valid send: processing them IS the request.
+  const datasetName = attachedFiles.value.find(f => !f.sent && f.status === 'attached')?.file.name
+  if (!chatStore.inputText.trim() && !datasetName) return
   const fileIds = getFileIds()
 
   if (!chatStore.currentThreadId) {
@@ -277,7 +271,7 @@ const handleSend = () => {
     chatStore.pendingNewConversationId = tempId
     chatStore.addConversation({
       id: tempId,
-      title: chatStore.inputText.trim().substring(0, 80),
+      title: (chatStore.inputText.trim() || datasetName || 'File Upload').substring(0, 80),
       type: 'task',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

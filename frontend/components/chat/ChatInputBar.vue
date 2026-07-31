@@ -14,7 +14,7 @@
         </NuxtLink>
       </div>
 
-      <div class="max-w-[760px] mx-auto relative">
+      <div class="max-w-[900px] mx-auto relative">
         <!-- Floating mention panel -->
         <Transition
           enter-active-class="transition-all duration-100 ease-out"
@@ -107,13 +107,16 @@
             </button>
 
             <div class="flex-1" />
-            <span class="font-mono text-sm text-[var(--ink-3)] mr-1 hidden md:inline">
+            <span v-if="isReadingData" data-testid="composer-waiting" class="font-mono text-sm text-[var(--ink-3)] mr-1">
+              Reading your data…
+            </span>
+            <span v-else class="font-mono text-sm text-[var(--ink-3)] mr-1 hidden md:inline">
               ⏎ send · ⇧⏎ new line
             </span>
 
             <button
               type="submit"
-              :disabled="!chatStore.inputText.trim() || chatStore.isStreaming || (attachedFiles.length > 0 && !allFilesReady)"
+              :disabled="!canSend"
               class="flex h-8 w-8 items-center justify-center rounded-[10px] bg-[var(--ink-0)] text-[var(--paper-0)] disabled:opacity-40 hover:opacity-80 transition-opacity"
             >
               <ArrowUp class="h-4 w-4" />
@@ -216,7 +219,18 @@ const editorRef  = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const containerRef = ref<HTMLElement | null>(null)
 
-const { attachedFiles, addFiles, removeFile, allFilesReady } = useChatFileUpload()
+const { attachedFiles, addFiles, removeFile, isReadingData: filesReading, canSubmitFiles, hasPendingDatasets } = useChatFileUpload()
+
+// A dataset on its own is a valid send — processing it IS the request.
+const canSend = computed(() =>
+  (!!chatStore.inputText.trim() || hasPendingDatasets.value) &&
+  !chatStore.isStreaming &&
+  canSubmitFiles.value
+)
+
+// Only meaningful while a turn is in flight; that's the whole window in which a
+// dataset can be mid-upload or mid-documentation.
+const isReadingData = computed(() => chatStore.isStreaming && filesReading.value)
 const fileErrors = ref<Array<{ name: string; error: string }>>([])
 
 const datasetsInContext = computed(() => chatStore.conversationDatasets?.length ?? 0)
@@ -473,7 +487,7 @@ const handlePaste = (event: ClipboardEvent) => {
 
 // ── Submit ────────────────────────────────────────────────
 const handleSubmit = () => {
-  if (!chatStore.inputText.trim() || chatStore.isStreaming) return
+  if (!canSend.value) return
   emit('send')
   clearResolvedMentions()
   nextTick(() => {

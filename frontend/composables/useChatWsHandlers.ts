@@ -100,6 +100,42 @@ export const useChatWsHandlers = () => {
     })
   }
 
+  // Handle dataset documentation pushed by the CSV upload worker
+  const registerDatasetDocsHandler = () => {
+    // Fired when the upload enqueues the documentation task. Profiling completes
+    // seconds earlier, so without this the empty state flickers back to
+    // "Ask me anything about your data" before the docs arrive.
+    const unsubStart = ws.on('dataset.docs.start', (data: any) => {
+      const connectionId: number | undefined = data.connection_id
+      if (!data.thread_id || connectionId == null) return
+      // Documentation already landed for this connection — a start event after
+      // the fact (a replay on reconnect, a re-upload) would wait on a completion
+      // that has come and gone, locking the composer until the 120 s self-heal.
+      if (chatStore.datasetDocs[connectionId]) return
+      chatStore.markDocsPending(connectionId)
+      // Self-heal: if generation dies the completion event never comes.
+      setTimeout(() => chatStore.clearDocsPending(connectionId), 120_000)
+    })
+
+    // Documentation is rendered inside the dataset's own card, not as a chat
+    // message — this handler only records the payload and releases the wait.
+    const unsubDocs = ws.on('dataset.docs', (data: any) => {
+      if (data.connection_id == null) return
+
+      chatStore.setDatasetDocs({
+        connection_id: data.connection_id,
+        table_name: data.table_name ?? '',
+        filename: data.filename ?? null,
+        table_description: data.table_description ?? null,
+        columns: Array.isArray(data.columns) ? data.columns : [],
+        total_columns: data.total_columns ?? 0,
+      })
+      chatStore.clearDocsPending(data.connection_id)
+    })
+
+    return () => { unsubStart(); unsubDocs() }
+  }
+
   // Handle incoming skill suggestion notifications from WebSocket
   const registerSkillSuggestionsHandler = () => {
     return ws.on('skill_suggestions.new', (data: any) => {
@@ -167,5 +203,5 @@ export const useChatWsHandlers = () => {
     return () => { unsubMsg(); unsubReset() }
   }
 
-  return { registerTitleHandler, registerSummaryHandler, registerHeartbeatHandler, registerSkillSuggestionsHandler, registerTelegramHandler, resetContext }
+  return { registerTitleHandler, registerSummaryHandler, registerHeartbeatHandler, registerDatasetDocsHandler, registerSkillSuggestionsHandler, registerTelegramHandler, resetContext }
 }

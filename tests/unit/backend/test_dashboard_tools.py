@@ -52,6 +52,13 @@ def _make_db_session_factory(connection=None):
     """Return a callable that produces a mock Session pre-loaded with *connection*."""
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = connection
+    # _resolve_widget_connections loads every connection for a build in one query.
+    # Must stay a real list: an unstubbed MagicMock.all() iterates empty, which
+    # reads as "connection not found" and skips the widget. `[connection]` alone
+    # is wrong too — a None connection would be resolved as a row.
+    mock_session.query.return_value.filter.return_value.all.return_value = (
+        [connection] if connection else []
+    )
     factory = MagicMock(return_value=mock_session)
     return factory, mock_session
 

@@ -7,6 +7,7 @@
         ? 'border-[#22c55e44]'
         : 'border-neutral-200 dark:border-neutral-700',
     ]"
+    :title="statusTitle"
   >
     <!-- Image thumbnail -->
     <template v-if="isImage">
@@ -26,7 +27,10 @@
 
     <!-- Document icon + metadata -->
     <template v-else>
+      <!-- eslint-disable-next-line vue/no-v-html -- static bundled SVG asset -->
+      <div v-if="brandIcon" class="h-5 w-5 flex-shrink-0" v-html="brandIcon" />
       <component
+        v-else
         :is="fileIcon"
         class="h-5 w-5 flex-shrink-0 text-neutral-500 dark:text-neutral-400"
       />
@@ -35,39 +39,14 @@
           {{ file.file.name }}
         </p>
         <p class="text-sm text-neutral-500 dark:text-neutral-400">
-          {{ formattedSize }}
+          {{ formattedSize }}<span v-if="showBar"> · {{ Math.round(barPercent) }}%</span>
         </p>
       </div>
     </template>
 
-    <!-- Status overlays -->
-
-    <!-- Upload progress: shows % + bar while transferring, spinner when awaiting server response at 100% -->
-    <div
-      v-if="displayStatus === 'uploading'"
-      class="absolute inset-0 flex flex-col items-center justify-center rounded-lg bg-white/70 dark:bg-neutral-900/70"
-    >
-      <template v-if="(file.progress ?? 0) < 100">
-        <span class="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-          {{ file.progress ?? 0 }}%
-        </span>
-        <div class="absolute bottom-0 left-0 right-0 h-1 bg-neutral-200 dark:bg-neutral-700 rounded-b-lg overflow-hidden">
-          <div
-            class="h-full bg-blue-500 transition-all duration-200 ease-out"
-            :style="{ width: `${file.progress ?? 0}%` }"
-          />
-        </div>
-      </template>
-      <!-- 100%: transfer done, server is parsing/building schema — show spinner instead of frozen bar -->
-      <template v-else>
-        <span class="text-sm font-medium text-amber-500">Processing…</span>
-        <div class="w-3 h-3 flex-shrink-0 rounded-full border-2 border-neutral-300 dark:border-neutral-600 border-t-violet-400 animate-spin" aria-hidden="true" />
-      </template>
-    </div>
-
     <!-- Error indicator -->
     <div
-      v-else-if="displayStatus === 'error'"
+      v-if="displayStatus === 'error'"
       class="absolute inset-0 flex items-center justify-center rounded-lg bg-red-50/80 dark:bg-red-950/60"
       :title="file.error ?? 'Upload failed'"
     >
@@ -77,13 +56,21 @@
       />
     </div>
 
-    <!-- Processing spinner: schema build + profiling in progress -->
+    <!-- Upload / processing bar along the bottom edge — never covers the filename.
+         One continuous 0→99% run across transfer + server-side processing. -->
     <div
-      v-else-if="displayStatus === 'processing'"
-      class="absolute inset-0 flex items-center justify-center gap-1.5 rounded-lg bg-white/70 dark:bg-neutral-900/70"
+      v-if="showBar"
+      class="absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-lg bg-neutral-200 dark:bg-neutral-700"
+      role="progressbar"
+      :aria-label="serverPhase ? 'Processing file' : 'Uploading file'"
+      :aria-valuenow="Math.round(barPercent)"
+      aria-valuemin="0"
+      aria-valuemax="100"
     >
-      <span class="text-sm font-medium text-amber-500">Processing…</span>
-      <div class="w-3 h-3 flex-shrink-0 rounded-full border-2 border-neutral-300 dark:border-neutral-600 border-t-violet-400 animate-spin" aria-hidden="true" />
+      <div
+        class="h-full bg-violet-500 transition-all duration-500 ease-out"
+        :style="{ width: `${barPercent}%` }"
+      />
     </div>
 
     <!-- Remove button — shown on hover, always visible when error/uploading is not active -->
@@ -101,7 +88,8 @@
 
 <script setup lang="ts">
 import { IMAGE_MIME_TYPES } from '~/composables/_chatConstants'
-import { Image as ImageIcon, FileText, FileSpreadsheet, File, AlertCircle, X } from 'lucide-vue-next'
+import { fileIconHtml } from '~/composables/useFileIcons'
+import { Image as ImageIcon, FileText, File, AlertCircle, X } from 'lucide-vue-next'
 import type { UploadingFile } from '~/composables/useChatFileUpload'
 
 interface Props {
@@ -118,15 +106,80 @@ const emit = defineEmits<{
   remove: [index: number]
 }>()
 
-const isImage = computed(() => IMAGE_MIME_TYPES.has(props.file.file.type))
+// Browser MIME is unreliable on drag-and-drop; addFiles stores the corrected one.
+const resolvedType = computed(() => props.file.resolved_type || props.file.file.type)
+
+const isImage = computed(() => IMAGE_MIME_TYPES.has(resolvedType.value))
+
+const brandIcon = computed(() => fileIconHtml(resolvedType.value, props.file.file.name))
 
 const fileIcon = computed(() => {
-  const type = props.file.file.type
-  if (type === 'text/csv') return FileSpreadsheet
+  const type = resolvedType.value
   if (type === 'application/pdf') return FileText
   if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return FileText
   return File
 })
+
+const showBar = computed(() => displayStatus.value === 'uploading' || displayStatus.value === 'processing')
+
+// Bytes are in but the server is still parsing/profiling. 'uploading' at 100%
+// belongs here too — it's the gap before markProcessing lands.
+const serverPhase = computed(() =>
+  displayStatus.value === 'processing' ||
+  (displayStatus.value === 'uploading' && (props.file.progress ?? 0) >= 100)
+)
+
+const statusTitle = computed(() => {
+  if (displayStatus.value === 'error') return props.file.error ?? 'Upload failed'
+  if (!showBar.value) return props.file.file.name
+  return serverPhase.value ? 'Processing…' : 'Uploading…'
+})
+
+// One monotonic 0→99 run for the whole lifecycle: bytes transferred fill the
+// first UPLOAD_SHARE, then the server phase eases toward CEILING. Never 100 —
+// that's the 'ready' state, which hides the bar entirely.
+const UPLOAD_SHARE = 0.7
+const CEILING = 99
+const CREEP_MS = 400
+
+const barPercent = ref(0)
+let creepTimer: ReturnType<typeof setInterval> | null = null
+
+function stopCreep() {
+  if (creepTimer) {
+    clearInterval(creepTimer)
+    creepTimer = null
+  }
+}
+
+watch(
+  () => [displayStatus.value, props.file.progress ?? 0] as const,
+  ([status, progress]) => {
+    if (!showBar.value) {
+      stopCreep()
+      barPercent.value = 0
+      return
+    }
+    if (serverPhase.value) {
+      barPercent.value = Math.max(barPercent.value, 100 * UPLOAD_SHARE)
+      // No server-side percentage exists for schema build + profiling, so ease
+      // toward the ceiling instead. ponytail: swap for real step progress if the
+      // profiling API ever reports one.
+      if (!creepTimer) {
+        creepTimer = setInterval(() => {
+          barPercent.value += (CEILING - barPercent.value) * 0.08
+        }, CREEP_MS)
+      }
+      return
+    }
+    stopCreep()
+    // max() so a late/out-of-order progress event can't walk the bar backwards
+    barPercent.value = Math.max(barPercent.value, progress * UPLOAD_SHARE)
+  },
+  { immediate: true }
+)
+
+onUnmounted(stopCreep)
 
 const formattedSize = computed(() => {
   const bytes = props.file.file.size

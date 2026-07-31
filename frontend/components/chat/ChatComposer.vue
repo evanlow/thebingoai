@@ -62,11 +62,14 @@
           <Paperclip class="h-3 w-3" /> Attach
         </button>
         <div style="flex:1" />
+        <span v-if="isReadingData" data-testid="composer-waiting" class="font-mono text-sm text-[var(--ink-3)] mr-2">
+          Reading your data…
+        </span>
         <!-- Ask Bingo button -->
         <button
           type="button"
           class="home-ask-btn"
-          :disabled="!chatStore.inputText.trim() || chatStore.isStreaming || (attachedFiles.length > 0 && !allFilesReady)"
+          :disabled="!canSend"
           @click="handleSend"
         >
           <Send class="h-3.5 w-3.5" />
@@ -111,7 +114,16 @@ const emit = defineEmits<{
 }>()
 
 const chatStore = useChatStore()
-const { addFiles, attachedFiles, removeFile, allFilesReady } = useChatFileUpload()
+const { addFiles, attachedFiles, removeFile, isReadingData: filesReading, canSubmitFiles, hasPendingDatasets } = useChatFileUpload()
+
+// A dataset on its own is a valid send — processing it IS the request.
+const canSend = computed(() =>
+  (!!chatStore.inputText.trim() || hasPendingDatasets.value) &&
+  !chatStore.isStreaming &&
+  canSubmitFiles.value
+)
+
+const isReadingData = computed(() => chatStore.isStreaming && filesReading.value)
 
 const textareaRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -305,7 +317,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 const handleSend = () => {
-  if (!chatStore.inputText.trim() || chatStore.isStreaming) return
+  if (!canSend.value) return
   clearResolvedMentions()
   emit('send')
   nextTick(() => {

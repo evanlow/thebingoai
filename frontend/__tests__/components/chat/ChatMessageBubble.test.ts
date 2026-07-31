@@ -404,3 +404,133 @@ describe('ChatMessageBubble — query result download', () => {
     expect(buttonByText(wrapper, 'Excel')).toBeTruthy()
   })
 })
+
+describe('ChatMessageBubble — dataset_docs source', () => {
+  const docsMsg = {
+    id: 'm-docs',
+    role: 'assistant',
+    content: '**orders.csv** — Customer orders',
+    source: 'dataset_docs',
+    briefing_id: null,
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('useChatStore', () => ({ isStreaming: false, messages: [], skillSuggestions: [] }))
+  })
+
+  function mountDocs() {
+    return mount(ChatMessageBubble, {
+      props: {
+        message: docsMsg,
+        showActions: false,
+        actionType: null,
+        isLast: false,
+        agentName: 'Bingo',
+      },
+      // UiMarkdownRenderer is a Nuxt auto-import, so it is never resolved via a
+      // module mock — stub it here so its content prop is observable.
+      global: {
+        stubs: {
+          UiMarkdownRenderer: { props: ['content'], template: '<div class="md">{{ content }}</div>' },
+        },
+      },
+    })
+  }
+
+  it('renders the markdown body through UiMarkdownRenderer', () => {
+    expect(mountDocs().find('.md').text()).toBe(docsMsg.content)
+  })
+
+  it('shows no "Scheduled" pill — that badge belongs to heartbeat messages only', () => {
+    expect(mountDocs().text()).not.toContain('Scheduled')
+  })
+})
+
+describe('ChatMessageBubble — dataset attachments are not pilled', () => {
+  function mountUser(attachments: any[]) {
+    return mount(ChatMessageBubble, {
+      props: {
+        message: {
+          id: 'u1', role: 'user', content: 'have a look',
+          created_at: '2026-07-26T10:00:00Z', attachments,
+        },
+        showActions: false, actionType: null, isLast: false, agentName: 'Bingo',
+      },
+      global: { stubs: { ChatReasoningTree: true, UiMarkdownRenderer: true } },
+    })
+  }
+
+  const att = (over: Record<string, any>) => ({
+    file_id: 'file-1', name: 'doc.pdf', size: 2048, type: 'application/pdf',
+    preview_url: null, status: 'ready', ...over,
+  })
+
+  it('renders no pill for a dataset — its progress card names the file already', () => {
+    const wrapper = mountUser([
+      att({ file_id: 'connection:42', name: 'sales.csv', type: 'text/csv' }),
+    ])
+
+    expect(wrapper.text()).not.toContain('sales.csv')
+  })
+
+  it('still renders an image thumbnail', () => {
+    const wrapper = mountUser([
+      att({ file_id: 'file-9', name: 'photo.png', type: 'image/png', preview_url: 'blob:x' }),
+    ])
+
+    const img = wrapper.find('img[alt="photo.png"]')
+    expect(img.exists()).toBe(true)
+    expect(img.attributes('src')).toBe('blob:x')
+  })
+
+  it('still renders a PDF pill', () => {
+    expect(mountUser([att({})]).text()).toContain('doc.pdf')
+  })
+
+  it('keeps the non-dataset attachments when both kinds are present', () => {
+    const wrapper = mountUser([
+      att({ file_id: 'connection:42', name: 'sales.csv', type: 'text/csv' }),
+      att({}),
+    ])
+
+    expect(wrapper.text()).not.toContain('sales.csv')
+    expect(wrapper.text()).toContain('doc.pdf')
+  })
+})
+
+describe('ChatMessageBubble — query results are named after the file', () => {
+  const withDocs = (datasetDocs: Record<number, any>) =>
+    vi.stubGlobal('useChatStore', () => ({ isStreaming: false, messages: [], datasetDocs }))
+
+  function mountFiles(query_files: any[]) {
+    return mount(ChatMessageBubble, {
+      props: {
+        message: { ...assistantMsg, query_files },
+        showActions: false, actionType: null, isLast: false, agentName: 'Bingo',
+      },
+    })
+  }
+
+  const file = (label: string) => ({ result_ref: `r-${label}`, label, row_count: 10, col_count: 13 })
+
+  it('renders the upload filename in place of the internal table name', () => {
+    withDocs({ 101: { connection_id: 101, filename: 'HR_dataset.csv' } })
+    const wrapper = mountFiles([file('csv_101')])
+
+    expect(wrapper.text()).toContain('HR_dataset.csv')
+    expect(wrapper.text()).not.toContain('csv_101')
+  })
+
+  it('keeps the table name when no documentation is known for it', () => {
+    withDocs({})
+    expect(mountFiles([file('csv_101')]).text()).toContain('csv_101')
+  })
+
+  it('never rewrites a label that is not a dataset table', () => {
+    withDocs({ 101: { connection_id: 101, filename: 'HR_dataset.csv' } })
+    const wrapper = mountFiles([file('columns'), file('public.orders')])
+
+    expect(wrapper.text()).toContain('columns')
+    expect(wrapper.text()).toContain('public.orders')
+  })
+})

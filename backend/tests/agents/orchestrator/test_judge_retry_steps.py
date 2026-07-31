@@ -122,7 +122,7 @@ async def test_run_judge_retry_returns_four_tuple_with_retry_steps(initial_verdi
     orchestrator = MagicMock()
     orchestrator.ainvoke = AsyncMock(return_value={"messages": full_retry_history})
 
-    async def fake_judge(_q, _a):
+    async def fake_judge(_q, _a, **_kwargs):
         return JudgeVerdict(resolved=True, reason="ok", suggested_directive="", highlighted_response="")
 
     monkeypatch.setattr("backend.agents.orchestrator.graph.judge_response", fake_judge)

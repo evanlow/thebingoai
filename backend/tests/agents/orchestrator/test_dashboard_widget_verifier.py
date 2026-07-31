@@ -4,6 +4,7 @@ Covers duplicate-metric detection across canonical window labels,
 total widget count cap, and non-window parentheticals.
 """
 from backend.agents.orchestrator.dashboard_widget_verifier import (
+    MAX_TOTAL_WIDGETS,
     verify_dashboard_widgets,
     _canonical_window,
     _strip_window_suffix,
@@ -104,6 +105,35 @@ def test_total_widget_count_cap():
     widgets = [_kpi(f"M{i}") for i in range(3)] + [_chart() for _ in range(13)]
     violations = verify_dashboard_widgets(widgets)
     assert any("Total widget count = 16" in v for v in violations), violations
+
+
+def test_cap_violation_says_how_many_to_remove():
+    widgets = [_chart() for _ in range(MAX_TOTAL_WIDGETS + 4)]
+    violations = verify_dashboard_widgets(widgets)
+    assert any("Remove exactly 4" in v for v in violations), violations
+
+
+def test_cap_boundary_is_accepted():
+    widgets = [_chart() for _ in range(MAX_TOTAL_WIDGETS)]
+    assert verify_dashboard_widgets(widgets) == []
+
+
+def test_prompt_advertises_the_enforced_cap():
+    """The prompt used to say "max 17" while this verifier rejected >15, so a
+    fully-compliant agent got bounced — two full regeneration rounds (~119s) on
+    the live run. One constant, interpolated into the prompt, makes that
+    impossible."""
+    from backend.agents.dashboard_prompt_blocks import (
+        DASHBOARD_WIDGET_CONTRACT,
+        MAX_TOTAL_WIDGETS as PROMPT_CAP,
+    )
+
+    assert PROMPT_CAP is MAX_TOTAL_WIDGETS
+    assert f"{MAX_TOTAL_WIDGETS} widgets is a HARD cap" in DASHBOARD_WIDGET_CONTRACT
+    assert "{MAX_WIDGETS}" not in DASHBOARD_WIDGET_CONTRACT  # placeholder was substituted
+    # No competing number anywhere in the count guidance.
+    guidance = DASHBOARD_WIDGET_CONTRACT.split("### Widget Count Guidelines")[1]
+    assert "17" not in guidance
 
 
 def test_yesterday_alias_flagged():

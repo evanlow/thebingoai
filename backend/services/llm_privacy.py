@@ -2,9 +2,10 @@
 
 Gated per-Organization by the ``metadata_only_llm`` feature flag (strict mode,
 user-confirmed): when on, the LLM sees schema, column meanings, relationships,
-row counts and *derived* stats (avg, null counts, distinct counts) — but never
-actual cell values (sample rows, top values, query previews) or the raw extreme
-values min/max (the lowest salary in a table is a real person's salary).
+row counts and *structural* stats (null counts, distinct counts) — but never
+actual cell values (sample rows, top values, query previews), the raw extreme
+values min/max (the lowest salary in a table is a real person's salary), or
+per-column averages (a mean is computed from those same real salaries).
 
 User-facing output is unaffected: query results reach the frontend via the
 existing side-channel (``store_query_result`` / ``publish_query_result``), which
@@ -32,10 +33,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 FLAG = "metadata_only_llm"
 
-# Per-column stat keys that are real data values and must not reach the LLM in
-# strict mode. avg / null_count / distinct_count / type are derived or
-# structural and are kept.
-_VALUE_KEYS = ("min", "max", "top_values")
+# Per-column stat keys computed from real records; withheld in strict mode.
+# null_count / distinct_count / type are structural — they count rows and
+# categories instead of reporting what any record holds — and are kept.
+_VALUE_KEYS = ("min", "max", "top_values", "avg")
 
 _REDACTED = "[REDACTED]"
 
@@ -102,7 +103,7 @@ def metadata_only_for_user(db, user_id: Optional[str]) -> bool:
 def strip_profile_values(profile: Dict[str, Any]) -> Dict[str, Any]:
     """Return a copy of a ``profile_table`` result with real values removed.
 
-    Drops per-column ``min``/``max``/``top_values``; keeps ``type``, ``avg``,
+    Drops per-column ``min``/``max``/``top_values``/``avg``; keeps ``type``,
     ``null_count``, ``distinct_count``. Non-destructive (input untouched).
     """
     out = dict(profile)

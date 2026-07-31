@@ -47,12 +47,12 @@ def _stub_reg(hint: str | None) -> ConnectorRegistration:
 
 @pytest.fixture
 def _isolated_prompt_builder():
-    """Patch the lazy-imported SessionLocal + load_connection_context so the
+    """Patch the lazy-imported SessionLocal + load_enriched_context so the
     prompt builder runs without a database. Returns the build function."""
     from backend.agents.dashboard_agent import prompts
 
     with patch("backend.database.session.SessionLocal", return_value=MagicMock()), \
-         patch("backend.services.connection_context.load_connection_context", return_value=None):
+         patch("backend.services.semantic_layer.load_enriched_context", return_value=None):
         yield prompts.build_dashboard_agent_prompt
 
 

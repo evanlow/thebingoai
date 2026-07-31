@@ -79,6 +79,26 @@ Populate `highlighted_response` with a copy of the assistant response where mean
 When `resolved=false`, leave `highlighted_response` null."""
 
 
+_UNGROUNDED_DATASET_RULE = """
+
+DATASET GROUNDING (applies to this turn only):
+A dataset connection was attached to this turn and NO tool call succeeded, so the
+assistant has no data. Its context held only a routing summary — connection id, table
+name, row and column counts. It could not see the columns, the values, or any statistic.
+
+Mark `resolved: false` if the response makes any claim about what the data contains,
+means, or shows: naming or describing columns/fields, explaining what values represent,
+characterising the dataset's shape or quality, or listing the questions it *could*
+answer. With no tool result behind them, those are guesses dressed as analysis.
+
+Set `suggested_directive` to: "Call data_agent on the attached connection to profile and
+query the dataset, then answer with the actual figures it returns. Do not describe
+columns, restate field meanings, or list questions you could answer."
+
+Mark `resolved: true` if the response makes no data claims — a greeting, a semantic
+clarifying question, an unrelated reply, or saying it needs to query the data first."""
+
+
 _JUDGE_RESPONSE_MAX_CHARS = 2000
 
 
@@ -87,6 +107,7 @@ async def judge_response(
     response: str,
     llm_provider: Optional[BaseLLMProvider] = None,
     tool_result_count: int = 0,
+    ungrounded_dataset_turn: bool = False,
 ) -> JudgeVerdict:
     """Evaluate whether `response` resolves `user_question`.
 
@@ -98,6 +119,10 @@ async def judge_response(
         response: The orchestrator's final answer (already redacted/sanitized).
         llm_provider: Optional override; normally the judge resolves its own
             provider from settings.judge_llm_provider.
+        ungrounded_dataset_turn: Armed by the caller when a dataset connection was
+            attached to the turn but no tool succeeded — the answer cannot be
+            grounded in data. Adds _UNGROUNDED_DATASET_RULE for this call only,
+            so ordinary turns pay neither the tokens nor the false-positive risk.
     """
     if not settings.judge_enabled:
         return JudgeVerdict(resolved=True, reason="judge disabled")
@@ -116,6 +141,8 @@ async def judge_response(
         structured_llm = llm.with_structured_output(JudgeVerdict)
 
         system_prompt = _JUDGE_SYSTEM_PROMPT
+        if ungrounded_dataset_turn:
+            system_prompt += _UNGROUNDED_DATASET_RULE
         if settings.judge_highlight_enabled:
             system_prompt += _HIGHLIGHT_RULES
 

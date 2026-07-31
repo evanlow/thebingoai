@@ -8,6 +8,7 @@ from backend.agents.orchestrator.profile_tools import build_profile_tools
 from backend.agents.orchestrator.orchestrator_dashboard_tools import build_dashboard_tools
 from backend.agents.orchestrator.memory_tools import build_memory_tools
 from backend.agents.orchestrator.manage_tool import build_manage_tool
+from backend.agents.orchestrator_prompt_blocks import ORCHESTRATOR_DASHBOARD_SCOPING
 from backend.agents.profile_renderer import ProfileRenderer, RuntimeContext
 from backend.agents.orchestrator.pre_steps import run_pre_steps, PreStepContext
 from backend.agents.orchestrator.response_judge import judge_response, JudgeVerdict
@@ -230,19 +231,21 @@ async def _render_orchestrator_prompt(
 ) -> str:
     """Render profile-driven prompt (with pre-steps) or legacy fallback.
 
-    When `settings.orchestrator_lean_tools` is True, return the lean prompt
-    that pairs with the ≤10 primary tool surface and includes a per-turn
-    @-mention block.
+    When `settings.orchestrator_lean_tools` is True, build the lean prompt that
+    pairs with the ≤10 primary tool surface.
+
+    Every branch assigns `base_prompt` and falls through to the shared tail below
+    — the kill switch and the @-mention block must apply to all three, not just
+    the two that happen to reach the bottom of the function.
     """
     if settings.orchestrator_lean_tools:
-        return build_lean_orchestrator_prompt(
+        base_prompt = build_lean_orchestrator_prompt(
             soul_prompt=soul_prompt,
             user_memories_context=user_memories_context,
             available_connections=context.available_connections,
             connection_metadata=context.connection_metadata,
-            mentions=mentions,
         )
-    if profile:
+    elif profile:
         pre_ctx = PreStepContext(
             user_id=context.user_id,
             query=user_question,
@@ -276,13 +279,110 @@ async def _render_orchestrator_prompt(
             connection_metadata=context.connection_metadata,
         )
 
-    # Per-turn @-mention block. The profile renderer and legacy prompt don't
-    # know about mentions (only the lean prompt does), so append it here so the
-    # model sees resolved page_ids / connection_ids and the routing bias.
+    # Kill switch. Seeded profiles carry the scoping block in their stored text,
+    # so it has to come off the *rendered* prompt — every path above included.
+    # Flipping DASHBOARD_SCOPING_QUESTIONS=false restores the build-immediately
+    # behaviour with no migration and no code edit. The one-round cap inside
+    # ask_user_question is deliberately NOT gated on this: it only prevents
+    # loops, and is never the thing you want to turn off.
+    if not settings.dashboard_scoping_questions:
+        base_prompt = base_prompt.replace(
+            ORCHESTRATOR_DASHBOARD_SCOPING + "\n\n", ""
+        ).replace(ORCHESTRATOR_DASHBOARD_SCOPING, "")
+
+    # Per-turn @-mention block. None of the three builders knows about mentions,
+    # so append it once here — the model needs the resolved page_ids /
+    # connection_ids and the routing bias.
     mentions_block = render_mentions_block(mentions)
     if mentions_block:
         base_prompt = f"{base_prompt}\n\n{mentions_block}"
     return base_prompt
+
+
+def _previous_turn_asked_question(
+    context: AgentContext,
+    db_session_factory: Optional[Callable],
+) -> bool:
+    """True when the last assistant turn in this thread already asked the user a question.
+
+    One clarification round per exchange, enforced in the tool body rather than in
+    prompt text. The loop detector cannot catch this: it reads ``tool_calls`` off
+    ``state["messages"]`` (loop_detector.py:28-32), but ``_build_messages`` rebuilds
+    history as plain Human/AIMessage with no ``tool_calls``, so every turn starts
+    with a blank detector.
+
+    Fails open — if the conversation can't be resolved, a legitimate first ask must
+    never be blocked.
+    """
+    if not context.thread_id or db_session_factory is None:
+        return False
+    db = None
+    try:
+        db = db_session_factory()
+        from backend.models.agent_step import AgentStep
+        from backend.models.conversation import Conversation
+        from backend.models.message import Message
+
+        last_assistant_id = (
+            db.query(Message.id)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(
+                Conversation.thread_id == context.thread_id,
+                Conversation.user_id == context.user_id,
+                Message.role == "assistant",
+            )
+            .order_by(Message.id.desc())
+            .limit(1)
+            .scalar()
+        )
+        if last_assistant_id is None:
+            return False
+        return bool(
+            db.query(AgentStep.id)
+            .filter(
+                AgentStep.message_id == last_assistant_id,
+                AgentStep.tool_name == "ask_user_question",
+            )
+            .first()
+        )
+    except Exception as exc:
+        logger.warning("ask_user_question round check failed, allowing: %s", exc)
+        return False
+    finally:
+        if db is not None:
+            db.close()
+
+
+def _render_asked_questions(questions: list) -> str:
+    """Human-readable rendering of an ask_user_question payload.
+
+    Persisted as the assistant message for the turn. `final_message` accumulates
+    only from `token` events (websocket.py) and the ask path streams none, so
+    without this the turn persists as an empty assistant message: `_build_messages`
+    then replays `AIMessage(content="")` and the next turn shows
+    `user → assistant:"" → user`, forcing the model to re-infer what it asked.
+    An empty assistant turn is also a provider-compatibility hazard.
+    """
+    lines: list = []
+    for q in questions:
+        if not isinstance(q, dict):
+            continue
+        text = str(q.get("question") or "").strip()
+        if not text:
+            continue
+        lines.append(f"- {text}")
+        options = q.get("options")
+        if isinstance(options, list):
+            labels = [
+                str(o.get("label") or "").strip()
+                for o in options
+                if isinstance(o, dict) and str(o.get("label") or "").strip()
+            ]
+            if labels:
+                lines.append(f"  Options: {' / '.join(labels)}")
+    if not lines:
+        return ""
+    return "I asked the user:\n" + "\n".join(lines)
 
 
 def _build_messages(
@@ -304,6 +404,12 @@ def _build_messages(
                     content = "\n".join(attachment_lines) + "\n" + content
                 messages.append(HumanMessage(content=content))
             elif msg.role == "assistant":
+                # The dataset docs table is a UI artifact. Its content reaches the
+                # agents through the schema block instead (load_enriched_context
+                # overlays the same glossary), so re-sending the whole markdown
+                # table on every turn is pure cost.
+                if getattr(msg, "source", None) == "dataset_docs":
+                    continue
                 messages.append(AIMessage(content=msg.content))
     messages.append(build_user_message(user_question, file_contents))
     return messages
@@ -444,6 +550,7 @@ async def _run_judge_retry(
     orchestrator,
     base_messages: list,
     callbacks: Optional[list] = None,
+    ungrounded_dataset_turn: bool = False,
 ) -> Tuple[str, bool, Dict[str, Any], List[Dict[str, Any]]]:
     """Execute Layer-4 one-shot retry after the judge rejected the initial answer.
 
@@ -488,7 +595,13 @@ async def _run_judge_retry(
         retry_answer = _extract_final_answer(retry_messages_out)
         if retry_answer:
             retry_answer = _sanitize_technical_errors(_redact_connection_ids(retry_answer))
-            retry_verdict = await judge_response(user_question, retry_answer)
+            # Stay armed if the retry ALSO called no tool — otherwise the gate is
+            # one-shot: the second verdict would fall open and the ungrounded
+            # answer ships anyway.
+            retry_verdict = await judge_response(
+                user_question, retry_answer,
+                ungrounded_dataset_turn=ungrounded_dataset_turn and not retry_steps,
+            )
             if not retry_verdict.resolved:
                 logger.warning("Layer-4 retry still unresolved: %s", retry_verdict.reason)
                 if _is_build_dump_reply(retry_answer) or _is_build_dump_reply(initial_answer):
@@ -598,6 +711,15 @@ def build_orchestrator_tools(
             The validated questions as JSON. The frontend renders them as interactive UI.
             The user's selections will arrive as the next message in the conversation.
         """
+        if _previous_turn_asked_question(context, db_session_factory):
+            return json.dumps({
+                "error": (
+                    "You already asked the user a question in the previous turn. "
+                    "One clarification round per request. Proceed with the best "
+                    "interpretation of the answers you have and complete the task."
+                )
+            })
+
         try:
             parsed = json.loads(questions)
         except (ValueError, TypeError):
@@ -1362,12 +1484,24 @@ async def stream_orchestrator(
 
                 # Force-stop: ask_user_question ends the turn immediately
                 # (like Claude Code's AskUserQuestion — the agent waits for user input)
-                if tool_name == "ask_user_question":
+                # Only a *successful* ask stops the turn. A rejected one — malformed
+                # payload, or the one-round cap — returns {"error": ...}; the agent
+                # must stay on the loop and finish the task instead of stalling on a
+                # question the user never saw.
+                asked_questions = (
+                    parsed_output.get("questions")
+                    if isinstance(parsed_output, dict) else None
+                )
+                if tool_name == "ask_user_question" and asked_questions:
                     yield {
                         "type": "done",
                         "content": "Waiting for user input",
                         "thread_id": context.thread_id,
                         "steps": collected_steps,
+                        # Consumed by websocket.py as the assistant message body when
+                        # no tokens streamed. Popped there, so the client-visible
+                        # `done` payload is unchanged.
+                        "persist_content": _render_asked_questions(asked_questions),
                     }
                     return
 
@@ -1442,6 +1576,17 @@ async def stream_orchestrator(
         # for pure-prose failures where no tool actually succeeded.
         any_tool_ran = any(_tool_result_succeeded(s) for s in tool_results)
 
+        # Grounding gate: a dataset connection was attached to this turn and no
+        # tool succeeded, so nothing the answer says about the data can have come
+        # from the data — the injected block carries only a routing summary
+        # (connection id, table, row/column counts). Armed in code because the
+        # judge has no view of the tool trail or of what was in context; it then
+        # decides, so a greeting or a clarifying question doesn't trigger a retry.
+        ungrounded_dataset_turn = not any_tool_ran and any(
+            str(f.get("file_id", "")).startswith("connection:")
+            for f in (file_contents or [])
+        )
+
         retry_succeeded: Optional[bool] = None
         judge_metadata: Optional[Dict[str, Any]] = None
         highlighted_text: Optional[str] = None
@@ -1450,7 +1595,11 @@ async def stream_orchestrator(
             yield {"type": "judge_status", "content": {"state": "approved"}}
         if settings.judge_enabled and final_answer_text and not dashboard_created:
             yield {"type": "judge_status", "content": {"state": "refining"}}
-            verdict = await judge_response(user_question, final_answer_text, tool_result_count=tool_result_count)
+            verdict = await judge_response(
+                user_question, final_answer_text,
+                tool_result_count=tool_result_count,
+                ungrounded_dataset_turn=ungrounded_dataset_turn,
+            )
             if not verdict.resolved and any_tool_ran:
                 logger.info(
                     "Layer-4 judge unresolved but %d tool(s) ran — skipping retry: %s",
@@ -1463,6 +1612,7 @@ async def stream_orchestrator(
                 final_answer_text, retry_succeeded, judge_metadata, retry_steps = await _run_judge_retry(
                     user_question, final_answer_text, verdict, orchestrator, messages,
                     callbacks=callbacks,
+                    ungrounded_dataset_turn=ungrounded_dataset_turn,
                 )
                 # Re-number retry steps against current step_number and emit
                 # tool_call/tool_result events so the UI updates live, then

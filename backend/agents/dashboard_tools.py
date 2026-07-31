@@ -18,6 +18,41 @@ _VALID_WIDGET_TYPES = {"kpi", "chart", "table", "text", "filter", "pivot_table",
 _DATA_WIDGET_TYPES = {"kpi", "chart", "table", "pivot_table"}
 _VALID_MAPPING_TYPES = {"kpi", "chart", "table", "pivot_table"}
 
+# sqlglot dialect per source db_type. Sibling of `widget_data._resolve_inject_dialect`
+# (same lockdown rule for plane-backed types) but deliberately fail-closed: an
+# unmapped type maps to "" — no rewrite at all, the pre-existing behaviour.
+# Guessing wrong is free for filter injection and destructive for a rewrite.
+_DB_TYPE_DIALECTS = {
+    "postgresql": "postgres",
+    "postgres": "postgres",
+    "mysql": "mysql",
+    "sqlite": "sqlite",
+    "bigquery": "bigquery",
+    "snowflake": "snowflake",
+    "redshift": "redshift",
+    "duckdb": "duckdb",
+}
+
+
+def _widget_sql_dialect(connection, connector) -> str:
+    """Dialect of the surface `_run_widget_query` will actually execute on.
+
+    Not always the source's: plane-backed connectors (dataset/CSV, sheets) and
+    `bigquery_ga4` run through the DataPlane, and an Org on `duckdb_widget_serving`
+    reads Parquet through DuckDB. Empty string when unknown → no rewrite.
+    """
+    if connection.db_type == "bigquery_ga4" or getattr(connector, "serves_from_plane", False) is True:
+        from backend.config import settings
+        return "bigquery" if settings.disable_local_data_plane else "duckdb"
+
+    org_id = getattr(connection, "org_id", None)
+    if org_id:
+        from backend.config.feature_flags import enabled
+        if enabled(str(org_id), "duckdb_widget_serving"):
+            return "duckdb"
+
+    return _DB_TYPE_DIALECTS.get(connection.db_type or "", "")
+
 
 def _run_widget_query(connection, sql: str, db_session_factory, connector):
     """Execute widget SQL against the right surface.
@@ -484,7 +519,13 @@ def _verify_widgets(widgets: list, data_context: dict | None) -> list[dict]:
             "widget_id": None,
             "code": "dashboard_rule",
             "message": rule_msg,
-            "fix_hint": "Apply the KPI deduplication / widget cap rules from the prompt.",
+            # Not "apply the rules from the prompt" — that is circular, and the
+            # agent burns a full regeneration round re-reading it.
+            "fix_hint": (
+                "Drop the surplus widgets from THIS list — do not regenerate the "
+                "dashboard. Merge duplicate breakdowns of the same dimension, fold "
+                "detail into the pivot_table, and keep at most one KPI per metric."
+            ),
         })
 
     return violations
@@ -600,15 +641,96 @@ def _cap_widget_rows(result, widget_id):
     return result
 
 
-async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_context: dict | None = None, user_id: str | None = None) -> str | None:
+def _mark_widget_failed(widget: dict, error: str) -> None:
+    """Record an unrecoverable SQL failure on the widget's own config.
+
+    Without this the widget ships with no `rows`/`value` at all, which renders
+    as an empty table — indistinguishable from "no data" when it actually means
+    "broken SQL". The error rides in the persisted widget JSON so the dashboard
+    can say so instead of showing a blank.
+    """
+    config = widget.setdefault("widget", {}).setdefault("config", {})
+    config["error"] = f"Query failed: {error}"[:500]
+
+
+def _resolve_widget_connections(connection_ids, user_id: str | None, db_session_factory: Callable) -> dict:
+    """Resolve {connection_id: (connection, connector)} once per dashboard build.
+
+    Must run inside asyncio.to_thread: connector construction does sync DB I/O
+    (data-plane resolution opens its own session). When it ran per-widget on
+    the event loop inside _execute_widget_sql, pool starvation deadlocked the
+    loop — the coroutine that releases pooled connections was itself blocked
+    waiting on the pool (prod freeze at 12 concurrent flows, 2026-07-30).
+
+    One short-lived session loads all connection rows and is closed before any
+    connector is built, so no transaction is pinned across plane resolution.
+    The detached rows stay readable (column attrs are already loaded). IDs the
+    user can't read are simply absent from the result — callers treat a miss
+    as "not found", same as the old per-widget query.
+
+    Only plane-backed connectors (serves_from_plane) are shared by widgets;
+    source connectors hold a single lazy DBAPI connection, so
+    _execute_widget_sql builds a private one per widget and only uses the row
+    from this map. Connectors here are closed once by the fan-out caller.
+
+    The SQL dialect rides in the map too: computing it per widget would put
+    feature_flags.enabled() — a sync Redis GET with an on-miss Postgres load —
+    back on the event loop, the exact I/O this resolver exists to keep off it.
+    """
+    from backend.models.database_connection import DatabaseConnection
+    from backend.services.seed import readable_connection_clause
+
+    ids = [_coerce_connection_id(cid) for cid in set(connection_ids) if cid is not None]
+    if not ids:
+        return {}
+
+    db = db_session_factory()
+    try:
+        filters = [DatabaseConnection.id.in_(ids)]
+        if user_id:
+            filters.append(readable_connection_clause(user_id))
+        rows = db.query(DatabaseConnection).filter(*filters).all()
+    finally:
+        db.close()
+
+    resolved = {}
+    for connection in rows:
+        connector = get_connector_for_connection(connection)
+        resolved[connection.id] = (connection, connector, _widget_sql_dialect(connection, connector))
+    return resolved
+
+
+def _coerce_connection_id(cid):
+    """Match Postgres' implicit cast: widget JSON may carry connectionId as a
+    digit string, which the old per-widget SQL lookup coerced server-side. The
+    resolved map is keyed by the int PK, so coerce before any dict lookup."""
+    if isinstance(cid, str) and cid.isdigit():
+        return int(cid)
+    return cid
+
+
+def _resolve_one_connection(connection_id, user_id, db_session_factory):
+    """Sync fallback for callers that didn't pre-resolve. Returns (connection, connector, dialect) or (None, None, "")."""
+    resolved = _resolve_widget_connections([connection_id], user_id, db_session_factory)
+    return resolved.get(_coerce_connection_id(connection_id), (None, None, ""))
+
+
+async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_context: dict | None = None, user_id: str | None = None, resolved: dict | None = None) -> str | None:
     """
     Execute the dataSource SQL for a widget and merge results into widget.widget.config.
 
     Modifies widget in-place. On first failure, attempts an LLM-powered SQL fix and retries once,
     including sample data and baseJoin context for better fix quality.
     Returns error string if both attempts fail, None on success.
+
+    `resolved` is the {connection_id: (connection, connector)} map from
+    _resolve_widget_connections. Callers fanning out over multiple widgets must
+    pass it — per-widget resolution costs 3 Postgres round-trips each and, run
+    concurrently, re-creates the pool contention this map exists to avoid. The
+    fallback resolves inline (in a worker thread) and owns the connector's close;
+    pre-resolved connectors are closed by the caller after the fan-out.
     """
-    from backend.models.database_connection import DatabaseConnection
+    from backend.services.schema_utils import normalize_sql_for
     from backend.services.widget_transform import transform_widget_data
 
     data_source = widget.get("dataSource")
@@ -626,26 +748,55 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
     widget_id = widget.get("id")
     widget_title = widget.get("widget", {}).get("config", {}).get("title") or widget.get("widget", {}).get("config", {}).get("label")
 
-    db = db_session_factory()
-    connector = None
+    if resolved is None:
+        # No pre-resolved map (single-widget callers, tests). The lookup +
+        # connector construction do sync DB I/O — keep them off the event loop.
+        connection, connector, dialect = await asyncio.to_thread(
+            _resolve_one_connection, connection_id, user_id, db_session_factory
+        )
+        owns_connector = True
+    else:
+        # A supplied map covers every connection id in the build, so a missing
+        # key means the row is absent or unreadable — NOT a reason to re-query.
+        # Falling back here would re-run the same filtered lookup for the same
+        # empty result, per widget, which is the contention this map removes.
+        pre = resolved.get(_coerce_connection_id(connection_id))
+        connection, shared_connector, dialect = pre if pre else (None, None, "")
+        if getattr(shared_connector, "serves_from_plane", False):
+            # Plane-backed connectors route through a thread-safe BigQuery/
+            # DuckDB client — safe to share across the concurrent fan-out.
+            connector, owns_connector = shared_connector, False
+        else:
+            # Source connectors (base.py) hold ONE lazy DBAPI connection;
+            # sharing one across concurrent widgets would interleave cursors
+            # on it. Construction is pure kwargs (the lazy connect happens
+            # inside to_thread on first query) — build one per widget.
+            connector = (
+                await asyncio.to_thread(get_connector_for_connection, connection)
+                if connection is not None else None
+            )
+            owns_connector = True
+    if connection is None:
+        logger.warning(f"Widget '{widget_id}': connection {connection_id} not found, skipping SQL execution")
+        return
     try:
-        from backend.services.seed import readable_connection_clause
-
-        filters = [DatabaseConnection.id == connection_id]
-        if user_id:
-            filters.append(readable_connection_clause(user_id))
-        connection = db.query(DatabaseConnection).filter(*filters).first()
-        if not connection:
-            logger.warning(f"Widget '{widget_id}': connection {connection_id} not found, skipping SQL execution")
-            return
-
-        connector = get_connector_for_connection(connection)
+        # The agent writes ANSI-quoted identifiers regardless of the execution
+        # surface, so `c."role"` is a string literal on BigQuery and a column
+        # named `left` is a syntax error anywhere. Fix deterministically before
+        # falling back to the (slow, unreliable) LLM repair below. The dialect
+        # comes from the resolver — computing it here would put the feature-flag
+        # Redis/Postgres reads back on the event loop.
+        normalized_sql = normalize_sql_for(sql, dialect)
 
         try:
-            result = await asyncio.to_thread(_run_widget_query, connection, sql, db_session_factory, connector)
+            result = await asyncio.to_thread(_run_widget_query, connection, normalized_sql, db_session_factory, connector)
             result = _cap_widget_rows(result, widget_id)
             config = transform_widget_data(result, mapping)
             widget["widget"]["config"].update(config)
+            # Persist so the serve path (api/widget_data) gets the fixed SQL too,
+            # instead of re-failing on every dashboard load.
+            if normalized_sql != sql:
+                data_source["sql"] = normalized_sql
             logger.info(f"Widget '{widget_id}': SQL executed, config populated with {result.row_count} rows")
             return
         except Exception as e:
@@ -658,14 +809,17 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         # prompt keeps the error + schema + baseJoin, no real rows.
         sample_data = ""
         from backend.services.llm_privacy import metadata_only_for_connection
-        if not metadata_only_for_connection(connection):
+        # to_thread: reads the org feature-flag cache (sync Redis + on-miss
+        # Postgres) — same event-loop hazard as the dialect computation.
+        if not await asyncio.to_thread(metadata_only_for_connection, connection):
             try:
                 from backend.services.schema_utils import extract_table_names
                 tables = extract_table_names(sql)
                 for tbl in list(tables)[:2]:
                     try:
+                        sample_sql = normalize_sql_for(f'SELECT * FROM "{tbl}" LIMIT 3', dialect)
                         sample_result = await asyncio.to_thread(
-                            _run_widget_query, connection, f'SELECT * FROM "{tbl}" LIMIT 3', db_session_factory, connector,
+                            _run_widget_query, connection, sample_sql, db_session_factory, connector,
                         )
                         sample_data += f"\nTable '{tbl}' sample:\n"
                         sample_data += f"  Columns: {sample_result.columns}\n"
@@ -678,7 +832,7 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         # Attempt LLM-powered SQL fix with sample data + baseJoin context
         fixed_sql = await _attempt_sql_fix(
-            sql=sql,
+            sql=normalized_sql,
             error_message=first_error_msg,
             connection=connection,
             mapping=mapping,
@@ -690,9 +844,11 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
 
         if not fixed_sql:
             logger.warning(f"Widget '{widget_id}': LLM fix returned no SQL, using LLM-provided config")
+            _mark_widget_failed(widget, first_error_msg)
             return first_error_msg
 
         logger.info(f"Widget '{widget_id}': SQL fix attempted, retrying with corrected SQL")
+        fixed_sql = normalize_sql_for(fixed_sql, dialect)
         try:
             result = await asyncio.to_thread(_run_widget_query, connection, fixed_sql, db_session_factory, connector)
             result = _cap_widget_rows(result, widget_id)
@@ -705,11 +861,13 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
         except Exception as retry_error:
             error_msg = f"Original: {first_error_msg} | Retry: {retry_error}"
             logger.warning(f"Widget '{widget_id}': SQL fix also failed, using LLM-provided config. {error_msg}")
+            _mark_widget_failed(widget, error_msg)
             return error_msg
     finally:
-        if connector:
+        # Pre-resolved connectors are shared across widgets; the fan-out caller
+        # closes them once after gather. Only the inline fallback owns its own.
+        if owns_connector and connector:
             connector.close()
-        db.close()
 
 
 def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Callable) -> List:
@@ -916,15 +1074,32 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
             logger.warning("Schema validation warnings for '%s': %s", title, "; ".join(schema_warnings))
 
         # Auto-execute SQL for SQL-backed widgets and populate config.
-        # Widgets are independent (each gets its own DB session + connector),
-        # so run them concurrently — bounded to avoid hammering the source DB.
-        sem = asyncio.Semaphore(5)
+        # Widgets are independent, so run them concurrently — bounded to avoid
+        # hammering the source DB. Connections/connectors are resolved ONCE
+        # before the fan-out, in a worker thread: resolved per-widget on the
+        # event loop, the sync lookups deadlocked the loop under pool
+        # starvation (see _resolve_widget_connections).
+        sql_widgets = [w for w in widgets if "dataSource" in w]
+        resolved = await asyncio.to_thread(
+            _resolve_widget_connections,
+            {w["dataSource"]["connectionId"] for w in sql_widgets},
+            context.user_id,
+            db_session_factory,
+        ) if sql_widgets else {}
+        try:
+            sem = asyncio.Semaphore(5)
 
-        async def _exec_bounded(w):
-            async with sem:
-                await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+            async def _exec_bounded(w):
+                async with sem:
+                    await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id, resolved=resolved)
 
-        await asyncio.gather(*[_exec_bounded(w) for w in widgets if "dataSource" in w])
+            await asyncio.gather(*[_exec_bounded(w) for w in sql_widgets])
+        finally:
+            for _conn, _connector, _dialect in resolved.values():
+                try:
+                    _connector.close()
+                except Exception:
+                    pass
 
         db = db_session_factory()
         try:
@@ -1100,14 +1275,28 @@ def build_inline_dashboard_tools(context: AgentContext, db_session_factory: Call
                 to_execute.append(w)
 
         if to_execute:
-            # Independent per-widget sessions/connectors — run concurrently, bounded.
-            sem = asyncio.Semaphore(5)
+            # Independent widgets — run concurrently, bounded. Same pre-resolve
+            # pattern as create_dashboard (see _resolve_widget_connections).
+            resolved = await asyncio.to_thread(
+                _resolve_widget_connections,
+                {w["dataSource"]["connectionId"] for w in to_execute},
+                context.user_id,
+                db_session_factory,
+            )
+            try:
+                sem = asyncio.Semaphore(5)
 
-            async def _exec_bounded(w):
-                async with sem:
-                    await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id)
+                async def _exec_bounded(w):
+                    async with sem:
+                        await _execute_widget_sql(w, db_session_factory, data_context=data_context, user_id=context.user_id, resolved=resolved)
 
-            await asyncio.gather(*[_exec_bounded(w) for w in to_execute])
+                await asyncio.gather(*[_exec_bounded(w) for w in to_execute])
+            finally:
+                for _conn, _connector, _dialect in resolved.values():
+                    try:
+                        _connector.close()
+                    except Exception:
+                        pass
 
         db = db_session_factory()
         try:

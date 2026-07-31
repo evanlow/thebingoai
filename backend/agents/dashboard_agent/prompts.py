@@ -102,6 +102,18 @@ def build_dashboard_agent_prompt(
     return prompt
 
 
+def _column_label(name: str, cdata: dict) -> str:
+    """Render one column as `name (Display Name) — description`.
+
+    Both halves come from the semantic layer and are optional; with neither, this
+    degrades to the bare column name the prompt used before.
+    """
+    label = f"{name} ({cdata['displayName']})" if cdata.get("displayName") else name
+    if cdata.get("description"):
+        label = f"{label} — {cdata['description']}"
+    return label
+
+
 def build_dashboard_runtime_suffix(
     available_connections: list[int],
     connection_metadata: list | None = None,
@@ -116,14 +128,16 @@ def build_dashboard_runtime_suffix(
     """
     suffix = ""
 
-    # Include connection context summary if available (pre-built from profiling)
+    # Include connection context summary if available (pre-built from profiling).
+    # Enriched: overlays the semantic layer so curated/generated column meanings
+    # reach the agent with the schema rather than only via the chat transcript.
     from backend.database.session import SessionLocal
-    from backend.services.connection_context import load_connection_context
+    from backend.services.semantic_layer import load_enriched_context
 
     db = SessionLocal()
     try:
         for conn_id in available_connections:
-            ctx = load_connection_context(db, conn_id)
+            ctx = load_enriched_context(db, conn_id)
             if not ctx:
                 continue
             tables = ctx.get("tables", {})
@@ -133,10 +147,24 @@ def build_dashboard_runtime_suffix(
             lines.append(f"Tables ({len(tables)}): {', '.join(sorted(tables.keys()))}")
             for tname, tdata in tables.items():
                 cols = tdata.get("columns", {})
-                dims = [c for c, d in cols.items() if d.get("role") == "dimension"]
-                measures = [c for c, d in cols.items() if d.get("role") == "measure"]
-                if dims or measures:
-                    lines.append(f"  {tname}: dimensions=[{', '.join(dims)}] measures=[{', '.join(measures)}]")
+                dims = [_column_label(c, d) for c, d in cols.items() if d.get("role") == "dimension"]
+                measures = [_column_label(c, d) for c, d in cols.items() if d.get("role") == "measure"]
+                # Keys carry documented meaning too ("employee_id — one row per
+                # employee"); rendering only dimensions and measures dropped it.
+                keys = [_column_label(c, d) for c, d in cols.items() if d.get("role") == "key"]
+                if dims or measures or keys:
+                    header = tname
+                    if tdata.get("description"):
+                        header = f"{tname} — {tdata['description']}"
+                    # "; " not ", ": a description may itself contain a comma, which
+                    # would read as an extra column name inside the brackets.
+                    parts = [
+                        f"dimensions=[{'; '.join(dims)}]",
+                        f"measures=[{'; '.join(measures)}]",
+                    ]
+                    if keys:
+                        parts.append(f"keys=[{'; '.join(keys)}]")
+                    lines.append(f"  {header}: {' '.join(parts)}")
             rels = ctx.get("relationships", [])
             if rels:
                 lines.append(f"Relationships: {', '.join(r['from'] + ' → ' + r['to'] for r in rels[:10])}")

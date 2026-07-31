@@ -13,6 +13,11 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+# Re-exported: the cap is owned by `dashboard_prompt_blocks` (the import-free
+# module the agent's own prompt is built from) so the limit the agent is told and
+# the limit enforced here can never drift apart.
+from backend.agents.dashboard_prompt_blocks import MAX_TOTAL_WIDGETS  # noqa: F401
+
 _WINDOW_ALIASES: list[set[str]] = [
     {"7d", "last 7 days", "past 7 days", "trailing 7 days"},
     {"30d", "last 30 days", "past 30 days", "trailing 30 days"},
@@ -22,8 +27,6 @@ _WINDOW_ALIASES: list[set[str]] = [
 ]
 
 _PAREN_SUFFIX = re.compile(r"\s*\(([^)]+)\)\s*$")
-
-MAX_TOTAL_WIDGETS = 15
 
 
 def _canonical_window(label: str) -> Optional[str]:
@@ -52,7 +55,8 @@ def verify_dashboard_widgets(widgets: list[dict]) -> list[str]:
     kpis = [w for w in widgets if (w.get("widget") or {}).get("type") == "kpi"]
     if len(widgets) > MAX_TOTAL_WIDGETS:
         violations.append(
-            f"Total widget count = {len(widgets)} — must be ≤ {MAX_TOTAL_WIDGETS}."
+            f"Total widget count = {len(widgets)} — must be ≤ {MAX_TOTAL_WIDGETS}. "
+            f"Remove exactly {len(widgets) - MAX_TOTAL_WIDGETS}."
         )
 
     seen_titles: dict[str, list[str]] = {}

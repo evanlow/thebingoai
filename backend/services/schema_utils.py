@@ -1,4 +1,52 @@
 """Shared schema utilities for SQL fix suggestions and schema summaries."""
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def normalize_sql_for(sql: str, dialect: str) -> str:
+    """Rewrite widget SQL for *dialect*: quote reserved-word identifiers, fix quoting.
+
+    The agent writes ANSI double-quoted identifiers whatever the target is, so
+    `c."role"` reaches BigQuery as a *string literal* (not a column), and a column
+    literally named `left`/`order`/`end` used unquoted is a syntax error in every
+    dialect. One parse → re-emit pass fixes both.
+
+    Returns *sql* byte-identical when nothing needs changing, and on any failure —
+    never block a query that would have worked.
+    """
+    if not sql or not dialect:
+        return sql
+    try:
+        import sqlglot
+        from sqlglot import exp
+
+        # ponytail: backticks are the tell for BigQuery-flavoured SQL, where
+        # "..." is a string; everything else is ANSI, where it is an identifier.
+        # Reading with the wrong one silently swaps the two. Upgrade path if this
+        # misfires: pass the authoring dialect down from the agent instead.
+        read = "bigquery" if "`" in sql else "postgres"
+        target = sqlglot.Dialect.get_or_raise(dialect)
+        tree = sqlglot.parse_one(sql, read=read)
+
+        keywords = target.tokenizer_class.KEYWORDS
+        changed = False
+        for node in tree.find_all(exp.Identifier):
+            # Only lowercase names: quoting a mixed-case identifier changes what
+            # it resolves to under Postgres' unquoted case folding.
+            if node.quoted or node.name != node.name.lower():
+                continue
+            if node.name.upper() in keywords:
+                node.set("quoted", True)
+                changed = True
+
+        read_quote = "`" if read == "bigquery" else '"'
+        if not changed and target.tokenizer_class.IDENTIFIERS[0] == read_quote:
+            return sql  # same quoting flavour, nothing to fix — don't re-emit
+        return tree.sql(dialect=dialect)
+    except Exception as exc:
+        logger.debug("SQL normalization for %s skipped: %s", dialect, exc)
+        return sql
 
 
 def extract_table_names(sql: str) -> set:

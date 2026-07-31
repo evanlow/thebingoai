@@ -25,6 +25,7 @@ from backend.agents.dashboard_prompt_blocks import (
     DASHBOARD_WIDGET_CONTRACT,
     DASHBOARD_WORKFLOW,
 )
+from backend.agents.orchestrator_prompt_blocks import ORCHESTRATOR_WORKFLOW
 
 # ---------------------------------------------------------------------------
 # SQLite dialect hints — appended only when the CSV connector plugin is loaded
@@ -329,36 +330,7 @@ You can query databases, create dashboards, manage reusable skills, search docum
 Use your tools to fulfill requests. When a request is unclear, ask for clarification first.
 When a request requires action (tool calls), start by briefly acknowledging what you'll do — one sentence max. This appears as your immediate reply while you work.
 
-## Approach
-
-**Simple requests** (quick lookups, single-tool tasks, factual questions): Act immediately — no planning needed.
-
-**Complex requests** (multi-step tasks, dashboard creation, multi-table analysis, ambiguous scope): Follow the Plan-then-Execute workflow:
-
-### Phase 1 — Explore
-Understand what the user is asking. Use tools to discover relevant context:
-- Check available connections and schemas
-- Recall past context if relevant
-- Identify what information you need before proceeding
-
-### Phase 2 — Design
-Formulate your approach:
-- What tools/agents you'll use and in what order
-- What assumptions you're making
-- What the expected outcome looks like
-
-### Phase 3 — Review
-Before executing, confirm with the user:
-- Use `ask_user_question` to get structured input on key decisions
-- Summarize what you intend to do and ask for confirmation
-- If the user modifies the plan, adjust before proceeding
-
-### Phase 4 — Execute
-Carry out the confirmed plan step by step.
-
-**When to skip planning:** If the user's intent is unambiguous AND requires only 1-2 tool calls, skip directly to execution.
-
-**When to plan:** Dashboard creation, multi-table analysis, requests with unclear scope, requests touching multiple agents or connections."""
+""" + ORCHESTRATOR_WORKFLOW
 
 _ORCHESTRATOR_TOOLS = """## Tool Usage Guide
 - Questions about the user's dashboards, data connections, or application state → use list_dashboards / list_connections
@@ -371,7 +343,7 @@ _ORCHESTRATOR_TOOLS = """## Tool Usage Guide
 When a user's message contains a file attachment (shown as `[File: ... (file_id: ...)]`) and they ask for a dashboard, chart, analysis, or visualization:
 1. ALWAYS call `create_dataset_from_upload` first with the file_id from the attachment
 2. Then call `create_dashboard` — the new connection will be available automatically
-NEVER ask the user to manually import, register, or set up the data. You MUST handle the full workflow automatically.
+NEVER ask the user to manually import, register, or set up the data. You MUST handle the ingestion workflow automatically. This covers data setup only — it does not stop you from asking scoping questions about what a dashboard should show.
 
 ## Structured User Input
 - Ambiguous requirements or plan confirmation → use ask_user_question
@@ -578,7 +550,7 @@ ACTION: execute_query(connection_id=1, sql="SELECT c.name, COUNT(o.id) as order_
 
 When answering:
 - Lead with key findings and insights — what the data reveals
-- Be concise: summarize stats compactly (e.g., "revenue: $100–$999K, avg $50K")
+- Be concise: summarize shape compactly (e.g., "revenue: numeric, ~900 distinct values, no nulls")
 - Do NOT include SQL queries in your response — they are captured separately
 - If querying multiple databases, briefly note how results relate"""
 

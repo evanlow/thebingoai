@@ -206,3 +206,25 @@ def _make_db_with_connections(connections):
 @contextmanager
 def _make_ctx(db):
     yield db
+
+
+def test_backfill_all_plugin_templates_runs_every_loaded_plugin():
+    p1 = MagicMock(); p1.name = "p1"
+    p2 = MagicMock(); p2.name = "p2"
+    with patch.dict(loader._loaded_plugins, {"p1": p1, "p2": p2}, clear=True), \
+         patch.object(loader, "_backfill_templates_for_plugin") as bf:
+        loader.backfill_all_plugin_templates()
+    assert bf.call_count == 2
+    assert {c.args[0] for c in bf.call_args_list} == {p1, p2}
+
+
+def test_backfill_all_plugin_templates_isolates_one_plugins_failure():
+    p1 = MagicMock(); p1.name = "p1"
+    p2 = MagicMock(); p2.name = "p2"
+    with patch.dict(loader._loaded_plugins, {"p1": p1, "p2": p2}, clear=True), \
+         patch.object(
+             loader, "_backfill_templates_for_plugin",
+             side_effect=[RuntimeError("boom"), None],
+         ) as bf:
+        loader.backfill_all_plugin_templates()  # must not raise
+    assert bf.call_count == 2  # second plugin still ran after the first raised
