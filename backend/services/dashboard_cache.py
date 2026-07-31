@@ -309,18 +309,39 @@ def enqueue_dashboard_warm_for_table(scope, table_name: str) -> int:
         return 0
 
 
+def widget_plane_scope(org_id: str | None, user_id: str):
+    """OwnerScope the `_dash_*` widget cache lives under: the Org when there is one,
+    else the user.
+
+    Callers that pre-resolve the plane (see `read_widget_data_plane`'s `plane` arg)
+    must derive the scope through here — resolving a different scope than the read
+    would hand back a plane pointing at another tenant's bucket.
+    """
+    from backend.data_plane.scope import OwnerScope
+
+    return OwnerScope("org", org_id) if org_id else OwnerScope("user", user_id)
+
+
 def read_widget_data_plane(
     dashboard_id: int,
     widget_id: str,
     org_id: str | None,
     user_id: str,
+    plane=None,
 ) -> dict | None:
-    """Read widget data from DataPlane. Returns None when no Parquet cache exists yet."""
-    from backend.data_plane.scope import OwnerScope
-    from backend.services.data_plane_service import get_default_plane
+    """Read widget data from DataPlane. Returns None when no Parquet cache exists yet.
 
-    scope = OwnerScope("org", org_id) if org_id else OwnerScope("user", user_id)
-    plane = get_default_plane(scope)
+    `plane` lets a caller reading many widgets resolve once and pass the result in.
+    Resolving here calls `get_default_plane` with no session, which opens its own
+    (`data_plane_service.get_default_plane` defaults `db=None`) — so a per-widget call
+    takes a second pooled connection while the caller's request session is still
+    checked out. A 15-widget dashboard did that 15 times against a 10-connection pool.
+    Omitted, the historical self-resolving behaviour is unchanged.
+    """
+    scope = widget_plane_scope(org_id, user_id)
+    if plane is None:
+        from backend.services.data_plane_service import get_default_plane
+        plane = get_default_plane(scope)
     table_name = f"_dash_{dashboard_id}__{_sanitize_widget_id(widget_id)}"
 
     if not plane.table_exists(scope, table_name):

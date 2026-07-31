@@ -348,23 +348,55 @@ def _wrap_subquery_fallback(
     condition_clause = ' AND '.join(conditions)
     return f"SELECT * FROM (\n{sql}\n) AS _wf WHERE {condition_clause}"
 
+def _resolve_serving_plane(org_id: str | None, user_id: str, db: Session):
+    """Resolve the DataPlane backing the `_dash_*` widget cache once per request.
+
+    Returns the plane, or None when none is provisioned / resolution fails — callers
+    treat None as a cold cache and fall back to the source connector, which is what
+    a raised `NoPlaneProvisionedError` produced before this was hoisted.
+
+    Hoisted for connection accounting, not speed. `read_widget_data_plane` resolves
+    with no session, opening a *second* pooled connection while this request's own
+    `db` is still checked out; per widget that put 2-3 connections in flight per
+    request against a pool of 10 (`DB_POOL_SIZE`+`DB_MAX_OVERFLOW`), and a
+    multi-widget dashboard load exhausted it — `QueuePool limit ... timed out`.
+    Passing `db` here reuses the connection the request already holds.
+
+    Same shape as `agents/dashboard_tools._resolve_widget_connections`, which fixed
+    this exact per-widget pattern on the dashboard-*creation* path in v0.3.2; the
+    serve path kept the original.
+    """
+    from backend.services.dashboard_cache import widget_plane_scope
+    from backend.services.data_plane_service import get_default_plane
+
+    try:
+        return get_default_plane(widget_plane_scope(org_id, user_id), db)
+    except Exception:
+        logger.debug("DataPlane resolution failed; serving from source", exc_info=True)
+        return None
+
+
 def _read_widget_from_cache(
     dashboard_id: int,
     widget_id: str,
     org_id: str | None = None,
     user_id: str | None = None,
+    plane=None,
 ) -> "QueryResult | None":
     """Read widget data from the DataPlane Parquet cache.
 
     Returns a QueryResult on hit, or None when the table doesn't exist yet
     (cold cache → caller should fall back to the source connector).
+
+    `plane` is the request-scoped plane from `_resolve_serving_plane`; omitted, the
+    read resolves its own (and pays its own connection).
     """
     import time
     from backend.connectors.base import QueryResult
     from backend.services.dashboard_cache import read_widget_data_plane
 
     start = time.time()
-    dp_data = read_widget_data_plane(dashboard_id, widget_id, org_id, user_id or "")
+    dp_data = read_widget_data_plane(dashboard_id, widget_id, org_id, user_id or "", plane=plane)
     if dp_data is None:
         return None
     return QueryResult(
@@ -821,12 +853,17 @@ def _refresh_widget_sync(
     # DataPlane cache read — only when no filters (Parquet has no WHERE injection).
     if dashboard and request.widget_id and not request.filters:
         try:
+            # Resolved with this request's session. None falls through to the read's
+            # own resolution, which fails exactly as it did before this was hoisted
+            # (caught below → source fallback); it does not change the outcome.
+            plane = _resolve_serving_plane(serving_org, current_user.id, db)
             with _shared_serve_ctx(dash_is_shared, serving_org):
                 result = _read_widget_from_cache(
                     request.dashboard_id,
                     request.widget_id,
                     org_id=serving_org,
                     user_id=current_user.id,
+                    plane=plane,
                 )
             if result is not None:
                 config = transform_widget_data(result, request.mapping)
@@ -1109,6 +1146,13 @@ def _refresh_dashboard_widgets_sync(
     # from the plane — see `_plane_miss_key`. Never leaks across requests.
     plane_miss_keys: set = set()
 
+    # The `_dash_*` cache plane, resolved once for the whole dashboard. Every widget
+    # in this request shares one scope, so the per-widget resolution below was the
+    # same lookup N times — and each opened its own pooled connection on top of the
+    # one this request already holds. Memoizing connection+connector (above) never
+    # covered this one.
+    cache_plane = _resolve_serving_plane(org_id, current_user.id, db)
+
     # Redis result cache (flag-gated, per-Org): generation, scope, and filter
     # canonicalization computed once for the whole dashboard; lookups are one
     # GET per widget. `bulk_cache_gen is not None` marks the cache active.
@@ -1202,6 +1246,7 @@ def _refresh_dashboard_widgets_sync(
                         cached = _read_widget_from_cache(
                             dashboard_id, widget_id,
                             org_id=org_id, user_id=current_user.id,
+                            plane=cache_plane,
                         )
                     if cached is not None:
                         if widget_cache_key:

@@ -14,6 +14,7 @@ endpoint handler is async def, so each call goes through `asyncio.run(...)`.
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections import namedtuple
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -394,7 +395,7 @@ def test_refresh_widget_source_db_fallback_when_plane_returns_none(monkeypatch):
     monkeypatch.setattr(wd, "_serve_widget_via_dataplane",
                          lambda req, dash, user, db: None)
     monkeypatch.setattr(wd, "_read_widget_from_cache",
-                         lambda dash_id, wid, org_id, user_id: None)
+                         lambda dash_id, wid, org_id, user_id, plane=None: None)
 
     result = FakeQueryResult(columns=["cnt"], rows=[(15,)], row_count=1)
     fake_connector = MagicMock()
@@ -570,7 +571,7 @@ def test_bulk_refresh_source_fallback_reuses_one_connector(monkeypatch):
     monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
     monkeypatch.setattr(
         wd, "_read_widget_from_cache",
-        lambda dash_id, wid, org_id=None, user_id=None: None,  # cache miss → source
+        lambda dash_id, wid, org_id=None, user_id=None, plane=None: None,  # cache miss → source
     )
 
     result = FakeQueryResult(columns=["cnt"], rows=[(7,)], row_count=1)
@@ -602,6 +603,138 @@ def test_bulk_refresh_source_fallback_reuses_one_connector(monkeypatch):
     assert fake_connector.close.call_count == 1          # closed once, after the loop
     assert set(resp.widgets.keys()) == {"w1", "w2"}
     assert all(resp.widgets[w]["served_from"] == "source" for w in ("w1", "w2"))
+
+
+def test_resolve_serving_plane_hands_over_the_request_session(monkeypatch):
+    """The one line that removes the extra connection: `get_default_plane` must
+    receive the caller's session. With db=None it opens its own
+    (`data_plane_service.get_default_plane` → `SessionLocal()`), which is the
+    connection this whole change exists to stop taking.
+
+    Installs the module into sys.modules for the duration instead of patching an
+    attribute on it: tests/services/test_resource_lifecycle.py permanently swaps a
+    MagicMock in there at import time, so neither a "backend.services...." string
+    patch nor a setattr on the imported object binds predictably in a combined run
+    (the same pollution already fails the `test_serve_via_dataplane_*` siblings).
+    """
+    calls = []
+    monkeypatch.setitem(
+        sys.modules, "backend.services.data_plane_service",
+        SimpleNamespace(
+            get_default_plane=lambda scope, db=None: (calls.append(db), "plane")[1],
+        ),
+    )
+
+    db = MagicMock()
+    assert wd._resolve_serving_plane("org-1", "u-1", db) == "plane"
+    assert calls == [db]
+
+
+def test_resolve_serving_plane_returns_none_when_no_plane_is_provisioned(monkeypatch):
+    """A resolution failure must degrade to "cold cache → serve from source",
+    which is what the raised NoPlaneProvisionedError did before it was hoisted
+    out of the per-widget read. Raising here would fail the whole refresh."""
+    def _boom(scope, db=None):
+        raise RuntimeError("no plane provisioned")
+
+    monkeypatch.setitem(
+        sys.modules, "backend.services.data_plane_service",
+        SimpleNamespace(get_default_plane=_boom),
+    )
+    assert wd._resolve_serving_plane("org-1", "u-1", MagicMock()) is None
+
+
+def test_bulk_refresh_resolves_the_cache_plane_once_for_all_widgets(monkeypatch):
+    """Connection accounting: the `_dash_*` cache plane resolves ONCE per bulk
+    request, reusing the request's own session.
+
+    `read_widget_data_plane` resolves its own plane when none is passed, and
+    `get_default_plane` with no session opens one — so a per-widget read put a
+    second pooled connection in flight on top of the one the request already
+    holds, N times over. Against `DB_POOL_SIZE`+`DB_MAX_OVERFLOW` (5+5 in prod)
+    a multi-widget dashboard exhausted the pool: `QueuePool limit of size 5
+    overflow 5 reached, connection timed out`. Memoizing connection+connector
+    (the test above) never covered this lookup.
+
+    Asserting `is db` matters as much as the count: resolving once but with a
+    fresh session would still take the extra connection.
+    """
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "_widget_cache_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 1})
+
+    # Patched on `wd`, not via "backend.services.data_plane_service...":
+    # tests/services/test_resource_lifecycle.py replaces that module with a
+    # MagicMock in sys.modules at import time and never restores it, so a
+    # string-path patch silently lands on the mock in any combined run.
+    resolved_with = []
+    sentinel_plane = object()
+
+    def _resolve(org_id, user_id, db):
+        resolved_with.append(db)
+        return sentinel_plane
+
+    monkeypatch.setattr(wd, "_resolve_serving_plane", _resolve)
+
+    planes_seen = []
+
+    def _cache_read(dash_id, wid, org_id=None, user_id=None, plane=None):
+        planes_seen.append(plane)
+        return FakeQueryResult(columns=["cnt"], rows=[(1,)], row_count=1)
+
+    monkeypatch.setattr(wd, "_read_widget_from_cache", _cache_read)
+
+    dashboard = SimpleNamespace(
+        id=1, user_id="u-1", data_context={},
+        widgets=[_bulk_widget("w1"), _bulk_widget("w2"), _bulk_widget("w3")],
+    )
+    db = _db_with_first(dashboard)
+
+    resp = _run(wd.refresh_dashboard_widgets(1, None, _user(org_id="org-1"), db))
+
+    assert len(resolved_with) == 1, f"one resolution per request, got {len(resolved_with)}"
+    assert resolved_with[0] is db, "must reuse the request's session, not open another"
+    assert len(planes_seen) == 3, "every widget still reads the cache"
+    assert all(p is sentinel_plane for p in planes_seen), "all widgets share THE one plane"
+    assert set(resp.widgets.keys()) == {"w1", "w2", "w3"}
+    assert all(resp.widgets[w]["served_from"] == "cache" for w in ("w1", "w2", "w3"))
+
+
+def test_refresh_widget_resolves_the_cache_plane_with_the_request_session(monkeypatch):
+    """Single-widget path: same accounting, one widget. The plane is resolved
+    with the request's session rather than `read_widget_data_plane` opening its
+    own — the second of the 2-3 connections one refresh used to hold."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "_widget_cache_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 1})
+
+    resolved_with = []
+    sentinel_plane = object()
+
+    def _resolve(org_id, user_id, db):
+        resolved_with.append(db)
+        return sentinel_plane
+
+    monkeypatch.setattr(wd, "_resolve_serving_plane", _resolve)
+
+    planes_seen = []
+
+    def _cache_read(dash_id, wid, org_id=None, user_id=None, plane=None):
+        planes_seen.append(plane)
+        return FakeQueryResult(columns=["cnt"], rows=[(1,)], row_count=1)
+
+    monkeypatch.setattr(wd, "_read_widget_from_cache", _cache_read)
+
+    db = _db_with_first(FakeDashboard(), FakeConnection())
+    req = wd.WidgetRefreshRequest(
+        connection_id=42, sql="SELECT COUNT(*) FROM orders", mapping={},
+        dashboard_id=1, widget_id="kpi_1",
+    )
+    resp = _run(wd.refresh_widget(req, _user(org_id="org-1"), db))
+
+    assert resolved_with == [db]
+    assert planes_seen == [sentinel_plane]
+    assert resp.served_from == "cache"
 
 
 def test_bulk_refresh_applies_filters_and_skips_cache(monkeypatch):
@@ -647,7 +780,7 @@ def test_source_db_fallback_works_for_mysql_connection(monkeypatch):
     monkeypatch.setattr(wd, "_serve_widget_via_dataplane",
                          lambda req, dash, user, db: None)
     monkeypatch.setattr(wd, "_read_widget_from_cache",
-                         lambda dash_id, wid, org_id, user_id: None)
+                         lambda dash_id, wid, org_id, user_id, plane=None: None)
 
     result = FakeQueryResult(columns=["cnt"], rows=[(42,)], row_count=1)
     fake_connector = MagicMock()
