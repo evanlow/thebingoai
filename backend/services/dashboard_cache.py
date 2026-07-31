@@ -322,12 +322,20 @@ def widget_plane_scope(org_id: str | None, user_id: str):
     return OwnerScope("org", org_id) if org_id else OwnerScope("user", user_id)
 
 
+#: `plane` not supplied at all, as distinct from "supplied, and there is none".
+#: A plain None default cannot tell those apart, and conflating them is a bug:
+#: a caller whose own resolution failed would have every widget re-resolve here,
+#: restoring the per-widget session this argument exists to remove — and under
+#: lockdown re-running provision-on-miss once per widget with it.
+_UNSET = object()
+
+
 def read_widget_data_plane(
     dashboard_id: int,
     widget_id: str,
     org_id: str | None,
     user_id: str,
-    plane=None,
+    plane=_UNSET,
 ) -> dict | None:
     """Read widget data from DataPlane. Returns None when no Parquet cache exists yet.
 
@@ -336,12 +344,15 @@ def read_widget_data_plane(
     (`data_plane_service.get_default_plane` defaults `db=None`) — so a per-widget call
     takes a second pooled connection while the caller's request session is still
     checked out. A 15-widget dashboard did that 15 times against a 10-connection pool.
-    Omitted, the historical self-resolving behaviour is unchanged.
+    Omitted entirely, the historical self-resolving behaviour is unchanged; passed
+    as None it means the caller resolved and got nothing, so the cache is cold.
     """
     scope = widget_plane_scope(org_id, user_id)
-    if plane is None:
+    if plane is _UNSET:
         from backend.services.data_plane_service import get_default_plane
         plane = get_default_plane(scope)
+    if plane is None:
+        return None
     table_name = f"_dash_{dashboard_id}__{_sanitize_widget_id(widget_id)}"
 
     if not plane.table_exists(scope, table_name):

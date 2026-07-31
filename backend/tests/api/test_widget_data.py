@@ -644,6 +644,98 @@ def test_resolve_serving_plane_returns_none_when_no_plane_is_provisioned(monkeyp
     assert wd._resolve_serving_plane("org-1", "u-1", MagicMock()) is None
 
 
+def test_bulk_refresh_does_not_retry_resolution_when_no_plane_exists(monkeypatch):
+    """A failed resolution must be resolved *once*, not re-attempted per widget.
+
+    `plane=None` is a resolved answer ("there is none"), not "unset". Conflating
+    them sends every widget back through `read_widget_data_plane`'s own
+    `get_default_plane`, restoring the per-widget pooled connection this change
+    removes — and under lockdown re-running provision-on-miss once per widget,
+    creating buckets/datasets on a read path.
+    """
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "_widget_cache_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 1})
+
+    attempts = []
+
+    def _resolve(org_id, user_id, db):
+        attempts.append(db)
+        return None  # nothing provisioned
+
+    monkeypatch.setattr(wd, "_resolve_serving_plane", _resolve)
+
+    # Real _read_widget_from_cache → real read_widget_data_plane: the retry, if
+    # any, happens inside it. Count what it would fall back to.
+    retries = []
+    monkeypatch.setitem(
+        sys.modules, "backend.services.data_plane_service",
+        SimpleNamespace(
+            get_default_plane=lambda scope, db=None: retries.append(db) or SimpleNamespace(
+                table_exists=lambda s, t: False,
+            ),
+        ),
+    )
+
+    fake_connector = MagicMock()
+    fake_connector.execute_query.return_value = FakeQueryResult(
+        columns=["cnt"], rows=[(7,)], row_count=1,
+    )
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection",
+        lambda conn: fake_connector,
+    )
+
+    dashboard = SimpleNamespace(
+        id=1, user_id="u-1", data_context={},
+        widgets=[_bulk_widget("w1"), _bulk_widget("w2"), _bulk_widget("w3")],
+    )
+    db = _db_with_first(dashboard, FakeConnection())
+
+    resp = _run(wd.refresh_dashboard_widgets(1, None, _user(org_id="org-1"), db))
+
+    assert len(attempts) == 1, f"resolved once even on miss, got {len(attempts)}"
+    assert retries == [], "a None plane must not fall back to self-resolution"
+    assert set(resp.widgets.keys()) == {"w1", "w2", "w3"}
+    assert all(resp.widgets[w]["served_from"] == "source" for w in ("w1", "w2", "w3"))
+
+
+def test_bulk_refresh_skips_plane_resolution_entirely_when_filtered(monkeypatch):
+    """Filtered requests never read `_dash_*` (it holds unfiltered rows), so they
+    must not resolve a plane at all — under lockdown a miss would invoke
+    provision-on-miss, a bucket/dataset side effect on a request that never
+    touches the cache."""
+    monkeypatch.setattr(wd, "_duckdb_serving_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "_widget_cache_enabled", lambda org_id: False)
+    monkeypatch.setattr(wd, "transform_widget_data", lambda result, mapping: {"value": 1})
+
+    attempts = []
+    monkeypatch.setattr(
+        wd, "_resolve_serving_plane",
+        lambda org_id, user_id, db: attempts.append(db),
+    )
+
+    fake_connector = MagicMock()
+    fake_connector.execute_query.return_value = FakeQueryResult(
+        columns=["cnt"], rows=[(7,)], row_count=1,
+    )
+    monkeypatch.setattr(
+        "backend.connectors.factory.get_connector_for_connection",
+        lambda conn: fake_connector,
+    )
+
+    dashboard = SimpleNamespace(
+        id=1, user_id="u-1", data_context={}, widgets=[_bulk_widget("w1")],
+    )
+    db = _db_with_first(dashboard, FakeConnection())
+    payload = wd.BulkRefreshRequest(filters=[wd.FilterParam(column="c", op="eq", value="x")])
+
+    resp = _run(wd.refresh_dashboard_widgets(1, payload, _user(org_id="org-1"), db))
+
+    assert attempts == [], "filtered request must not resolve a plane"
+    assert resp.widgets["w1"]["served_from"] == "source"
+
+
 def test_bulk_refresh_resolves_the_cache_plane_once_for_all_widgets(monkeypatch):
     """Connection accounting: the `_dash_*` cache plane resolves ONCE per bulk
     request, reusing the request's own session.
