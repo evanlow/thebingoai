@@ -16,15 +16,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.connectors.base import QueryResult
 from backend.database.base import Base
 from backend.models.dashboard import Dashboard
 from backend.models.dashboard_refresh_run import DashboardRefreshRun
+from backend.models.database_connection import DatabaseConnection
 from backend.models.organization import Organization
 from backend.models.user import User
 import backend.models.user_skill  # noqa: F401 — resolve relationship mappers
+
+
+# Render Postgres JSONB columns as JSON so the tables build on SQLite.
+# Same shim as test_account_deletion.py — needed here since database_connections
+# joined the fixture (see below).
+@compiles(JSONB, "sqlite")
+def _jsonb_as_json_sqlite(element, compiler, **kw):  # pragma: no cover - test shim
+    return "JSON"
 
 
 # ---------------------------------------------------------------------------
@@ -33,12 +45,24 @@ import backend.models.user_skill  # noqa: F401 — resolve relationship mappers
 
 @pytest.fixture
 def dashboard_db():
-    engine = create_engine("sqlite:///:memory:")
+    # check_same_thread=False + StaticPool: _resolve_widget_connections queries
+    # inside asyncio.to_thread (keeping sync DB I/O off the event loop), and
+    # sqlite3 refuses handles created on another thread. StaticPool keeps every
+    # thread on the one in-memory database instead of opening a fresh empty one.
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine, tables=[
         Organization.__table__,
         User.__table__,
         Dashboard.__table__,
         DashboardRefreshRun.__table__,
+        # create_dashboard resolves widget connections up-front now, outside the
+        # patched _execute_widget_sql, so the table has to exist even though
+        # these tests seed no rows.
+        DatabaseConnection.__table__,
     ])
     session = sessionmaker(bind=engine)()
     yield session
@@ -333,7 +357,7 @@ class TestInlineExecutionAlongsideAsync:
 
         execute_calls = []
 
-        async def mock_execute(widget, db_factory, data_context=None, user_id=None):
+        async def mock_execute(widget, db_factory, data_context=None, user_id=None, resolved=None):
             execute_calls.append(widget["id"])
             widget["widget"]["config"]["value"] = 42
             return None

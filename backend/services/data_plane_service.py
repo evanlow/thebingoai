@@ -301,23 +301,33 @@ def _instantiate(row):
         if hit is not None and hit[0] == fingerprint:
             return hit[1]
 
-        from backend.security.encryption import decrypt_password
-        from backend.data_plane.bigquery_gcs import BigQueryGCSPlane
-        sa_json = (
-            decrypt_password(row.credentials_encrypted)
-            if row.credentials_encrypted else ""
-        )
-        plane = BigQueryGCSPlane(
-            gcp_project=row.config["gcp_project"],
-            gcs_bucket=row.config["gcs_bucket"],
-            bq_dataset=row.config["bq_dataset"],
-            service_account_json=sa_json,
-        )
+        # Double-checked, same shape as `_fallback_plane` above: without the
+        # re-check, a cold concurrent burst has every caller build its own
+        # plane and all but the last get discarded — along with the BQ client
+        # each would have lazily built, which is the thing worth caching.
+        # Safe to construct under the lock: __init__ is attribute assignment,
+        # the BQ/GCS clients are built lazily on first use.
         with _bq_plane_cache_lock:
+            hit = _bq_plane_cache.get(row.id)
+            if hit is not None and hit[0] == fingerprint:
+                return hit[1]
+
+            from backend.security.encryption import decrypt_password
+            from backend.data_plane.bigquery_gcs import BigQueryGCSPlane
+            sa_json = (
+                decrypt_password(row.credentials_encrypted)
+                if row.credentials_encrypted else ""
+            )
+            plane = BigQueryGCSPlane(
+                gcp_project=row.config["gcp_project"],
+                gcs_bucket=row.config["gcs_bucket"],
+                bq_dataset=row.config["bq_dataset"],
+                service_account_json=sa_json,
+            )
             # Keyed by row id: a rotated credential replaces the entry rather
             # than leaking a second one; the old instance is GC'd.
             _bq_plane_cache[row.id] = (fingerprint, plane)
-        return plane
+            return plane
 
     raise ValueError(f"Unknown data_plane type: {row.type!r}")
 

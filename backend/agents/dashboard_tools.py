@@ -748,9 +748,20 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
     widget_id = widget.get("id")
     widget_title = widget.get("widget", {}).get("config", {}).get("title") or widget.get("widget", {}).get("config", {}).get("label")
 
-    pre = (resolved or {}).get(_coerce_connection_id(connection_id))
-    if pre is not None:
-        connection, shared_connector, dialect = pre
+    if resolved is None:
+        # No pre-resolved map (single-widget callers, tests). The lookup +
+        # connector construction do sync DB I/O — keep them off the event loop.
+        connection, connector, dialect = await asyncio.to_thread(
+            _resolve_one_connection, connection_id, user_id, db_session_factory
+        )
+        owns_connector = True
+    else:
+        # A supplied map covers every connection id in the build, so a missing
+        # key means the row is absent or unreadable — NOT a reason to re-query.
+        # Falling back here would re-run the same filtered lookup for the same
+        # empty result, per widget, which is the contention this map removes.
+        pre = resolved.get(_coerce_connection_id(connection_id))
+        connection, shared_connector, dialect = pre if pre else (None, None, "")
         if getattr(shared_connector, "serves_from_plane", False):
             # Plane-backed connectors route through a thread-safe BigQuery/
             # DuckDB client — safe to share across the concurrent fan-out.
@@ -760,15 +771,11 @@ async def _execute_widget_sql(widget: dict, db_session_factory: Callable, data_c
             # sharing one across concurrent widgets would interleave cursors
             # on it. Construction is pure kwargs (the lazy connect happens
             # inside to_thread on first query) — build one per widget.
-            connector = await asyncio.to_thread(get_connector_for_connection, connection)
+            connector = (
+                await asyncio.to_thread(get_connector_for_connection, connection)
+                if connection is not None else None
+            )
             owns_connector = True
-    else:
-        # No pre-resolved map (single-widget callers, tests). The lookup +
-        # connector construction do sync DB I/O — keep them off the event loop.
-        connection, connector, dialect = await asyncio.to_thread(
-            _resolve_one_connection, connection_id, user_id, db_session_factory
-        )
-        owns_connector = True
     if connection is None:
         logger.warning(f"Widget '{widget_id}': connection {connection_id} not found, skipping SQL execution")
         return
